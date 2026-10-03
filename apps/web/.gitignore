@@ -4,5 +4,9 @@ node_modules/
 .env
 dist/
 *.log
+test-results/
+playwright-report/
+playwright/.cache/
+.auth/
 .DS_Store
 Thumbs.db
