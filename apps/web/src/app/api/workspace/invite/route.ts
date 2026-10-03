@@ -1,23 +1,33 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/workspace/invite — full invite lifecycle (Task 8)
+// /api/workspace/invite — full invite lifecycle (Task 8, R1 hardened)
 // GET    ?workspace_id=  → list invites (any workspace member; NEVER tokens)
 // POST   {workspace_id, email, role} → create (owner/admin; dup 409; hashed)
 // PATCH  {invite_id, action} → accept | decline | resend | revoke
 // DELETE ?invite_id=      → revoke (owner/admin; REST alias of PATCH revoke)
 //
-// Security: invite tokens are credential-equivalent — stored as sha256
-// token_hash (migration 0004) plus the legacy token column, never logged and
-// never returned by any handler. Expiry is enforced on every mutation
-// (stale pending → marked expired → 410); resend may refresh pending/expired.
-// Workspace isolation: every path gates on workspace_members first.
+// Security (R1):
+// - Hash-only tokens: the raw token is NEVER persisted (DB `token` stays
+//   NULL for new rows, migration 0005 makes it nullable) and never logged
+//   or returned. Only sha256 token_hash is stored (NOT NULL for new writes
+//   via the 0005 NOT VALID check; legacy NULL-hash rows accept via the same
+//   email-match path and are backfilled on resend rotation).
+// - Invitee RLS deadlock: 0004 RLS select/update are member-only, so a
+//   non-member invitee cannot read/mutate their invite via the anon
+//   PostgREST path. PATCH therefore reads/mutates the invite row via the
+//   service_role client with EXPLICIT gates (auth-email match and/or
+//   owner/admin + expiry + pending). RLS policies stay tight on purpose.
+// - On-behalf accept is explicitly FORBIDDEN (403): only the invited email
+//   address can accept; owners/admins cannot accept for someone else.
+// Expiry is enforced on every mutation (stale pending → marked expired →
+// 410); resend may refresh pending/expired. Workspace isolation: every
+// path gates on workspace_members first.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { INVITE_TTL_MS, hashInviteToken as hashToken } from "@/lib/invites";
-import { inviteActionSchema, inviteListQuerySchema, inviteSchema } from "@/lib/validation";
+import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { INVITE_TTL_MS, hashInviteToken as hashToken, isInviteExpired } from "@/lib/invites";
+import { inviteActionSchema, inviteIdSchema, inviteListQuerySchema, inviteSchema } from "@/lib/validation";
 import type { MemberRole } from "@/lib/types";
 
 // Columns safe to expose — token / token_hash deliberately excluded.
@@ -25,13 +35,6 @@ const PUBLIC_COLUMNS =
   "id,workspace_id,email,role,status,expires_at,invited_by,created_at";
 
 const ROLE_RANK: Record<MemberRole, number> = { viewer: 1, member: 2, admin: 3, owner: 4 };
-
-function isExpiredLike(invite: { status: string; expires_at: string }): boolean {
-  return (
-    invite.status === "expired" ||
-    (invite.status === "pending" && new Date(invite.expires_at).getTime() <= Date.now())
-  );
-}
 
 async function callerRole(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
@@ -142,7 +145,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Pending invite already exists for this email" }, { status: 409 });
   }
 
-  // Create invite record — raw token hashed (sha256) before storage.
+  // Create invite record — R1 hash-only: the raw token exists only in
+  // memory (never logged/stored/returned); only its sha256 is persisted
+  // and `token` stays NULL (migration 0005 makes it nullable).
   const rawToken = randomUUID();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
 
@@ -152,7 +157,7 @@ export async function POST(request: NextRequest) {
       workspace_id,
       email,
       role,
-      token: rawToken,
+      token: null,
       token_hash: hashToken(rawToken),
       status: "pending",
       expires_at: expiresAt,
@@ -190,7 +195,12 @@ export async function PATCH(request: NextRequest) {
   }
   const { invite_id, action } = parsed.data;
 
-  const { data: invite } = await supabase
+  // R1 invitee path: the invite row is read/mutated via service_role.
+  // Member-only RLS (0004) would hide the row from a non-member invitee
+  // on the anon path, so every action below re-enforces its gate
+  // explicitly (email match and/or owner/admin + expiry + pending).
+  const service = createServiceRoleClient();
+  const { data: invite } = await service
     .from("workspace_invites")
     .select("id,workspace_id,email,role,status,expires_at")
     .eq("id", invite_id)
@@ -204,9 +214,9 @@ export async function PATCH(request: NextRequest) {
 
   // Expiry enforcement: stale pending invites are marked expired and every
   // action except a privileged resend is rejected with 410.
-  if (isExpiredLike(row)) {
+  if (isInviteExpired(row)) {
     if (!(action === "resend" && isPrivileged)) {
-      await supabase.from("workspace_invites").update({ status: "expired" }).eq("id", invite_id);
+      await service.from("workspace_invites").update({ status: "expired" }).eq("id", invite_id);
       return NextResponse.json({ error: "Invite expired" }, { status: 410 });
     }
   }
@@ -223,18 +233,33 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "Invite is no longer pending" }, { status: 400 });
       }
       if (action === "decline") {
-        const { error } = await supabase
+        // Decline is invitee-or-privileged; service write is safe because
+        // the gate above already enforced email match or owner/admin.
+        const { error } = await service
           .from("workspace_invites")
           .update({ status: "declined" })
           .eq("id", invite_id);
         if (error) return NextResponse.json({ error: "Failed to decline invite" }, { status: 500 });
         return NextResponse.json({ success: true, status: "declined" });
       }
+      // R1: on-behalf accept is explicitly forbidden (403, not 409).
+      // Owner/admin callers are already workspace members, so without this
+      // branch their accept would fall through to the 409 below and look
+      // like an idempotency conflict. Only the invited email may accept.
+      if (!emailMatch) {
+        return NextResponse.json(
+          { error: "Only the invited email address can accept this invite; owners/admins cannot accept on behalf" },
+          { status: 403 },
+        );
+      }
       // accept: already a member → idempotent conflict, invite left untouched.
       if (role) {
         return NextResponse.json({ error: "Already a member of this workspace" }, { status: 409 });
       }
-      const { error: memberError } = await supabase.from("workspace_members").insert({
+      // Service-role member insert: RLS members_insert is owner/admin-only
+      // and the invitee is by definition not a member yet; the email +
+      // pending + expiry gates above are the authorization for this write.
+      const { error: memberError } = await service.from("workspace_members").insert({
         workspace_id: row.workspace_id,
         user_id: user.id,
         role: row.role,
@@ -242,7 +267,7 @@ export async function PATCH(request: NextRequest) {
       if (memberError) {
         return NextResponse.json({ error: "Failed to accept invite" }, { status: 500 });
       }
-      const { error: acceptError } = await supabase
+      const { error: acceptError } = await service
         .from("workspace_invites")
         .update({ status: "accepted" })
         .eq("id", invite_id);
@@ -258,13 +283,14 @@ export async function PATCH(request: NextRequest) {
       if (row.status !== "pending" && row.status !== "expired") {
         return NextResponse.json({ error: "Only pending invites can be resent" }, { status: 400 });
       }
-      // Rotate token + refresh expiry; invite stays pending.
+      // Rotate token (hash-only, R1) + refresh expiry; invite stays pending.
+      // This also backfills token_hash for legacy NULL-hash rows.
       // Never log the raw token — it is credential-equivalent.
       const rawToken = randomUUID();
       const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
-      const { error } = await supabase
+      const { error } = await service
         .from("workspace_invites")
-        .update({ token: rawToken, token_hash: hashToken(rawToken), expires_at: expiresAt, status: "pending" })
+        .update({ token: null, token_hash: hashToken(rawToken), expires_at: expiresAt, status: "pending" })
         .eq("id", invite_id);
       if (error) {
         return NextResponse.json({ error: "Failed to resend invite" }, { status: 500 });
@@ -279,7 +305,7 @@ export async function PATCH(request: NextRequest) {
       if (row.status !== "pending") {
         return NextResponse.json({ error: "Only pending invites can be revoked" }, { status: 400 });
       }
-      const { error } = await supabase
+      const { error } = await service
         .from("workspace_invites")
         .update({ status: "revoked" })
         .eq("id", invite_id);
@@ -301,7 +327,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const invite_id = request.nextUrl.searchParams.get("invite_id");
-  if (!invite_id || !z.string().uuid().safeParse(invite_id).success) {
+  if (!invite_id || !inviteIdSchema.safeParse(invite_id).success) {
     return NextResponse.json({ error: "invite_id is required" }, { status: 400 });
   }
 
@@ -318,7 +344,7 @@ export async function DELETE(request: NextRequest) {
   if (role !== "owner" && role !== "admin") {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
-  if (isExpiredLike(row)) {
+  if (isInviteExpired(row)) {
     await supabase.from("workspace_invites").update({ status: "expired" }).eq("id", invite_id);
     return NextResponse.json({ error: "Invite expired" }, { status: 410 });
   }

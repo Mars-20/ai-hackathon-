@@ -3,13 +3,16 @@ import { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 
 // ── Task 8 (TDD RED): full invite lifecycle + hashed tokens + expiry ─────────
+// Task 8 R1: hash-only storage, service-role invitee path (RLS-proof),
+// on-behalf accept → explicit 403, legacy NULL-hash fallback.
 // Covers: duplicate guard, expired re-invite, role hierarchy, list isolation
 // (no token leak), accept/decline/resend/revoke with gates, expiry enforced.
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn(),
+  createServiceRoleClient: vi.fn(),
 }));
 
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
 import {
   GET as inviteGET,
   POST as invitePOST,
@@ -18,6 +21,7 @@ import {
 } from "@/app/api/workspace/invite/route";
 
 const mockedClient = vi.mocked(createServerSupabaseClient);
+const mockedServiceClient = vi.mocked(createServiceRoleClient);
 
 interface FakeUser {
   id: string;
@@ -33,7 +37,7 @@ interface FakeInvite {
   workspace_id: string;
   email: string;
   role: string;
-  token: string;
+  token: string | null; // R1 hash-only: NULL for new rows; legacy rows may carry raw
   token_hash?: string;
   status: string;
   expires_at: string;
@@ -72,13 +76,28 @@ function seedInvite(over: Partial<FakeInvite> = {}): FakeInvite {
 
 // In-memory PostgREST fake: supports the exact chains the route uses
 // (select/eq/order/limit + maybeSingle/single/insert/update/delete + await).
-function makeClient(state: FakeState) {
+// R1: `rls: true` simulates the 0004 member-only RLS on the anon path —
+// invite-row READS return [] unless the caller is a workspace member
+// (writes in the RLS test go through the service client, like the route).
+function makeClient(state: FakeState, opts: { rls?: boolean } = {}) {
   const rowsOf = (table: string, filters: Array<{ col: string; val: unknown }>) => {
     const rows: Record<string, unknown>[] =
       table === "workspace_members"
         ? (state.memberships as unknown as Record<string, unknown>[])
         : (state.invites as unknown as Record<string, unknown>[]);
     return rows.filter((r) => filters.every((f) => r[f.col] === f.val));
+  };
+  const readRows = (table: string, filters: Array<{ col: string; val: unknown }>) => {
+    let rows = rowsOf(table, filters);
+    if (opts.rls && table === "workspace_invites" && state.user) {
+      const uid = state.user.id;
+      rows = rows.filter((r) =>
+        state.memberships.some(
+          (m) => m.user_id === uid && m.workspace_id === (r["workspace_id"] as string),
+        ),
+      );
+    }
+    return rows;
   };
   const from = (table: string) => {
     const filters: Array<{ col: string; val: unknown }> = [];
@@ -91,9 +110,9 @@ function makeClient(state: FakeState) {
         filters.push({ col, val });
         return q;
       },
-      maybeSingle: async () => ({ data: rowsOf(table, filters)[0] ?? null, error: null }),
+      maybeSingle: async () => ({ data: readRows(table, filters)[0] ?? null, error: null }),
       single: async () => {
-        const row = rowsOf(table, filters)[0];
+        const row = readRows(table, filters)[0];
         return row ? { data: row, error: null } : { data: null, error: { message: "none" } };
       },
       insert: async (vals: Record<string, unknown>) => {
@@ -119,7 +138,7 @@ function makeClient(state: FakeState) {
       }),
       // Thenable so `await q` resolves like a PostgREST filter builder.
       then: (resolve: (v: unknown) => void) =>
-        resolve({ data: rowsOf(table, filters), error: null }),
+        resolve({ data: readRows(table, filters), error: null }),
     };
     return q;
   };
@@ -129,8 +148,13 @@ function makeClient(state: FakeState) {
   } as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>;
 }
 
-function setup(state: FakeState) {
-  mockedClient.mockResolvedValue(makeClient(state));
+function setup(state: FakeState, opts: { rls?: boolean } = {}) {
+  mockedClient.mockResolvedValue(makeClient(state, { rls: opts.rls }));
+  // Service-role client bypasses RLS (like production): full row access.
+  // Shares the same in-memory state so service writes are observable.
+  mockedServiceClient.mockReturnValue(
+    makeClient(state) as unknown as ReturnType<typeof createServiceRoleClient>,
+  );
 }
 
 function postReq(body: unknown) {
@@ -201,7 +225,7 @@ describe("invite POST (Task 8)", () => {
     expect(res.status).toBe(400);
   });
 
-  test("RED: stores sha256 token_hash and never returns the token", async () => {
+  test("R1: hash-only — stores sha256 token_hash, raw token NEVER persisted", async () => {
     const state: FakeState = {
       user: ADMIN,
       memberships: [{ workspace_id: WS, user_id: ADMIN.id, role: "admin" }],
@@ -211,11 +235,11 @@ describe("invite POST (Task 8)", () => {
     const res = await invitePOST(postReq({ workspace_id: WS, email: NEWBIE.email, role: "member" }));
     expect(res.status).toBe(200);
     const stored = state.invites[0];
+    expect(stored.token).toBeNull();
     expect(stored.token_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(stored.token_hash).toBe(createHash("sha256").update(stored.token).digest("hex"));
     const body = JSON.stringify(await res.json());
-    expect(body).not.toContain(stored.token);
     expect(body).not.toContain("token_hash");
+    expect(body).not.toContain("token");
   });
 });
 
@@ -323,7 +347,9 @@ describe("invite PATCH accept/decline/resend/revoke (Task 8)", () => {
     expect(new Date(state.invites[0].expires_at).getTime()).toBeGreaterThanOrEqual(
       new Date(before).getTime(),
     );
-    expect(state.invites[0].token).not.toBe("raw-token-uuid");
+    // R1 hash-only rotation: raw cleared, fresh sha256 persisted.
+    expect(state.invites[0].token).toBeNull();
+    expect(state.invites[0].token_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   test("RED: resend of a decided invite → 400; resend by viewer → 403", async () => {
@@ -360,6 +386,89 @@ describe("invite PATCH accept/decline/resend/revoke (Task 8)", () => {
     const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "revoke" }));
     expect(res.status).toBe(200);
     expect(state.invites[0].status).toBe("revoked");
+  });
+});
+
+describe("invite PATCH R1 — RLS/invitee path, on-behalf forbid, legacy fallback", () => {
+  test("R1: invitee accepts when the anon-path invite read is RLS-blocked", async () => {
+    // The authenticated client simulates 0004 member-only RLS: a non-member
+    // invitee reads ZERO invite rows. Accept must still succeed because the
+    // route resolves the invite via the service_role client with explicit
+    // email + expiry + pending gates.
+    const invite = seedInvite();
+    const state: FakeState = {
+      user: NEWBIE,
+      memberships: [],
+      invites: [invite],
+    };
+    setup(state, { rls: true });
+    const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "accept" }));
+    expect(res.status).toBe(200);
+    expect(state.invites[0].status).toBe("accepted");
+    expect(state.memberships).toContainEqual({
+      workspace_id: WS,
+      user_id: NEWBIE.id,
+      role: "member",
+    });
+  });
+
+  test("R1: expired invite under RLS → 410 and marked expired via service path", async () => {
+    const invite = seedInvite({ expires_at: past() });
+    const state: FakeState = {
+      user: NEWBIE,
+      memberships: [],
+      invites: [invite],
+    };
+    setup(state, { rls: true });
+    const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "accept" }));
+    expect(res.status).toBe(410);
+    expect(state.invites[0].status).toBe("expired");
+    expect(state.memberships).toHaveLength(0);
+  });
+
+  test("R1: stranger cannot accept under RLS either → 403", async () => {
+    const invite = seedInvite();
+    const state: FakeState = {
+      user: { id: "evil-1", email: "evil@example.com" },
+      memberships: [],
+      invites: [invite],
+    };
+    setup(state, { rls: true });
+    const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "accept" }));
+    expect(res.status).toBe(403);
+    expect(state.invites[0].status).toBe("pending");
+  });
+
+  test("R1: owner/admin accepting on behalf is explicitly forbidden → 403 (not 409)", async () => {
+    const invite = seedInvite();
+    const state: FakeState = {
+      user: ADMIN,
+      memberships: [{ workspace_id: WS, user_id: ADMIN.id, role: "admin" }],
+      invites: [invite],
+    };
+    setup(state);
+    const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "accept" }));
+    expect(res.status).toBe(403);
+    expect(state.invites[0].status).toBe("pending");
+    expect(state.memberships).toHaveLength(1);
+  });
+
+  test("R1: legacy NULL-hash invite still accepted via email-match fallback", async () => {
+    const invite = seedInvite({ token: "legacy-raw", token_hash: undefined });
+    const state: FakeState = {
+      user: NEWBIE,
+      memberships: [],
+      invites: [invite],
+    };
+    setup(state, { rls: true });
+    const res = await invitePATCH(patchReq({ invite_id: invite.id, action: "accept" }));
+    expect(res.status).toBe(200);
+    expect(state.invites[0].status).toBe("accepted");
+    expect(state.memberships).toContainEqual({
+      workspace_id: WS,
+      user_id: NEWBIE.id,
+      role: "member",
+    });
   });
 });
 

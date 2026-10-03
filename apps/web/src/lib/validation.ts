@@ -14,8 +14,11 @@ export const inviteSchema = z.object({
 
 // Task 8: full invite lifecycle (accept/decline/resend/revoke) + list query.
 // Kept beside inviteSchema (T1) so POST body shape stays dashboard-compatible.
+// Task 8 R1: inviteIdSchema shared with the route DELETE query-param check.
+export const inviteIdSchema = z.string().uuid();
+
 export const inviteActionSchema = z.object({
-  invite_id: z.string().uuid(),
+  invite_id: inviteIdSchema,
   action: z.enum(["accept", "decline", "resend", "revoke"]),
 });
 

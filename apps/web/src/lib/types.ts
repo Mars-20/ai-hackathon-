@@ -40,7 +40,13 @@ export interface WorkspaceInvite {
   workspace_id: string;
   email: string;
   role: MemberRole;
-  token: string;         // secure random token for invite link
+  // Task 8 R1 hash-only: raw token is NEVER persisted for new rows
+  // (DB `token` stays NULL). Legacy rows may still carry a raw value
+  // until rotated/expired — never expose it.
+  token?: string | null;
+  // sha256 hex of the invite token (credential-equivalent, never
+  // returned by the API). NULL only on legacy pre-0004 rows.
+  token_hash?: string | null;
   status: InviteStatus;
   expires_at: string;
   invited_by: string;    // AuthUser.id
