@@ -81,6 +81,7 @@ export function isPlaceholder(v) {
 // user closes all tabs, a fresh dashboard page is opened for them.
 export async function waitForLogin(context, { match, homepage, timeoutMs = 600_000 }) {
   const start = Date.now();
+  let tick = 0;
   while (Date.now() - start < timeoutMs) {
     let pages = [];
     try {
@@ -88,12 +89,20 @@ export async function waitForLogin(context, { match, homepage, timeoutMs = 600_0
     } catch {
       throw new Error("Browser was closed. Re-run the script and keep the window open.");
     }
+    const urls = [];
     for (const p of pages) {
       try {
-        if (match(p.url())) return p;
+        const u = p.url();
+        urls.push(u.length > 120 ? `${u.slice(0, 120)}…` : u);
+        if (match(u)) return p;
       } catch {
         // dead page — ignore
       }
+    }
+    tick += 1;
+    if (tick % 15 === 1) {
+      const mins = ((Date.now() - start) / 60000).toFixed(1);
+      console.log(`…still waiting (${mins} min). Open pages: ${urls.join(" | ") || "(none)"}`);
     }
     if (!pages.length) {
       try {
