@@ -1,0 +1,97 @@
+[
+  {
+    "id": "gt-001",
+    "domain": "edtech",
+    "label": "Straightforward intake → assumption map → research",
+    "idea": "An AI tutoring platform for Egyptian high school students preparing for Thanaweyya Amma exams, using personalized practice questions and weak-spot identification. Monthly subscription of 150 EGP.",
+    "expected": {
+      "min_assumptions": 5,
+      "must_include_categories": ["desirability", "viability", "feasibility"],
+      "evidence_must_have_citations": true,
+      "verdict": "test_more"
+    }
+  },
+  {
+    "id": "gt-002",
+    "domain": "B2B SaaS",
+    "label": "Planted unsupported claim — verifier must catch it",
+    "idea": "B2B SaaS for Egyptian SME restaurant inventory management with WhatsApp integration.",
+    "planted_claim": "Egyptian restaurant market is worth $50 billion annually with 80% growth year on year",
+    "expected": {
+      "verifier_must_flag": true,
+      "unsupported_claims_gte": 1
+    }
+  },
+  {
+    "id": "gt-003",
+    "domain": "food-tech",
+    "label": "Leading question must be rejected",
+    "idea": "Subscription box for organic Egyptian produce delivered weekly to Cairo households.",
+    "injected_questions": [
+      "Don't you think fresh organic produce is obviously better than supermarket vegetables?",
+      "Wouldn't you agree that paying 20% more for organic is totally worth it?",
+      "Tell me about the last time you bought produce — where did you go and why?"
+    ],
+    "expected": {
+      "leading_question_rejection_count": 2,
+      "approved_question_count": 1
+    }
+  },
+  {
+    "id": "gt-004",
+    "domain": "health-wellness",
+    "label": "Thin evidence → must output Test More, not Go",
+    "idea": "Mental wellness app for Egyptian university students using CBT-based exercises.",
+    "uploaded_data": "User 1: 'Looks interesting'\nUser 2: 'Maybe I would use it'\nUser 3: 'Sounds good'",
+    "expected": {
+      "verdict": "test_more",
+      "must_not_be": "go",
+      "confidence": "low",
+      "reason": "All evidence is opinion (rung 1), sample < 15"
+    }
+  },
+  {
+    "id": "gt-005",
+    "domain": "general",
+    "label": "Off-domain / irrelevant input — router graceful handling",
+    "idea": "How do I cook koshari?",
+    "expected": {
+      "should_handle_gracefully": true,
+      "should_not_crash": true
+    }
+  },
+  {
+    "id": "gt-006",
+    "domain": "e-commerce",
+    "label": "Domain generalization — different vertical, same methodology",
+    "idea": "A marketplace platform connecting Egyptian craftspeople (pottery, textiles, jewelry) with international buyers via direct shipping.",
+    "expected": {
+      "min_assumptions": 5,
+      "evidence_must_have_citations": true,
+      "verdict_in": ["test_more", "iterate"]
+    }
+  },
+  {
+    "id": "gt-007",
+    "domain": "fintech",
+    "label": "Strong primary evidence → eligible for Go verdict",
+    "idea": "Mobile microloans for Egyptian gig workers (Uber, Talabat drivers) using gig platform data as credit scoring.",
+    "uploaded_data": "30 drivers interviewed. 18 said they actively sought a loan in the past 3 months and were rejected by banks. 12 agreed to a 3-month pilot and provided contact information. 5 pre-signed an agreement for a 500 EGP trial loan.",
+    "expected": {
+      "verdict_in": ["go", "iterate"],
+      "confidence_in": ["medium", "high"],
+      "primary_evidence_count_gte": 2,
+      "evidence_strength_includes": ["time_given", "contact_shared", "commitment"]
+    }
+  },
+  {
+    "id": "gt-008",
+    "domain": "logistics",
+    "label": "Feasibility-heavy assumption map",
+    "idea": "Last-mile delivery aggregator for informal Cairo neighborhoods using motorcycle riders and a route-optimization AI.",
+    "expected": {
+      "feasibility_assumptions_gte": 2,
+      "must_mention_regulatory_or_ops": true
+    }
+  }
+]

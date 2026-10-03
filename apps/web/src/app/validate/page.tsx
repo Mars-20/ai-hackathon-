@@ -1,0 +1,1051 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  Clock,
+  ExternalLink,
+  FileText,
+  FlaskConical,
+  Globe,
+  Info,
+  Layers,
+  LineChart,
+  Loader2,
+  Search,
+  Shield,
+  Target,
+  TrendingUp,
+  Upload,
+  Users,
+  XCircle,
+  Zap,
+} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import type {
+  Startup,
+  Assumption,
+  Evidence,
+  Experiment,
+  Decision,
+  TraceEvent,
+  SessionPhase,
+} from "@/lib/types";
+import {
+  cn,
+  formatMs,
+  getVerdictColor,
+  getRiskColor,
+  STRENGTH_LABEL,
+  STRENGTH_COLOR,
+  truncate,
+} from "@/lib/utils";
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function PhaseIndicator({ phase }: { phase: SessionPhase }) {
+  const phases: { id: SessionPhase; label: string; icon: React.ReactNode }[] = [
+    { id: "intake", label: "Intake", icon: <Brain className="w-3.5 h-3.5" /> },
+    { id: "mapping", label: "Mapping", icon: <Target className="w-3.5 h-3.5" /> },
+    { id: "research", label: "Research", icon: <Search className="w-3.5 h-3.5" /> },
+    { id: "experiment", label: "Experiment", icon: <FlaskConical className="w-3.5 h-3.5" /> },
+    { id: "evidence", label: "Evidence", icon: <Users className="w-3.5 h-3.5" /> },
+    { id: "verifying", label: "Verifying", icon: <Shield className="w-3.5 h-3.5" /> },
+    { id: "memo", label: "Decision", icon: <LineChart className="w-3.5 h-3.5" /> },
+  ];
+
+  const activeIdx = phases.findIndex((p) => p.id === phase);
+
+  return (
+    <div className="flex items-center gap-0">
+      {phases.map((p, i) => {
+        const isDone = i < activeIdx;
+        const isActive = p.id === phase;
+        return (
+          <div key={p.id} className="flex items-center">
+            <div
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all",
+                isDone && "text-green-400",
+                isActive && "bg-brand-500/20 text-brand-400 border border-brand-500/30",
+                !isDone && !isActive && "text-slate-500"
+              )}
+            >
+              {isDone ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+              ) : isActive ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                p.icon
+              )}
+              <span className="hidden sm:inline">{p.label}</span>
+            </div>
+            {i < phases.length - 1 && (
+              <div
+                className={cn(
+                  "w-4 h-px mx-0.5 transition-all",
+                  i < activeIdx ? "bg-green-500/50" : "bg-slate-700"
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TracePanel({ events }: { events: TraceEvent[] }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [events.length]);
+
+  const actorColor: Record<string, string> = {
+    router: "#748ffc",
+    planner: "#9775fa",
+    executor: "#74c0fc",
+    verifier: "#ffa94d",
+    tool: "#63e6be",
+  };
+
+  const getActorColor = (actor: string) => {
+    for (const [k, v] of Object.entries(actorColor)) {
+      if (actor.startsWith(k)) return v;
+    }
+    return "#94a3b8";
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-brand-400" />
+          <span className="text-xs font-semibold text-slate-300">Trace Log</span>
+          <span className="text-xs text-slate-500">({events.length} events)</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-1.5 font-mono text-xs">
+        {events.length === 0 && (
+          <div className="text-slate-500 text-center py-8">Waiting for agent activity...</div>
+        )}
+        {events.map((e) => {
+          const color = getActorColor(e.actor);
+          const isOpen = expanded === e.id;
+          const payloadStr = JSON.stringify(e.payload, null, 2);
+          return (
+            <div
+              key={e.id}
+              className="rounded-lg glass overflow-hidden border-l-2"
+              style={{ borderLeftColor: color }}
+            >
+              <button
+                onClick={() => setExpanded(isOpen ? null : e.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+              >
+                <span style={{ color }} className="font-semibold text-xs shrink-0">
+                  {e.actor.replace("skill:", "")}
+                </span>
+                <span className="text-slate-500 shrink-0">/</span>
+                <span className="text-slate-300 truncate">{e.event_type}</span>
+                {e.latency_ms !== undefined && (
+                  <span className="ml-auto text-slate-500 shrink-0">{formatMs(e.latency_ms)}</span>
+                )}
+                {isOpen ? (
+                  <ChevronUp className="w-3 h-3 text-slate-500 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
+                )}
+              </button>
+              {isOpen && (
+                <div className="px-3 pb-3">
+                  <pre className="text-slate-400 text-xs overflow-x-auto whitespace-pre-wrap max-h-48">
+                    {truncate(payloadStr, 1500)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+function AssumptionCard({ a, idx }: { a: Assumption; idx: number }) {
+  const [open, setOpen] = useState(false);
+  const riskColor = getRiskColor(a.risk_level);
+  const catIcons: Record<string, React.ReactNode> = {
+    desirability: <Users className="w-3.5 h-3.5" />,
+    viability: <TrendingUp className="w-3.5 h-3.5" />,
+    feasibility: <Layers className="w-3.5 h-3.5" />,
+  };
+
+  return (
+    <div
+      className="glass rounded-xl overflow-hidden border border-white/5 hover:border-white/10 transition-all animate-slide-up"
+      style={{ animationDelay: `${idx * 60}ms`, borderLeftColor: riskColor, borderLeftWidth: 2 }}
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-start gap-3 p-4 text-left"
+      >
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+          <span
+            className="badge shrink-0"
+            style={{
+              background: `${riskColor}20`,
+              color: riskColor,
+              border: `1px solid ${riskColor}40`,
+            }}
+          >
+            {a.risk_level}
+          </span>
+          <span className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
+            {catIcons[a.category]}
+            {a.category}
+          </span>
+          <p className="text-sm text-slate-200 truncate flex-1">{a.statement}</p>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+      </button>
+      {open && a.reasoning && (
+        <div className="px-4 pb-4">
+          <div className="text-xs text-slate-400 p-3 glass rounded-lg border-l-2 border-brand-500/50">
+            <strong className="text-brand-400">Why this risk level: </strong>
+            {a.reasoning}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
+  const strengthColor = STRENGTH_COLOR[e.strength];
+  const strengthLabel = STRENGTH_LABEL[e.strength];
+  return (
+    <div
+      className="glass rounded-xl p-4 border border-white/5 animate-slide-up"
+      style={{ animationDelay: `${idx * 40}ms` }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+          style={{ background: strengthColor }}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-slate-200 mb-2">{e.claim}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="badge text-xs"
+              style={{
+                background: `${strengthColor}20`,
+                color: strengthColor,
+                border: `1px solid ${strengthColor}40`,
+              }}
+            >
+              {strengthLabel}
+            </span>
+            <span className="text-xs text-slate-500 uppercase tracking-wider">
+              {e.evidence_type}
+            </span>
+            {e.sample_size && e.sample_size > 1 && (
+              <span className="text-xs text-slate-500">n={e.sample_size}</span>
+            )}
+            {e.source_url && (
+              <a
+                href={e.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cite-link ml-auto"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Source
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExperimentPanel({ exp }: { exp: Experiment }) {
+  const [showQuestions, setShowQuestions] = useState(true);
+  return (
+    <div className="space-y-4">
+      <div className="glass rounded-xl p-5 border border-white/5">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div>
+            <h3 className="font-bold text-slate-100 mb-1">{exp.design.title}</h3>
+            <p className="text-sm text-slate-400">{exp.design.description}</p>
+          </div>
+          <span className="badge badge-test shrink-0 capitalize">{exp.type}</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+          {exp.design.target_sample_size && (
+            <div className="glass rounded-lg p-3">
+              <div className="text-xs text-slate-500 mb-1">Target sample</div>
+              <div className="text-lg font-bold text-brand-400">n≥{exp.design.target_sample_size}</div>
+            </div>
+          )}
+          {exp.design.estimated_cost && (
+            <div className="glass rounded-lg p-3">
+              <div className="text-xs text-slate-500 mb-1">Est. cost</div>
+              <div className="text-lg font-bold text-green-400">{exp.design.estimated_cost}</div>
+            </div>
+          )}
+          {exp.design.time_to_run && (
+            <div className="glass rounded-lg p-3">
+              <div className="text-xs text-slate-500 mb-1">Time to run</div>
+              <div className="text-sm font-bold text-slate-200">{exp.design.time_to_run}</div>
+            </div>
+          )}
+        </div>
+        {exp.design.success_criteria && (
+          <div className="mt-3 p-3 glass rounded-lg border-l-2 border-green-500/50">
+            <div className="text-xs text-slate-500 mb-1">Success criteria</div>
+            <div className="text-sm text-slate-300">{exp.design.success_criteria}</div>
+          </div>
+        )}
+      </div>
+
+      {exp.design.questions && exp.design.questions.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowQuestions(!showQuestions)}
+            className="flex items-center gap-2 text-sm font-medium text-slate-300 mb-3 hover:text-white transition-colors"
+          >
+            <ClipboardList className="w-4 h-4 text-brand-400" />
+            Interview / Survey Questions ({exp.design.questions.length})
+            {showQuestions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          {showQuestions && (
+            <div className="space-y-2">
+              {exp.design.questions.map((q, i) => (
+                <div
+                  key={q.id || i}
+                  className={cn(
+                    "glass rounded-xl p-4 border",
+                    q.is_leading ? "border-red-500/30 bg-red-500/5" : "border-white/5"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-xs font-bold text-slate-500 shrink-0 mt-0.5">Q{i + 1}</span>
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-200">{q.text}</p>
+                      {q.is_leading && q.warning && (
+                        <div className="mt-2 flex items-start gap-1.5 text-xs text-red-400">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>{q.warning}</span>
+                        </div>
+                      )}
+                      {!q.is_leading && (
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-green-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Approved by bias validator</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-slate-500 capitalize shrink-0">{q.type}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DecisionMemoPanel({ decision }: { decision: Decision }) {
+  const verdictColor = getVerdictColor(decision.verdict);
+  const verdictEmoji: Record<string, string> = {
+    go: "🚀",
+    iterate: "🔄",
+    stop: "🛑",
+    test_more: "🔬",
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 border animate-slide-up" style={{ borderColor: `${verdictColor}40` }}>
+      <div className="flex items-center gap-4 mb-6">
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
+          style={{ background: `${verdictColor}20` }}
+        >
+          {verdictEmoji[decision.verdict]}
+        </div>
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className="text-3xl font-black uppercase tracking-wider"
+              style={{ color: verdictColor }}
+            >
+              {decision.verdict.replace("_", " ")}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span
+              className="badge"
+              style={{
+                background: `${verdictColor}20`,
+                color: verdictColor,
+                border: `1px solid ${verdictColor}40`,
+              }}
+            >
+              {decision.confidence} confidence
+            </span>
+            {decision.sample_size !== undefined && decision.sample_size > 0 && (
+              <span className="text-xs text-slate-500">n={decision.sample_size}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Rationale</div>
+          <p className="text-sm text-slate-300 leading-relaxed">{decision.rationale}</p>
+        </div>
+
+        {decision.next_experiment && (
+          <div className="p-4 glass rounded-xl border-l-2 border-brand-500/60">
+            <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+              Next cheapest experiment
+            </div>
+            <p className="text-sm text-slate-200">{decision.next_experiment}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
+function ValidateDashboard() {
+  const searchParams = useSearchParams();
+  const initialIdea = searchParams.get("idea") ?? "";
+  const startupIdParam = searchParams.get("startup_id") ?? "";
+
+  const [idea, setIdea] = useState(initialIdea);
+  const [uploadedData, setUploadedData] = useState("");
+  const [phase, setPhase] = useState<SessionPhase>("idle");
+  const [startup, setStartup] = useState<Startup | null>(null);
+  const [assumptions, setAssumptions] = useState<Assumption[]>([]);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [experiment, setExperiment] = useState<Experiment | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [trace, setTrace] = useState<TraceEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"results" | "trace">("results");
+  const [stats, setStats] = useState<{
+    tool_calls?: number;
+    evidence_count?: number;
+    verifier_approved?: boolean;
+    unsupported_claims?: number;
+  }>({});
+
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Resume: load ?startup_id= via /api/history detail, fallback to localStorage.
+  useEffect(() => {
+    if (!startupIdParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/history?startup_id=${encodeURIComponent(startupIdParam)}`);
+        if (!res.ok) throw new Error(`history ${res.status}`);
+        const json = await res.json();
+        const s = json.data;
+        if (!s || cancelled) return;
+        setStartup(s);
+        setAssumptions(s.assumptions ?? []);
+        setEvidence(s.evidence ?? []);
+        setExperiment(s.experiments?.[0] ?? s.experiment ?? null);
+        setDecision(s.decisions?.[0] ?? s.decision ?? null);
+        setPhase("done");
+      } catch {
+        try {
+          const raw = localStorage.getItem(`startup:${startupIdParam}`);
+          if (!raw || cancelled) return;
+          const saved = JSON.parse(raw);
+          if (saved.startup) setStartup(saved.startup);
+          if (saved.assumptions) setAssumptions(saved.assumptions);
+          if (saved.evidence) setEvidence(saved.evidence);
+          if (saved.experiment) setExperiment(saved.experiment);
+          if (saved.decision) {
+            setDecision(saved.decision);
+            setPhase("done");
+          }
+        } catch {}
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [startupIdParam]);
+
+  const persistStartupSnapshot = useCallback(
+    async (snapshot: {
+      startup: Startup;
+      assumptions: Assumption[];
+      evidence: Evidence[];
+      experiment: Experiment | null;
+      decision: Decision | null;
+    }) => {
+      // Prefer server persistence; fall back to localStorage when the
+      // endpoint does not exist (e.g. 404) or the request fails.
+      try {
+        const saveRes = await fetch("/api/startups/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startup: snapshot.startup }),
+        });
+        if (!saveRes.ok) throw new Error(`save ${saveRes.status}`);
+      } catch {
+        try {
+          localStorage.setItem(`startup:${snapshot.startup.id}`, JSON.stringify(snapshot));
+        } catch {}
+      }
+    },
+    []
+  );
+
+  const runAgent = useCallback(async () => {
+    if (!idea.trim() || isLoading) return;
+    setIsLoading(true);
+    setError(null);
+    setStartup(null);
+    setAssumptions([]);
+    setEvidence([]);
+    setExperiment(null);
+    setDecision(null);
+    setTrace([]);
+    setPhase("intake");
+    setStats({});
+
+    abortRef.current = new AbortController();
+
+    // Identity from Supabase session (browser env uses NEXT_PUBLIC_ keys via
+    // the shared client). Never invent or hardcode a user id.
+    let workspace_id: string | undefined;
+    let user_id: string | undefined;
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      user_id = session?.user?.id;
+      const stored = localStorage.getItem("active_workspace_id");
+      if (stored) {
+        workspace_id = stored;
+      } else if (user_id) {
+        const { data: memberships } = await supabase
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("user_id", user_id)
+          .limit(1);
+        workspace_id = (memberships as Array<{ workspace_id: string }> | null)?.[0]?.workspace_id;
+      }
+    } catch {}
+
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea, uploaded_data: uploadedData, workspace_id, user_id }),
+        signal: abortRef.current.signal,
+      });
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value);
+        const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            switch (data.type) {
+              case "phase":
+                setPhase(data.phase);
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "startup":
+                setStartup(data.startup);
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "assumptions":
+                setAssumptions(data.assumptions);
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "evidence":
+              case "primary_evidence":
+                setEvidence((prev) => {
+                  const newIds = new Set(data.evidence.map((e: Evidence) => e.id));
+                  const filtered = prev.filter((e) => !newIds.has(e.id));
+                  return [...filtered, ...data.evidence];
+                });
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "experiment":
+                setExperiment(data.experiment);
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "done":
+                setStartup(data.startup);
+                setAssumptions(data.assumptions);
+                setEvidence(data.evidence);
+                setExperiment(data.experiment);
+                setDecision(data.decision);
+                setTrace(data.trace);
+                setStats(data.stats || {});
+                setPhase("done");
+                void persistStartupSnapshot({
+                  startup: data.startup,
+                  assumptions: data.assumptions ?? [],
+                  evidence: data.evidence ?? [],
+                  experiment: data.experiment ?? null,
+                  decision: data.decision ?? null,
+                });
+                break;
+              case "error":
+                setError(data.message);
+                setPhase("error");
+                if (data.trace) setTrace([...data.trace]);
+                break;
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setError(String(err));
+        setPhase("error");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [idea, uploadedData, isLoading, persistStartupSnapshot]);
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    setIsLoading(false);
+    if (phase !== "done") setPhase("idle");
+  };
+
+  const primaryEvidence = evidence.filter((e) => e.evidence_type === "primary");
+  const secondaryEvidence = evidence.filter((e) => e.evidence_type === "secondary");
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* ── Top bar ── */}
+      <header className="glass border-b border-white/5 sticky top-0 z-40">
+        <div className="container-app h-14 flex items-center gap-4">
+          <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            <Brain className="w-5 h-5 text-brand-400" />
+            <span className="font-bold text-sm">
+              Validation <span className="gradient-text">Copilot</span>
+            </span>
+          </Link>
+
+          <div className="flex-1 overflow-x-auto">
+            {isLoading || phase !== "idle" ? (
+              <PhaseIndicator phase={phase} />
+            ) : (
+              <span className="text-xs text-slate-500">Ready to validate</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {stats.verifier_approved !== undefined && (
+              <div className={cn(
+                "flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg",
+                stats.verifier_approved ? "text-green-400 bg-green-500/10" : "text-yellow-400 bg-yellow-500/10"
+              )}>
+                <Shield className="w-3.5 h-3.5" />
+                Verifier {stats.verifier_approved ? "✓" : `⚠ ${stats.unsupported_claims} flags`}
+              </div>
+            )}
+            {stats.tool_calls !== undefined && (
+              <div className="text-xs text-slate-500 px-2 py-1 glass rounded-lg">
+                {stats.tool_calls}/{15} calls
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 flex">
+        {/* ── Left sidebar — Input ── */}
+        <aside className="w-80 shrink-0 glass border-r border-white/5 p-4 flex flex-col gap-4 overflow-y-auto">
+          <div>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
+              Startup Idea
+            </label>
+            <textarea
+              id="idea-textarea"
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+              placeholder="Describe your startup idea in detail. What problem does it solve? Who is the target customer? What's your business model?"
+              rows={6}
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-brand-500/50 resize-none transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Upload className="w-3.5 h-3.5" />
+              Primary Evidence (optional)
+            </label>
+            <textarea
+              id="evidence-textarea"
+              value={uploadedData}
+              onChange={(e) => setUploadedData(e.target.value)}
+              placeholder="Paste interview notes, survey responses, or CSV data here. The agent will analyze the real evidence and factor it into the decision memo."
+              rows={5}
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-brand-500/50 resize-none transition-colors"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Paste CSV, interview notes, or survey results
+            </p>
+          </div>
+
+          <button
+            onClick={isLoading ? handleStop : runAgent}
+            disabled={!idea.trim() && !isLoading}
+            id="run-agent-btn"
+            className={cn(
+              "w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all",
+              isLoading
+                ? "bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30"
+                : "btn-glow text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            )}
+          >
+            {isLoading ? (
+              <>
+                <XCircle className="w-4 h-4" />
+                Stop Agent
+              </>
+            ) : (
+              <>
+                <Brain className="w-4 h-4" />
+                Run Validation
+              </>
+            )}
+          </button>
+
+          {/* Example ideas */}
+          <div>
+            <div className="text-xs text-slate-500 mb-2">Try an example:</div>
+            <div className="space-y-1.5">
+              {[
+                "AI tutoring app for Egyptian high school students preparing for Thanaweyya Amma",
+                "B2B SaaS platform for restaurant inventory management in MENA",
+                "Subscription box for organic Egyptian produce delivered to Cairo households",
+              ].map((ex, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIdea(ex)}
+                  className="w-full text-left text-xs text-slate-400 hover:text-brand-400 p-2 rounded-lg hover:bg-brand-500/10 transition-colors"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Stats */}
+          {phase === "done" && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Session Stats</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="glass rounded-lg p-2 text-center">
+                  <div className="text-base font-bold text-brand-400">{evidence.length}</div>
+                  <div className="text-xs text-slate-500">Evidence items</div>
+                </div>
+                <div className="glass rounded-lg p-2 text-center">
+                  <div className="text-base font-bold text-slate-200">{assumptions.length}</div>
+                  <div className="text-xs text-slate-500">Assumptions</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* ── Main content ── */}
+        <main className="flex-1 min-w-0 flex flex-col">
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-white/5">
+            {(["results", "trace"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setActiveTab(t)}
+                className={cn(
+                  "px-4 py-2 rounded-t-lg text-sm font-medium transition-all border-b-2",
+                  activeTab === t
+                    ? "text-brand-400 border-brand-500 bg-brand-500/10"
+                    : "text-slate-500 border-transparent hover:text-slate-300"
+                )}
+              >
+                {t === "results" ? (
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    Results
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    Trace Log
+                    {trace.length > 0 && (
+                      <span className="text-xs bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded-full">
+                        {trace.length}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "trace" ? (
+            <div className="flex-1 min-h-0">
+              <TracePanel events={trace} />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {/* Idle state */}
+              {phase === "idle" && !startup && (
+                <div className="flex flex-col items-center justify-center h-full min-h-80 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-brand-500/10 flex items-center justify-center mb-4">
+                    <Brain className="w-8 h-8 text-brand-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-200 mb-2">Ready to validate</h2>
+                  <p className="text-slate-400 text-sm max-w-sm">
+                    Describe your startup idea on the left and click{" "}
+                    <strong className="text-brand-400">Run Validation</strong> to start the AI agent.
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3 justify-center text-xs text-slate-500">
+                    {[
+                      "Assumption mapping",
+                      "Grounded research",
+                      "Bias-free experiments",
+                      "Evidence analysis",
+                    ].map((f) => (
+                      <span key={f} className="flex items-center gap-1.5 glass px-3 py-1.5 rounded-full">
+                        <CheckCircle2 className="w-3 h-3 text-green-400" />
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Error state */}
+              {error && (
+                <div className="glass rounded-xl p-4 border border-red-500/30 flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-sm font-semibold text-red-400 mb-1">Agent Error</div>
+                    <div className="text-sm text-slate-300">{error}</div>
+                    <div className="text-xs text-slate-500 mt-2">
+                      Make sure GEMINI_API_KEY is set in your .env.local file.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading skeleton */}
+              {isLoading && !startup && (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="glass rounded-xl p-5">
+                      <div className="shimmer h-4 rounded-lg mb-3 w-1/3" style={{ background: "rgba(255,255,255,0.05)" }} />
+                      <div className="shimmer h-3 rounded mb-2" style={{ background: "rgba(255,255,255,0.03)" }} />
+                      <div className="shimmer h-3 rounded w-2/3" style={{ background: "rgba(255,255,255,0.03)" }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Startup card */}
+              {startup && (
+                <section className="animate-fade-in">
+                  <div className="glass rounded-2xl p-5 border border-white/5">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500/30 to-accent-500/30 flex items-center justify-center shrink-0">
+                        <Globe className="w-6 h-6 text-brand-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="text-xl font-bold text-slate-100 mb-1">{startup.name}</h2>
+                        <p className="text-slate-300 text-sm mb-3">{startup.one_liner}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300">
+                            📍 {startup.domain}
+                          </span>
+                          {startup.target_customer && (
+                            <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300">
+                              👤 {startup.target_customer}
+                            </span>
+                          )}
+                          <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300 capitalize">
+                            🚦 {startup.stage}
+                          </span>
+                          {startup.business_model && (
+                            <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300">
+                              💰 {startup.business_model}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Assumption map */}
+              {assumptions.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Target className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">
+                      Assumption Map ({assumptions.length})
+                    </h3>
+                    {isLoading && phase === "mapping" && (
+                      <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin" />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {assumptions.map((a, i) => (
+                      <AssumptionCard key={a.id} a={a} idx={i} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Secondary Evidence */}
+              {secondaryEvidence.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Search className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">
+                      Market Research — {secondaryEvidence.length} grounded claims
+                    </h3>
+                    <div className="flex items-center gap-1 text-xs text-slate-500 ml-auto">
+                      <Info className="w-3 h-3" />
+                      Secondary only — not sufficient for Go verdict
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {secondaryEvidence.slice(0, 8).map((e, i) => (
+                      <EvidenceCard key={e.id} e={e} idx={i} />
+                    ))}
+                    {secondaryEvidence.length > 8 && (
+                      <p className="text-xs text-slate-500 text-center py-2">
+                        +{secondaryEvidence.length - 8} more evidence items
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Experiment */}
+              {experiment && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <FlaskConical className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">Validation Experiment</h3>
+                  </div>
+                  <ExperimentPanel exp={experiment} />
+                </section>
+              )}
+
+              {/* Primary Evidence */}
+              {primaryEvidence.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="w-4 h-4 text-green-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">
+                      Primary Evidence — {primaryEvidence.length} items
+                    </h3>
+                    <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                      From real respondents
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {primaryEvidence.map((e, i) => (
+                      <EvidenceCard key={e.id} e={e} idx={i} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Decision Memo */}
+              {decision && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <LineChart className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">Decision Memo</h3>
+                  </div>
+                  <DecisionMemoPanel decision={decision} />
+                </section>
+              )}
+
+              {/* Stats footer */}
+              {phase === "done" && stats.tool_calls !== undefined && (
+                <div className="glass rounded-xl p-4 border border-white/5">
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Clock className="w-3.5 h-3.5" />
+                      {stats.tool_calls} tool calls used
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Shield className="w-3.5 h-3.5" />
+                      Verifier: {stats.verifier_approved ? "✓ Approved" : `⚠ ${stats.unsupported_claims} flags`}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <FileText className="w-3.5 h-3.5" />
+                      {stats.evidence_count} evidence items collected
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default function ValidatePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+      </div>
+    }>
+      <ValidateDashboard />
+    </Suspense>
+  );
+}
