@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { searchQuerySchema } from "@/lib/validation";
 import { escapePostgrest } from "../../../../../../packages/admin/escape";
 
 export async function GET(request: NextRequest) {
@@ -19,14 +20,15 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const q     = searchParams.get("q")?.trim() || "";
-  const type  = searchParams.get("type") || "all";
-  // Cap per-type results at 20 (server-side limit 20).
-  const limit = Math.min(20, Math.max(1, parseInt(searchParams.get("limit") || "5")));
-
-  if (q.length < 2) {
-    return NextResponse.json({ error: "Query must be at least 2 characters" }, { status: 400 });
+  const parsed = searchQuerySchema.safeParse({
+    q: searchParams.get("q") ?? "",
+    type: searchParams.get("type") ?? "all",
+    limit: searchParams.get("limit") ?? "5",
+  });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid query", issues: parsed.error.issues }, { status: 400 });
   }
+  const { q, type, limit } = parsed.data;
 
   // Get workspace IDs
   const { data: memberships } = await supabase

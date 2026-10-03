@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { inviteSchema, startupSaveSchema } from "@/lib/validation";
+import { inviteSchema, startupSaveSchema, searchQuerySchema } from "@/lib/validation";
 
 describe("inviteSchema", () => {
   test("rejects invalid role with 400-shaped issues", () => {
@@ -29,5 +29,32 @@ describe("inviteSchema", () => {
   test("startup rejects bad stage", () => {
     const r = startupSaveSchema.safeParse({ name: "X", stage: "foobar" });
     expect(r.success).toBe(false);
+  });
+  test("startup rejects invalid workspace_id uuid", () => {
+    const r = startupSaveSchema.safeParse({ name: "X", workspace_id: "not-a-uuid" });
+    expect(r.success).toBe(false);
+  });
+  test("startup allows missing workspace_id (personal fallback to owner check)", () => {
+    const r = startupSaveSchema.safeParse({ name: "Personal" });
+    expect(r.success).toBe(true);
+  });
+  test("startup trims name and rejects overlong name", () => {
+    const ok = startupSaveSchema.safeParse({ name: "  X  " });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.name).toBe("X");
+    const tooLong = startupSaveSchema.safeParse({ name: "a".repeat(201) });
+    expect(tooLong.success).toBe(false);
+  });
+  test("searchQuerySchema whitelists plural type enum and defaults limit 5", () => {
+    const bad = searchQuerySchema.safeParse({ q: "test", type: "startup" });
+    expect(bad.success).toBe(false);
+    const ok = searchQuerySchema.safeParse({ q: "test", type: "startups" });
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.type).toBe("startups");
+      expect(ok.data.limit).toBe(5);
+    }
+    const short = searchQuerySchema.safeParse({ q: "x" });
+    expect(short.success).toBe(false);
   });
 });

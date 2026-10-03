@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { historyQuerySchema, workspaceIdSchema } from "@/lib/validation";
 import { escapePostgrest } from "../../../../../../packages/admin/escape";
 
 export async function GET(request: NextRequest) {
@@ -29,20 +30,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Parse query params
+  // Parse query params (minimal zod whitelist; counts/RPC owned by Task 6).
   const { searchParams } = new URL(request.url);
-  const q          = searchParams.get("q")?.trim() || "";
-  const verdicts   = searchParams.get("verdict")?.split(",").filter(Boolean) || [];
-  const stages     = searchParams.get("stage")?.split(",").filter(Boolean) || [];
-  const confidences = searchParams.get("confidence")?.split(",").filter(Boolean) || [];
-  const from       = searchParams.get("from") || "";
-  const to         = searchParams.get("to") || "";
-  const sort       = searchParams.get("sort") || "created_at";
-  const order      = searchParams.get("order") === "asc" ? true : false;
-  const page       = Math.max(1, parseInt(searchParams.get("page") || "1"));
-  const limit      = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")));
-  const offset     = (page - 1) * limit;
+  const rawQ = searchParams.get("q")?.trim() || "";
+  const rawVerdicts = searchParams.get("verdict")?.split(",").filter(Boolean) || [];
+  const rawStages = searchParams.get("stage")?.split(",").filter(Boolean) || [];
+  const rawConfidences = searchParams.get("confidence")?.split(",").filter(Boolean) || [];
+  const parsedFilters = historyQuerySchema.safeParse({
+    q: rawQ,
+    verdicts: rawVerdicts,
+    stages: rawStages,
+    confidences: rawConfidences,
+    sort: searchParams.get("sort") || "created_at",
+    order: searchParams.get("order") || "desc",
+    page: searchParams.get("page") || "1",
+    limit: searchParams.get("limit") || "20",
+  });
+  if (!parsedFilters.success) {
+    return NextResponse.json({ error: "Invalid query", issues: parsedFilters.error.issues }, { status: 400 });
+  }
+  const { q, verdicts, stages, confidences, sort, order: orderStr, page, limit } = parsedFilters.data;
+  const order = orderStr === "asc" ? true : false;
+  const from = searchParams.get("from") || "";
+  const to = searchParams.get("to") || "";
+  const offset = (page - 1) * limit;
   const startupIdParam = searchParams.get("startup_id")?.trim() || "";
+  if (startupIdParam && !workspaceIdSchema.safeParse(startupIdParam).success) {
+    return NextResponse.json({ error: "Invalid startup_id" }, { status: 400 });
+  }
 
   // Get user's workspace IDs
   const { data: memberships } = await supabase
