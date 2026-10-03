@@ -13,7 +13,7 @@ export interface AuthUser {
 
 // ── Workspace (multi-tenant root entity) ─────────────────────────────────────
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
-export type InviteStatus = "pending" | "accepted" | "declined" | "expired";
+export type InviteStatus = "pending" | "accepted" | "declined" | "expired" | "revoked";
 
 export interface Workspace {
   id: string;

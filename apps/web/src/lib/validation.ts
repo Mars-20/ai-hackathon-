@@ -12,6 +12,17 @@ export const inviteSchema = z.object({
   role: z.enum(["owner", "admin", "member", "viewer"]),
 });
 
+// Task 8: full invite lifecycle (accept/decline/resend/revoke) + list query.
+// Kept beside inviteSchema (T1) so POST body shape stays dashboard-compatible.
+export const inviteActionSchema = z.object({
+  invite_id: z.string().uuid(),
+  action: z.enum(["accept", "decline", "resend", "revoke"]),
+});
+
+export const inviteListQuerySchema = z.object({
+  workspace_id: workspaceIdSchema,
+});
+
 export const startupSaveSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(200),
