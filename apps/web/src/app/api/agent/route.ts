@@ -1079,6 +1079,16 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
         unsupported_claims: gate.warnings,
       })
     );
+  } else if (gate.warnings.length > 0) {
+    // Verdict preserved (stop/iterate/test_more are never softened by the
+    // gate) — still leave an audit trail of the flagged claims.
+    trace.push(
+      makeTrace("verifier", "verification", {
+        action: "verdict_preserved",
+        reason: `verifier: ${gate.warnings.length} unsupported claim(s), verdict ${verdict} preserved (max-severity)`,
+        unsupported_claims: gate.warnings,
+      })
+    );
   }
   verdict = gate.verdict;
   const warningsSuffix =
