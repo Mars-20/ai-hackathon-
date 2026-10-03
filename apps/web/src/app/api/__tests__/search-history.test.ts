@@ -66,7 +66,7 @@ describe("search: DB counts, chronological order, pagination (Task 6)", () => {
     expect(j.total_hits).toBe(20);
   });
 
-  test("RED: paginates in the DB via range (page 2)", async () => {
+  test("RED: paginates via rank-then-slice window (page 2 fetches from 0)", async () => {
     const calls: Call[] = [];
     mockSupabase({
       workspace_members: { data: [{ workspace_id: "w1" }] },
@@ -77,7 +77,49 @@ describe("search: DB counts, chronological order, pagination (Task 6)", () => {
     await searchGET(new NextRequest("http://x/api/search?q=test&type=startups&limit=2&page=2"));
     const ranges = calls.filter((c) => c.op === "range");
     expect(ranges.length).toBeGreaterThan(0);
-    expect(ranges[0].args).toEqual([2, 3]);
+    // Rank-then-slice: fetch candidate window 0..offset+limit-1, rank globally,
+    // then slice the page — never re-sort an already-paginated DB slice.
+    expect(ranges[0].args).toEqual([0, 3]);
+  });
+
+  test("R1/5: pages is consistent with total, pages_per_type covers deepest feed", async () => {
+    const calls: Call[] = [];
+    mockSupabase({
+      workspace_members: { data: [{ workspace_id: "w1" }] },
+      startups: { data: [], count: 10 },
+      assumptions: { data: [], count: 7 },
+      evidence: { data: [], count: 3 },
+    }, calls);
+    const res = await searchGET(new NextRequest("http://x/api/search?q=test&type=all&limit=5"));
+    const j = await res.json();
+    // total = 10+7+3 = 20 → pages = ceil(20/5) = 4 (consistent with total);
+    // pages_per_type = ceil(max(10,7,3)/5) = 2 (deepest single-type feed).
+    expect(j.meta.total).toBe(20);
+    expect(j.meta.pages).toBe(4);
+    expect(j.meta.pages_per_type).toBe(2);
+  });
+
+  test("R1/5: rank-then-slice returns the globally-ranked page tail", async () => {
+    const calls: Call[] = [];
+    mockSupabase({
+      workspace_members: { data: [{ workspace_id: "w1" }] },
+      startups: {
+        data: [
+          { id: "oldest", name: "test", one_liner: "", domain: "", created_at: "2026-01-01T00:00:00Z" },
+          { id: "newest", name: "test", one_liner: "", domain: "", created_at: "2026-04-01T00:00:00Z" },
+          { id: "mid2", name: "test", one_liner: "", domain: "", created_at: "2026-03-01T00:00:00Z" },
+          { id: "mid1", name: "test", one_liner: "", domain: "", created_at: "2026-02-01T00:00:00Z" },
+        ],
+        count: 4,
+      },
+      assumptions: { data: [], count: 0 },
+      evidence: { data: [], count: 0 },
+    }, calls);
+    // All score equally (contain q) → global rank is newest-first;
+    // page 2 (limit 2) must be the 3rd+4th newest, not a re-ranked DB slice.
+    const res = await searchGET(new NextRequest("http://x/api/search?q=test&type=startups&limit=2&page=2"));
+    const j = await res.json();
+    expect(j.results.startups.map((s: Row) => s.id)).toEqual(["mid1", "oldest"]);
   });
 
   test("RED: orders chronologically in the DB query", async () => {
@@ -155,6 +197,22 @@ describe("history: DB count drives total/pages, deterministic order (Task 6)", (
     const orders = calls.filter((c) => c.table === "startups" && c.op === "order");
     expect(orders.length).toBeGreaterThanOrEqual(2);
     expect(orders[0].args[0]).toBe("created_at");
+  });
+
+  test("R1/5: history order uses an explicit ascending boolean (asc/desc)", async () => {
+    for (const [orderParam, expected] of [["asc", true], ["desc", false]] as const) {
+      const calls: Call[] = [];
+      mockSupabase({
+        workspace_members: { data: [{ workspace_id: "w1" }] },
+        startups: { data: [], count: 0 },
+      }, calls);
+      await historyGET(new NextRequest(`http://x/api/history?sort=created_at&order=${orderParam}&page=1&limit=20`));
+      const orders = calls.filter((c) => c.table === "startups" && c.op === "order");
+      expect(orders.length).toBeGreaterThanOrEqual(2);
+      // Primary sort + id tie-break both carry the explicit boolean —
+      // no string/bool confusion.
+      for (const o of orders) expect(o.args[1]).toEqual({ ascending: expected });
+    }
   });
 
   test("workspace isolation stays in the DB query", async () => {

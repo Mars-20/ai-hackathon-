@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid query", issues: parsedFilters.error.issues }, { status: 400 });
   }
   const { q, verdicts, stages, confidences, sort, order: orderStr, page, limit } = parsedFilters.data;
-  const order = orderStr === "asc" ? true : false;
+  // Explicit boolean: zod owns the "asc"|"desc" string (orderStr); the DB
+  // driver needs a boolean, so convert once here and never reuse the string
+  // where a boolean is expected.
+  const ascending = orderStr === "asc";
   const from = searchParams.get("from") || "";
   const to = searchParams.get("to") || "";
   const offset = (page - 1) * limit;
@@ -144,10 +147,11 @@ export async function GET(request: NextRequest) {
 
   // Sort (primary) + deterministic id tie-break so equal sort keys resolve
   // in a stable chronological-safe order instead of DB input order.
+  // Both use the explicit `ascending` boolean derived above.
   const validSortCols = ["created_at", "name", "updated_at"];
   const sortCol = validSortCols.includes(sort) ? sort : "created_at";
-  query = query.order(sortCol, { ascending: order });
-  query = query.order("id", { ascending: order });
+  query = query.order(sortCol, { ascending });
+  query = query.order("id", { ascending });
 
   // Pagination (applied in DB after all filters, so total/pages stay correct)
   query = query.range(offset, offset + limit - 1);

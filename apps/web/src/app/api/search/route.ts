@@ -8,6 +8,22 @@
 //   limit  — results per type (default: 5, max: 20)
 //   page   — page number per type, parsed manually (default: 1; zod schema
 //             owned by T1 and intentionally untouched)
+//
+// Meta contract (consistent — total and pages share the same basis):
+//   total          = counts.startups + counts.assumptions + counts.evidence
+//                    (DB exact counts, not the sliced page sum).
+//   pages          = ceil(total / limit) — consistent with total above.
+//   pages_per_type = ceil(max(per-type count) / limit) — covers the deepest
+//                    single-type feed, since each type paginates independently
+//                    with the same page/limit. Kept so per-type clients can
+//                    size their own pagination.
+// Ranking contract:
+//   DB returns a chronological candidate window (created_at/collected_at desc)
+//   via .range(0, fetchEnd); code re-ranks that window by bigram-Dice
+//   relevance (newest-first tie-break), then slices the requested page.
+//   Relevance order is therefore global within the first RANK_WINDOW matches
+//   per type (DB-newest seed), not just within the page slice. Pages beyond
+//   the window return the window tail (counts stay exact).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
@@ -36,6 +52,11 @@ export async function GET(request: NextRequest) {
   const pageRaw = Number(searchParams.get("page") ?? "1");
   const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? Math.min(pageRaw, 100) : 1;
   const offset = (page - 1) * limit;
+  // Rank-then-slice window: fetch candidates 0..offset+limit-1 (capped) so the
+  // in-memory relevance rank applies globally within the window before the
+  // page slice — never re-sort an already-paginated DB slice.
+  const RANK_WINDOW = 200;
+  const fetchEnd = Math.min(offset + limit - 1, RANK_WINDOW - 1);
 
   // Get workspace IDs
   const { data: memberships } = await supabase
@@ -49,7 +70,7 @@ export async function GET(request: NextRequest) {
       total_hits: 0,
       counts: { startups: 0, assumptions: 0, evidence: 0 },
       results: { startups: [], assumptions: [], evidence: [] },
-      meta: { total: 0, page, limit, pages: 0 },
+      meta: { total: 0, page, limit, pages: 0, pages_per_type: 0 },
     });
   }
 
@@ -107,7 +128,8 @@ export async function GET(request: NextRequest) {
 
   // ── Search Startups (ilike fallback, similarity re-rank) ───────────────────
   // count:"exact" returns the DB total (not the sliced page); chronological
-  // .order() seeds the DB order and .range() paginates in the DB.
+  // .order() seeds the candidate window and .range(0, fetchEnd) fetches it;
+  // rankBySimilarity then orders globally and .slice() takes the page.
   if (type === "all" || type === "startups") {
     const { data, count } = await supabase
       .from("startups")
@@ -115,10 +137,10 @@ export async function GET(request: NextRequest) {
       .in("workspace_id", workspaceIds)
       .or(`name.ilike.%${eq}%,one_liner.ilike.%${eq}%,domain.ilike.%${eq}%,target_customer.ilike.%${eq}%`)
       .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(0, fetchEnd);
     counts.startups = count ?? (data || []).length;
     const mapped = (data || []).map(s => ({ ...s, _type: "startup" }));
-    results.startups = rankBySimilarity(mapped, (s: Record<string, unknown>) => `${(s.name as string) ?? ""} ${(s.one_liner as string) ?? ""} ${(s.domain as string) ?? ""}`);
+    results.startups = rankBySimilarity(mapped, (s: Record<string, unknown>) => `${(s.name as string) ?? ""} ${(s.one_liner as string) ?? ""} ${(s.domain as string) ?? ""}`).slice(offset, offset + limit);
   }
 
   // ── Search Assumptions ─────────────────────────────────────────────────────
@@ -131,14 +153,14 @@ export async function GET(request: NextRequest) {
       .in("startups.workspace_id", workspaceIds)
       .or(`statement.ilike.%${eq}%,reasoning.ilike.%${eq}%`)
       .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(0, fetchEnd);
     counts.assumptions = count ?? (data || []).length;
     const mapped = (data || []).map(a => ({
       ...a,
       startup_name: (a.startups as unknown as { name: string })?.name,
       _type: "assumption"
     }));
-    results.assumptions = rankBySimilarity(mapped, (a: Record<string, unknown>) => `${(a.statement as string) ?? ""}`);
+    results.assumptions = rankBySimilarity(mapped, (a: Record<string, unknown>) => `${(a.statement as string) ?? ""}`).slice(offset, offset + limit);
   }
 
   // ── Search Evidence ────────────────────────────────────────────────────────
@@ -153,26 +175,29 @@ export async function GET(request: NextRequest) {
       .in("startups.workspace_id", workspaceIds)
       .or(`claim.ilike.%${eq}%`)
       .order("collected_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(0, fetchEnd);
     counts.evidence = count ?? (data || []).length;
     const mapped = (data || []).map(e => ({
       ...e,
       startup_name: (e.startups as unknown as { name: string })?.name,
       _type: "evidence"
     }));
-    results.evidence = rankBySimilarity(mapped, (e: Record<string, unknown>) => `${(e.claim as string) ?? ""}`);
+    results.evidence = rankBySimilarity(mapped, (e: Record<string, unknown>) => `${(e.claim as string) ?? ""}`).slice(offset, offset + limit);
   }
 
   const total = counts.startups + counts.assumptions + counts.evidence;
-  // Each type paginates independently with the same page/limit, so pages must
-  // cover the largest per-type count.
-  const pages = Math.ceil(Math.max(counts.startups, counts.assumptions, counts.evidence, 0) / limit);
+  // Consistent contract: pages derives from the same total it describes.
+  // pages_per_type covers the deepest single-type feed (independent per-type
+  // pagination with shared page/limit).
+  const maxPerType = Math.max(counts.startups, counts.assumptions, counts.evidence, 0);
+  const pages = Math.ceil(total / limit);
+  const pages_per_type = Math.ceil(maxPerType / limit);
 
   return NextResponse.json({
     query: q,
     total_hits: total,
     counts,
     results,
-    meta: { total, page, limit, pages },
+    meta: { total, page, limit, pages, pages_per_type },
   });
 }
