@@ -1027,7 +1027,7 @@ THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go th
 THIN-EVIDENCE RULE: a single source repeated, or several items sharing one URL once de-duplicated, is thin evidence and MUST NOT produce "go" — "go" needs 3+ DISTINCT sources. When in doubt, output "test_more".
 CONFIDENCE LEVEL: ${confidence.toUpperCase()}
 PRIMARY EVIDENCE COUNT: ${primaryEvidence.length}
-${verifier && (!verifier.approved || verifier.unsupportedClaims.length > 0) ? `VERIFIER: ✗ ${verifier.unsupportedClaims.length} unsupported claim(s) — you MUST output "test_more" and address: ${verifier.unsupportedClaims.slice(0, 3).join(" | ")}` : `VERIFIER: ✓ no unsupported claims`}
+${verifier && (!verifier.approved || verifier.unsupportedClaims.length > 0) ? `VERIFIER: ✗ ${verifier.unsupportedClaims.length} unsupported claim(s) — you MUST NOT output "go"; preserve "stop"/"iterate" if the evidence supports it, otherwise output "test_more", and address: ${verifier.unsupportedClaims.slice(0, 3).join(" | ")}` : `VERIFIER: ✓ no unsupported claims`}
 
 ${!allowGo ? `IMPORTANT: You MUST NOT output "go" as the verdict. The evidence is insufficient. Output "test_more" or "iterate" instead.` : ""}
 
@@ -1065,8 +1065,9 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
     );
   }
 
-  // Verifier gate (spec §4.4, Task 10): unsupported>0 forces test_more +
-  // warnings[] — the verifier blocks/patches, never merely advises.
+  // Verifier gate (spec §4.4, Task 10): go + unsupported>0 → test_more +
+  // warnings[] — the verifier blocks go, never merely advises, and never
+  // downgrades stop/iterate/test_more (max-severity preserved).
   const gate = applyVerifierGate(verdict, verifier ?? { approved: true, unsupportedClaims: [] });
   if (gate.overridden) {
     trace.push(

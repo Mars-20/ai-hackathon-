@@ -317,15 +317,17 @@ export function findUnsupportedFactualClaims(
   return out;
 }
 
-// Verifier gate: unsupported>0 forces test_more + warnings[] (spec §4.4).
-// Never advisory-only: a "go" resting on ungrounded claims is patched.
+// Verifier gate: unsupported>0 blocks go → test_more + warnings[] (spec §4.4).
+// Never advisory-only, never downgrades max-severity: only a "go" resting on
+// ungrounded claims is patched. stop/iterate/test_more are preserved as-is
+// (warnings still attached) — the gate blocks, it does not soften a kill.
 export function applyVerifierGate(
   verdict: Verdict,
   verifier: VerifierResult
 ): { verdict: Verdict; warnings: string[]; overridden: boolean } {
   const warnings = [...verifier.unsupportedClaims];
   if (!verifier.approved || warnings.length > 0) {
-    if (verdict !== "test_more") return { verdict: "test_more", warnings, overridden: true };
+    if (verdict === "go") return { verdict: "test_more", warnings, overridden: true };
     return { verdict, warnings, overridden: false };
   }
   return { verdict, warnings: [], overridden: false };

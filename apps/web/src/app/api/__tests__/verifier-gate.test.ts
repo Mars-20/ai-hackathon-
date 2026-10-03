@@ -85,6 +85,36 @@ describe("I1: unsupported>0 → test_more + warnings[] (verifier is a gate, not 
     expect(gate.warnings).toHaveLength(0);
     expect(gate.overridden).toBe(false);
   });
+
+  test("I1-a: stop + unsupported claims → stop PRESERVED (never downgraded to test_more), warnings kept", () => {
+    const gate = applyVerifierGate("stop", {
+      approved: false,
+      unsupportedClaims: ["The market is worth $5B"],
+    });
+    expect(gate.verdict).toBe("stop");
+    expect(gate.warnings).toContain("The market is worth $5B");
+    expect(gate.overridden).toBe(false);
+  });
+
+  test("I1-a: iterate + unsupported claims → iterate preserved, warnings kept", () => {
+    const gate = applyVerifierGate("iterate", {
+      approved: false,
+      unsupportedClaims: ["The market is worth $5B"],
+    });
+    expect(gate.verdict).toBe("iterate");
+    expect(gate.warnings).toContain("The market is worth $5B");
+    expect(gate.overridden).toBe(false);
+  });
+
+  test("I1-a: test_more + unsupported claims → test_more preserved, warnings kept", () => {
+    const gate = applyVerifierGate("test_more", {
+      approved: false,
+      unsupportedClaims: ["The market is worth $5B"],
+    });
+    expect(gate.verdict).toBe("test_more");
+    expect(gate.warnings).toContain("The market is worth $5B");
+    expect(gate.overridden).toBe(false);
+  });
 });
 
 describe("I1 wiring: route consumes verifierResult in the decision path", () => {
