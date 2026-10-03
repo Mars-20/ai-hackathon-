@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { inviteSchema } from "@/lib/validation";
 import type { MemberRole } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -18,15 +19,11 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { workspace_id, email, role } = body as {
-    workspace_id: string;
-    email: string;
-    role: MemberRole;
-  };
-
-  if (!workspace_id || !email || !role) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  const parsed = inviteSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
   }
+  const { workspace_id, email, role } = parsed.data;
 
   // Verify caller has permission to invite (must be owner or admin)
   const { data: callerMembership } = await supabase
@@ -75,21 +72,15 @@ export async function POST(request: NextRequest) {
     });
 
   if (inviteError) {
-    console.error("Invite insert error:", inviteError);
+    console.error("Invite insert failed for workspace:", workspace_id);
     return NextResponse.json({ error: "Failed to create invite" }, { status: 500 });
   }
 
-  // TODO: In production, send email via Resend/SendGrid with invite link:
-  // const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${token}`;
-  // await sendInviteEmail({ to: email, inviteUrl, workspaceName, inviterName });
-
-  console.log(`[Workspace Invite] ${email} invited to workspace ${workspace_id} as ${role}`);
-  console.log(`[Invite Link] ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${token}`);
+  // NOTE: Email delivery via Resend/SendGrid is out of scope for this change (see Task 8).
+  // Never log invite tokens — they are credential-equivalent.
 
   return NextResponse.json({
     success: true,
     message: `Invite sent to ${email}`,
-    // Return token in dev for testing — remove in production
-    ...(process.env.NODE_ENV === "development" && { debug_token: token }),
   });
 }
