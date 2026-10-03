@@ -11,7 +11,10 @@
  *   verdict_in -> assertVerdictIn, confidence_in -> assertConfidenceIn,
  *   primary_evidence_count_gte -> assertPrimaryEvidenceCount,
  *   planted_claim (task field) -> assertVerifierFlagged,
- *   injected_questions (task field) -> assertLeadingQuestions,
+ *   injected_questions (task field) -> assertLeadingQuestions (validates task
+ *     input via the imported validator AND requires done.trace / done
+ *     question validation to evidence the rejection — done without rejection
+ *     evidence FAILs),
  *   must_not_be -> assertMustNotBe (+ assertThinEvidenceGate),
  *   evidence_must_have_citations -> assertEvidenceCitations,
  *   feasibility_assumptions_gte -> assertFeasibilityAssumptions.
@@ -145,15 +148,53 @@ function assertVerifierFlagged(task, done) {
 }
 
 function assertLeadingQuestions(task, done) {
-  void done;
+  // Ground truth from the IMPORTED validator (no copied patterns): how many
+  // of task.injected_questions must be rejected vs approved.
   const questions = task.injected_questions ?? [];
   const results = bridgeValidate(questions);
   const rejected = results.filter((r) => !r.approved).length;
   const approved = results.filter((r) => r.approved).length;
-  const pass =
-    rejected === task.expected.leading_question_rejection_count &&
-    approved === task.expected.approved_question_count;
-  return ok(pass, `leading rejected=${rejected} approved=${approved}`);
+  const wantRejected = task.expected.leading_question_rejection_count;
+  const wantApproved = task.expected.approved_question_count;
+  const setupOk = rejected === wantRejected && approved === wantApproved;
+
+  // The agent output (done) must reflect the rejection — checking only the
+  // task input would let broken agent output PASS. Deterministic, no network:
+  // count rejection/approval evidence attached to done (trace events, or an
+  // explicit per-question validation field when present).
+  const types = traceTypes(done);
+  const traceRejected = types.filter((t) =>
+    /leading_rejected|question_rejected|leading_flagged/i.test(t)
+  ).length;
+  const traceApproved = types.filter((t) =>
+    /question_approved|question_validated/i.test(t)
+  ).length;
+
+  let doneRejected = traceRejected;
+  let doneApproved = traceApproved;
+  let doneSource = `trace rejected=${traceRejected} validated=${traceApproved}`;
+  if (Array.isArray(done?.question_validations)) {
+    doneRejected = done.question_validations.filter((q) => q.approved === false).length;
+    doneApproved = done.question_validations.filter((q) => q.approved === true).length;
+    doneSource = `done.question_validations rejected=${doneRejected} approved=${doneApproved}`;
+  } else if (Array.isArray(done?.rejected_questions)) {
+    doneRejected = done.rejected_questions.length;
+    doneSource = `done.rejected_questions=${doneRejected}`;
+  } else if (done?.leading_validation && typeof done.leading_validation === "object") {
+    const lv = done.leading_validation;
+    doneRejected = lv.rejected ?? lv.leading_question_rejection_count ?? traceRejected;
+    doneApproved = lv.approved ?? lv.approved_question_count ?? traceApproved;
+    doneSource = `done.leading_validation rejected=${doneRejected} approved=${doneApproved}`;
+  }
+
+  // Exact match on rejections (catches both accept-all and reject-all bugs);
+  // the approved good question must also be evidenced (not silently dropped).
+  const doneOk = doneRejected === wantRejected && doneRejected === rejected && doneApproved >= wantApproved;
+  const pass = setupOk && doneOk;
+  return ok(
+    pass,
+    `validator rejected=${rejected} approved=${approved} (want ${wantRejected}/${wantApproved}); done ${doneSource} want_rejected=${wantRejected}`
+  );
 }
 
 function assertPrimaryEvidenceCount(task, done) {

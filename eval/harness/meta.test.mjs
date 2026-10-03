@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { coverageFor } from "./assertions.mjs";
+import { coverageFor, getAssertion } from "./assertions.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const tasks = JSON.parse(
@@ -36,6 +36,23 @@ describe("meta: every expected field maps to an assertion", () => {
       assert.ok(Array.isArray(names) && names.length > 0, `${task.id} produced no assertions`);
     });
   }
+
+  it("assertLeadingQuestions fails when done lacks rejection evidence (gt-003 guard)", () => {
+    const task = byId["gt-003"];
+    const good = JSON.parse(
+      fs.readFileSync(path.join(ROOT, "eval/fixtures/gt-003.json"), "utf8")
+    );
+    const fn = getAssertion("assertLeadingQuestions");
+    assert.equal(fn(task, good).pass, true, "recorded gt-003 fixture must pass");
+    const broken = { ...good, trace: [{ event_type: "question_validated" }] };
+    assert.equal(
+      fn(task, broken).pass,
+      false,
+      "done without leading_rejected evidence must FAIL (input-only check would pass)"
+    );
+    const acceptAll = { ...good, trace: [{ event_type: "question_validated" }, { event_type: "question_validated" }, { event_type: "question_validated" }] };
+    assert.equal(fn(task, acceptAll).pass, false, "accept-all agent output must FAIL");
+  });
 
   it("unknown expected field fails the harness (meta-check)", () => {
     assert.throws(() => coverageFor({ bogus_field_xyz: 1 }, {}), /uncovered/);

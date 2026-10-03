@@ -24,6 +24,12 @@
   ],
   "trace": [
     {
+      "event_type": "leading_rejected"
+    },
+    {
+      "event_type": "leading_rejected"
+    },
+    {
       "event_type": "question_validated"
     }
   ],

@@ -12,13 +12,12 @@
  *   validate   {questions: string[]}      -> [{isLeading, approved, ...}]
  *   go         {evidenceSets: Array[]}    -> [{eligible, reason}]
  *   confidence {evidenceSets: Array[]}    -> ["low"|"medium"|"high"]
- *   ping       {}                         -> {ok, goThreshold}
+ *   ping       {}                         -> {ok}
  */
 import {
   meetsGoThreshold,
   validateQuestion,
   deriveConfidence,
-  GO_THRESHOLD,
 } from "../../apps/web/src/lib/utils.ts";
 
 const op = process.argv[2];
@@ -45,7 +44,6 @@ if (op === "validate") {
       typeof meetsGoThreshold === "function" &&
       typeof validateQuestion === "function" &&
       typeof deriveConfidence === "function",
-    goThreshold: { ...GO_THRESHOLD },
   };
 } else {
   console.error(`unknown op: ${op}`);
