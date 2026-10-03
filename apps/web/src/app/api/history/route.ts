@@ -142,10 +142,12 @@ export async function GET(request: NextRequest) {
   if (from) query = query.gte("created_at", from);
   if (to)   query = query.lte("created_at", to);
 
-  // Sort
+  // Sort (primary) + deterministic id tie-break so equal sort keys resolve
+  // in a stable chronological-safe order instead of DB input order.
   const validSortCols = ["created_at", "name", "updated_at"];
   const sortCol = validSortCols.includes(sort) ? sort : "created_at";
   query = query.order(sortCol, { ascending: order });
+  query = query.order("id", { ascending: order });
 
   // Pagination (applied in DB after all filters, so total/pages stay correct)
   query = query.range(offset, offset + limit - 1);
@@ -164,7 +166,7 @@ export async function GET(request: NextRequest) {
 
   const results = (startups || []).map((s: unknown) => {
     const startup = s as DBStartup;
-    const latestDecision = startup.decisions?.sort(
+    const latestDecision = [...(startup.decisions ?? [])].sort(
       (a: DBDecision, b: DBDecision) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )[0] || null;
 
@@ -190,7 +192,7 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const total = count || 0;
+  const total = count ?? 0;
 
   return NextResponse.json({
     data: results,
