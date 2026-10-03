@@ -58,15 +58,25 @@ describe("deriveConfidence", () => {
     expect(deriveConfidence(evidence)).toBe("high");
   });
 
-  test("medium: rung4 x3 with n>=interviews floor", () => {
+  test("medium: rung4 x3 interviews with n>=interviews floor", () => {
     const perSource = Math.ceil(
       GO_THRESHOLD.MIN_INTERVIEWS_SATURATED / GO_THRESHOLD.MIN_INDEPENDENT_SOURCES
     );
     const evidence = Array.from({ length: GO_THRESHOLD.MIN_INDEPENDENT_SOURCES }, () => ({
       strength: "contact_shared" as const,
       sample_size: perSource,
+      source_type: "interview" as const,
     }));
     expect(deriveConfidence(evidence)).toBe("medium");
+  });
+
+  test("not medium: rung4 x3 survey-only never counts as interview depth", () => {
+    const evidence = Array.from({ length: GO_THRESHOLD.MIN_INDEPENDENT_SOURCES }, () => ({
+      strength: "contact_shared" as const,
+      sample_size: GO_THRESHOLD.MIN_INTERVIEWS_SATURATED,
+      source_type: "survey" as const,
+    }));
+    expect(deriveConfidence(evidence)).not.toBe("medium");
   });
 
   test("low: thin opinion", () => {

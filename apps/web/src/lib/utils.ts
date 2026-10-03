@@ -158,7 +158,7 @@ export function validateQuestion(question: string): QuestionValidationResult {
 // Evidence strength helpers (Section 5.3 commitment ladder)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { EvidenceStrength, Confidence } from "./types";
+import type { EvidenceStrength, Confidence, Verdict } from "./types";
 
 export const STRENGTH_RUNG: Record<EvidenceStrength, number> = {
   opinion: 1,
@@ -253,10 +253,82 @@ export function deriveConfidence(
   const rung5 = primaryEvidence.filter((e) => STRENGTH_RUNG[e.strength] >= 5);
   const rung4Plus = primaryEvidence.filter((e) => STRENGTH_RUNG[e.strength] >= GO_THRESHOLD.MIN_RUNG);
   const totalSample = rung4Plus.reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
+  // Spec §2: the medium floor counts saturated INTERVIEWS only — survey/
+  // usage volume must never masquerade as interview depth.
+  const interviewSample = rung4Plus
+    .filter((e) => e.source_type === "interview")
+    .reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
 
   if (rung5.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && totalSample >= GO_THRESHOLD.MIN_SAMPLE_QUANT) return "high";
-  if (rung4Plus.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && totalSample >= GO_THRESHOLD.MIN_INTERVIEWS_SATURATED) return "medium";
+  if (rung4Plus.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && interviewSample >= GO_THRESHOLD.MIN_INTERVIEWS_SATURATED) return "medium";
   return "low";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verifier gate helpers (spec §4.4 — Task 10: gate, not advisory)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface VerifierResult {
+  approved: boolean;
+  unsupportedClaims: string[];
+}
+
+// A factual line is covered only by URL-bearing evidence that actually talks
+// about the same claim (shared significant token or shared number) — one
+// stray source_url never blankets unrelated claims (per-claim, not global).
+export function claimHasUrlSupport(
+  line: string,
+  evidence: Array<{ claim?: string; source_url?: string }>
+): boolean {
+  const tokens = new Set(
+    line
+      .toLowerCase()
+      .split(/[^a-z0-9\u0600-\u06ff]+/u)
+      .filter((t) => t.length >= 4)
+  );
+  if (tokens.size === 0) return false;
+  const numbers = line.match(/\d[\d.,%]*/g) ?? [];
+  return evidence.some((e) => {
+    if (!e.source_url || !e.claim) return false;
+    const claimLower = e.claim.toLowerCase();
+    const claimTokens = claimLower.split(/[^a-z0-9\u0600-\u06ff]+/u).filter((t) => t.length >= 4);
+    if (claimTokens.some((t) => tokens.has(t))) return true;
+    if (numbers.length > 0 && numbers.some((n) => claimLower.includes(n.toLowerCase()))) return true;
+    return false;
+  });
+}
+
+// Deterministic safety net: factual lines (numbers / $ / % / URLs / market
+// sizing words) with no per-claim URL support are ungrounded.
+export function findUnsupportedFactualClaims(
+  text: string,
+  evidence: Array<{ claim?: string; source_url?: string }>
+): string[] {
+  const out: string[] = [];
+  const factualLines = text
+    .split(/[\n;.]/)
+    .map((l) => l.trim())
+    .filter((l) => /(\d|%|\$|http|million|billion|market worth)/i.test(l));
+  for (const line of factualLines) {
+    if (line.length > 12 && !claimHasUrlSupport(line, evidence) && !out.includes(line)) {
+      out.push(line);
+    }
+  }
+  return out;
+}
+
+// Verifier gate: unsupported>0 forces test_more + warnings[] (spec §4.4).
+// Never advisory-only: a "go" resting on ungrounded claims is patched.
+export function applyVerifierGate(
+  verdict: Verdict,
+  verifier: VerifierResult
+): { verdict: Verdict; warnings: string[]; overridden: boolean } {
+  const warnings = [...verifier.unsupportedClaims];
+  if (!verifier.approved || warnings.length > 0) {
+    if (verdict !== "test_more") return { verdict: "test_more", warnings, overridden: true };
+    return { verdict, warnings, overridden: false };
+  }
+  return { verdict, warnings: [], overridden: false };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

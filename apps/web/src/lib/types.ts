@@ -164,6 +164,9 @@ export interface Decision {
   verdict: Verdict;
   confidence: Confidence;
   rationale: string;
+  // Task 10 verifier gate (spec §4.4): unsupported claims flagged by the
+  // verifier. Runtime/SSE only — not a decisions-table column.
+  warnings?: string[];
   evidence_ids: string[];
   sample_size?: number;
   response_rate?: number;

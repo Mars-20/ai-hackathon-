@@ -18,6 +18,8 @@ import {
   validateQuestion,
   meetsGoThreshold,
   deriveConfidence,
+  applyVerifierGate,
+  findUnsupportedFactualClaims,
   BUDGET,
   isBudgetExceeded,
   sampleStats,
@@ -982,7 +984,8 @@ async function runDecisionMemoSkill(
   startup: Startup,
   assumptions: Assumption[],
   allEvidence: Evidence[],
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  verifier?: { approved: boolean; unsupportedClaims: string[] }
 ): Promise<Decision> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:decision-memo", "skill_start", { startup_id: startup.id }));
@@ -1024,6 +1027,7 @@ THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go th
 THIN-EVIDENCE RULE: a single source repeated, or several items sharing one URL once de-duplicated, is thin evidence and MUST NOT produce "go" — "go" needs 3+ DISTINCT sources. When in doubt, output "test_more".
 CONFIDENCE LEVEL: ${confidence.toUpperCase()}
 PRIMARY EVIDENCE COUNT: ${primaryEvidence.length}
+${verifier && (!verifier.approved || verifier.unsupportedClaims.length > 0) ? `VERIFIER: ✗ ${verifier.unsupportedClaims.length} unsupported claim(s) — you MUST output "test_more" and address: ${verifier.unsupportedClaims.slice(0, 3).join(" | ")}` : `VERIFIER: ✓ no unsupported claims`}
 
 ${!allowGo ? `IMPORTANT: You MUST NOT output "go" as the verdict. The evidence is insufficient. Output "test_more" or "iterate" instead.` : ""}
 
@@ -1061,16 +1065,38 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
     );
   }
 
+  // Verifier gate (spec §4.4, Task 10): unsupported>0 forces test_more +
+  // warnings[] — the verifier blocks/patches, never merely advises.
+  const gate = applyVerifierGate(verdict, verifier ?? { approved: true, unsupportedClaims: [] });
+  if (gate.overridden) {
+    trace.push(
+      makeTrace("verifier", "verification", {
+        action: "verdict_override",
+        reason: `verifier: ${gate.warnings.length} unsupported claim(s)`,
+        original: verdict,
+        corrected: gate.verdict,
+        unsupported_claims: gate.warnings,
+      })
+    );
+  }
+  verdict = gate.verdict;
+  const warningsSuffix =
+    gate.warnings.length > 0
+      ? ` [Verifier warnings (${gate.warnings.length} unsupported): ${gate.warnings.slice(0, 5).join(" | ")}]`
+      : "";
+  const rationale = (parsed.rationale || "Evidence evaluated against commitment ladder") + warningsSuffix;
+
   const decision: Decision = {
     id: crypto.randomUUID(),
     startup_id: startup.id,
     verdict,
     confidence,
-    rationale: parsed.rationale || "Evidence evaluated against commitment ladder",
+    rationale,
     evidence_ids: allEvidence.map((e) => e.id),
     sample_size: primaryEvidence.reduce((acc, e) => acc + (e.sample_size ?? 1), 0),
     response_rate: primaryEvidence.length > 0 ? undefined : undefined,
     next_experiment: verdict !== "go" ? parsed.next_experiment : undefined,
+    warnings: gate.warnings,
     created_at: new Date().toISOString(),
   };
 
@@ -1141,16 +1167,14 @@ Return: approved=true if 0 unsupported claims, false otherwise. List any unsuppo
     approved: true,
     unsupported_claims: [],
   });
+  // Deterministic safety net (no LLM bypass): per-claim URL support —
+  // a factual line is grounded only by URL-bearing evidence about the SAME
+  // claim (see claimHasUrlSupport). One stray source_url never blankets
+  // unrelated claims.
+  const deterministicUnsupported = findUnsupportedFactualClaims(plannerOutput, evidence);
   const unsupportedClaims: string[] = [...(parsed.unsupported_claims || [])];
-
-  // Deterministic safety net (no LLM bypass): any planner sentence with a
-  // number/$/%/URL and no matching evidence URL is ungrounded.
-  const hasUrl = evidence.some((e) => !!e.source_url);
-  const factualLines = plannerOutput.split(/[\n;.]/).filter((l) => /(\d|%|\$|http|million|billion|market worth)/i.test(l));
-  for (const line of factualLines) {
-    if (!hasUrl && line.trim().length > 12 && !unsupportedClaims.includes(line.trim())) {
-      unsupportedClaims.push(line.trim());
-    }
+  for (const line of deterministicUnsupported) {
+    if (!unsupportedClaims.includes(line)) unsupportedClaims.push(line);
   }
   const approved = unsupportedClaims.length === 0;
 
@@ -1407,7 +1431,7 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
 
       // ── Phase 7: Decision Memo ──────────────────────────────────────────────
       await send({ type: "phase", phase: "memo", trace: [...trace] });
-      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace);
+      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult);
       toolCalls++;
       totalCost += extractUsageCost(undefined, "gemini_call");
 
