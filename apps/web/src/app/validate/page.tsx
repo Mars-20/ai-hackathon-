@@ -571,6 +571,24 @@ function ValidateDashboard() {
         signal: abortRef.current.signal,
       });
 
+      // Non-SSE pre-flight rejections (429 rate-limit, 402 budget): surface
+      // the JSON error instead of hanging on an empty stream.
+      if (!res.ok) {
+        let message = `Request failed (${res.status})`;
+        try {
+          const errBody = (await res.json()) as { error?: unknown; retryAfter?: unknown };
+          if (typeof errBody.error === "string" && errBody.error) message = errBody.error;
+          if (typeof errBody.retryAfter === "number" && errBody.retryAfter > 0) {
+            message += ` Retry in ${errBody.retryAfter}s.`;
+          }
+        } catch {
+          // keep default message
+        }
+        setError(message);
+        setPhase("error");
+        return;
+      }
+
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
 

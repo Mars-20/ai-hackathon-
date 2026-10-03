@@ -19,8 +19,21 @@ import {
   meetsGoThreshold,
   deriveConfidence,
   BUDGET,
+  isBudgetExceeded,
   sampleStats,
 } from "@/lib/utils";
+import {
+  checkRateLimit,
+  resolveRateLimitKey,
+  RATE_MAX,
+  RATE_WINDOW_MS,
+} from "@/lib/rate-limit";
+import {
+  COST_TABLE,
+  checkBudget,
+  extractUsageCost,
+  recordSpend,
+} from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
 
@@ -1157,11 +1170,10 @@ Return: approved=true if 0 unsupported claims, false otherwise. List any unsuppo
 }
 
 // ── Main Handler ──────────────────────────────────────────────────────────────
-// Hardening: in-memory per-IP rate limit (10 req/min), input caps, prompt-
-// injection strip, real cost accounting, 90s hard timeout (BUDGET).
-const RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
-const RATE_MAX = 10;
-const RATE_WINDOW_MS = 60_000;
+// Hardening: distributed sliding-window rate limit (Upstash Redis when
+// configured, memory fallback dev/test only — see lib/rate-limit), input
+// caps, prompt-injection strip, real cost accounting (lib/cost), 90s hard
+// timeout (BUDGET).
 const MAX_IDEA_CHARS = 2000;
 const MAX_DATA_CHARS = 8000;
 
@@ -1174,11 +1186,89 @@ function sanitizeForPrompt(s: string): string {
     .slice(0, MAX_IDEA_CHARS + MAX_DATA_CHARS);
 }
 
-// Realistic per-call cost table (USD,公开 blended estimate — replace with
-// provider metering in production). Stops totalCost=0 fiction.
-const COST_TABLE = { gemini_call: 0.004, groq_call: 0.001, search: 0.002 } as const;
+// Per-call costs live in lib/cost (COST_TABLE fallback + usageMetadata
+// extractor). Imported above — single source of truth, never copied here.
 
 export async function POST(req: NextRequest) {
+  // ── Pre-flight: distributed rate limit (fail-closed) ───────────────────
+  // Key = authenticated user when known, else ip+route (never trust body).
+  let rateUserId = "";
+  try {
+    const { createServerSupabaseClient } = await import("@/lib/supabase/server");
+    const supabase = await createServerSupabaseClient();
+    const { data } = await supabase.auth.getUser();
+    rateUserId = data.user?.id ?? "";
+  } catch {
+    rateUserId = "";
+  }
+  const rateIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const rateKey = resolveRateLimitKey({ userId: rateUserId, ip: rateIp, route: "/api/agent" });
+  let rate: { limited: boolean; retryAfter: number };
+  try {
+    rate = await checkRateLimit({ key: rateKey, limit: RATE_MAX, windowMs: RATE_WINDOW_MS });
+  } catch {
+    rate = { limited: true, retryAfter: Math.ceil(RATE_WINDOW_MS / 1000) }; // fail-closed
+  }
+  if (rate.limited) {
+    // Best-effort denial trace via service_role (bypasses RLS; never blocks
+    // the 429). event_type "error" + payload.rate_limited: trace_events has a
+    // CHECK allow-list with no dedicated rate_limited value, and Task 5 adds
+    // no migration (Task 4 owns 0002).
+    try {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const { createServiceRoleClient } = await import("@/lib/supabase/server");
+        const admin = createServiceRoleClient();
+        await admin.from("trace_events").insert({
+          startup_id: null,
+          workspace_id: null,
+          actor: "router",
+          event_type: "error",
+          payload: { rate_limited: true, key: rateKey, retry_after: rate.retryAfter, route: "/api/agent" },
+          cost_usd: null,
+          latency_ms: null,
+        });
+      }
+    } catch {
+      // best-effort only
+    }
+    return new Response(
+      JSON.stringify({ error: "Rate limit exceeded. Try again shortly.", retryAfter: rate.retryAfter }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": String(rate.retryAfter) },
+      }
+    );
+  }
+
+  // ── Pre-flight: workspace spend budget (402) ──────────────────────────
+  // Peek workspace_id without consuming the body (clone keeps req readable).
+  let peekWorkspaceId = "";
+  try {
+    const peeked = (await req.clone().json()) as { workspace_id?: unknown };
+    if (typeof peeked.workspace_id === "string") peekWorkspaceId = peeked.workspace_id;
+  } catch {
+    peekWorkspaceId = "";
+  }
+  const budgetKey = peekWorkspaceId || rateUserId;
+  if (budgetKey) {
+    try {
+      const b = await checkBudget(budgetKey);
+      if (!b.allowed) {
+        const retryAfter = b.retryAfter ?? 60;
+        return new Response(
+          JSON.stringify({ error: "Budget exceeded for this workspace.", retryAfter }),
+          {
+            status: 402,
+            headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) },
+          }
+        );
+      }
+    } catch {
+      // Budget store unavailable pre-stream: fail open here; the in-stream
+      // BUDGET guard below still enforces per-request caps.
+    }
+  }
+
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -1196,20 +1286,6 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-      // Rate limit (best-effort per-instance; use Redis/Upstash in prod)
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-      const now = Date.now();
-      const bucket = RATE_LIMIT.get(ip);
-      if (!bucket || now > bucket.resetAt) {
-        RATE_LIMIT.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-      } else {
-        bucket.count++;
-        if (bucket.count > RATE_MAX) {
-          await send({ type: "error", message: "Rate limit exceeded. Try again in a minute." });
-          return;
-        }
-      }
-
       const body: AgentInput = await req.json();
       const rawIdea = body.idea ?? "";
       const rawData = body.uploaded_data ?? "";
@@ -1241,12 +1317,13 @@ export async function POST(req: NextRequest) {
       const startup = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId });
       await send({ type: "startup", startup, trace: [...trace] });
 
-      // Budget check
+      // Budget check (per-request caps; workspace ledger gated pre-flight).
+      // Cost via the lib/cost extractor (usageMetadata when available,
+      // COST_TABLE fallback — marked in lib/cost).
       toolCalls++;
-      totalCost += COST_TABLE.gemini_call;
+      totalCost += extractUsageCost(undefined, "gemini_call");
       checkTimeout();
-      if (toolCalls >= BUDGET.MAX_TOOL_CALLS || totalCost >= BUDGET.MAX_COST_USD)
-        throw new Error("Budget exceeded");
+      if (isBudgetExceeded(totalCost, toolCalls)) throw new Error("Budget exceeded");
 
       // ── Phase 3: Assumption Mapping ─────────────────────────────────────────
       await send({ type: "phase", phase: "mapping", trace: [...trace] });
@@ -1411,6 +1488,9 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
         }
       }
 
+      // Ledger this run's spend (best-effort; feeds pre-flight checkBudget).
+      if (budgetKey) recordSpend(budgetKey, totalCost);
+
       await send({
         type: "done",
         startup,
@@ -1431,6 +1511,8 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      // Ledger partial spend even on failure — the run consumed providers.
+      if (budgetKey) recordSpend(budgetKey, totalCost);
       trace.push(makeTrace("executor", "error", { error: message }));
       await send({ type: "error", message, trace });
     } finally {

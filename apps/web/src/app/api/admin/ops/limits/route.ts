@@ -31,8 +31,8 @@ import {
 } from "@/lib/supabase/server";
 import { BUDGET } from "@/lib/utils";
 
-// Agent route per-IP cap (apps/web/src/app/api/agent/route.ts RATE_MAX,
-// in-memory 10 req/min) — echoed here as a read-only reference.
+// Agent route cap (apps/web/src/lib/rate-limit.ts RATE_MAX, distributed
+// sliding-window 10 req/min) — echoed here as a read-only reference.
 const AGENT_REQUESTS_PER_MINUTE = 10;
 const TRACE_CAP = 10000;
 
