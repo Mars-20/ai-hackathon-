@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { coverageFor, getAssertion, bridgeGo } from "./assertions.mjs";
+import { coverageFor, getAssertion, bridgeGo, bridgeDistinct } from "./assertions.mjs";
 import { loadFixture, FIXTURE_IDS } from "./fixtures.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -27,9 +27,11 @@ export function verdictWant(expected) {
 }
 
 export function citationsCount(done) {
-  return (done?.evidence ?? []).filter(
-    (e) => typeof e?.source_url === "string" && e.source_url.length > 0
-  ).length;
+  // Canonical de-duplicated count (same URL/case/fragment/trailing-slash
+  // variants collapse to one source) via the imported utils.ts — never a
+  // local recount, so the harness cannot drift from the Gate-1 definition.
+  const [n] = bridgeDistinct([done?.evidence ?? []]);
+  return n;
 }
 
 export function evaluateTask(task, done) {

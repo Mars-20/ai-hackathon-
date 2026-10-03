@@ -95,3 +95,22 @@ describe("meta: every expected field maps to an assertion", () => {
     );
   });
 });
+
+describe("meta: harness carries no threshold/validator literals", () => {
+  it("no GO_THRESHOLD / MIN_* / LEADING_PATTERNS assignments in eval JS", () => {
+    const dir = path.join(ROOT, "eval");
+    const files = ["run-eval.js", "admin-access-check.mjs"];
+    const harness = fs
+      .readdirSync(path.join(dir, "harness"))
+      .filter((f) => f.endsWith(".mjs"))
+      .map((f) => path.join("harness", f));
+    const banned = /(?:const|let|var)\s+(?:GO_THRESHOLD|MIN_\w+|LEADING_PATTERNS)\s*=/;
+    for (const rel of [...files, ...harness]) {
+      const src = fs.readFileSync(path.join(dir, rel), "utf8");
+      assert.ok(
+        !banned.test(src),
+        `${rel} must import thresholds from utils.ts, not define them`
+      );
+    }
+  });
+});

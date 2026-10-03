@@ -196,7 +196,8 @@ export const GO_THRESHOLD = {
 
 // Normalize a source URL for independence counting: case-insensitive with
 // trailing slashes and fragments stripped — same document, one source.
-function normalizeSourceUrl(u: unknown): string | undefined {
+// Exported for the eval ts-bridge (single-source counting, no local recount).
+export function normalizeSourceUrl(u: unknown): string | undefined {
   if (typeof u !== "string" || u.trim().length === 0) return undefined;
   return u.trim().toLowerCase().split("#")[0].replace(/\/+$/, "");
 }
@@ -205,7 +206,8 @@ function normalizeSourceUrl(u: unknown): string | undefined {
 // de-duplicate by normalized URL; URL-less primary items (interviews / field
 // notes with no link) each count as their own source. One URL repeated N
 // times is ONE source — repeating a citation never manufactures independence.
-function countDistinctSources(items: Array<{ source_url?: string }>): number {
+// Exported for the eval ts-bridge (single-source counting, no local recount).
+export function countDistinctSources(items: Array<{ source_url?: string }>): number {
   const urls = new Set<string>();
   let urlLess = 0;
   for (const e of items) {
@@ -315,6 +317,22 @@ export function findUnsupportedFactualClaims(
     }
   }
   return out;
+}
+
+// Post-memo rescan (final-review follow-up): the verifier checks the planner
+// summary BEFORE the memo exists, so re-scan the memo text itself with the
+// same deterministic net and union any new lines into the gate input. Pure:
+// returns the input unchanged when the memo adds nothing.
+export function combineVerifierWithMemoScan(
+  verifier: VerifierResult,
+  memoText: string,
+  evidence: Array<{ claim?: string; source_url?: string }>
+): VerifierResult {
+  const extra = findUnsupportedFactualClaims(memoText, evidence).filter(
+    (l) => !verifier.unsupportedClaims.includes(l)
+  );
+  if (extra.length === 0) return verifier;
+  return { approved: false, unsupportedClaims: [...verifier.unsupportedClaims, ...extra] };
 }
 
 // Verifier gate: unsupported>0 blocks go → test_more + warnings[] (spec §4.4).

@@ -49,6 +49,17 @@ export const historyStageSchema = z.enum(["idea", "prototype", "live", "scaling"
 export const historySortSchema = z.enum(["created_at", "name", "updated_at"]);
 export const historyOrderSchema = z.enum(["asc", "desc"]);
 
+// ISO date string ("" = absent): invalid dates are rejected with 400 rather
+// than passed raw to PostgREST range filters.
+export const isoDateStringSchema = z
+  .string()
+  .trim()
+  .refine((s) => s === "" || !Number.isNaN(Date.parse(s)), {
+    message: "Invalid ISO date string",
+  })
+  .optional()
+  .default("");
+
 export const historyQuerySchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   verdicts: z.array(historyVerdictSchema).optional().default([]),
@@ -58,4 +69,6 @@ export const historyQuerySchema = z.object({
   order: historyOrderSchema.optional().default("desc"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  from: isoDateStringSchema,
+  to: isoDateStringSchema,
 });

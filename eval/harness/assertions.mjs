@@ -50,6 +50,11 @@ export function bridgeConfidence(evidenceSets) {
   return callBridge("confidence", { evidenceSets });
 }
 
+/** Imported countDistinctSources, batched — single-source URL de-dup. */
+export function bridgeDistinct(evidenceSets) {
+  return callBridge("distinct", { evidenceSets });
+}
+
 /** Liveness probe for the real utils.ts import. */
 export function bridgePing() {
   return callBridge("ping", {});

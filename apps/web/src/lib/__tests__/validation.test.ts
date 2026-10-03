@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { inviteSchema, startupSaveSchema, searchQuerySchema } from "@/lib/validation";
+import { inviteSchema, startupSaveSchema, searchQuerySchema, historyQuerySchema } from "@/lib/validation";
 
 describe("inviteSchema", () => {
   test("rejects invalid role with 400-shaped issues", () => {
@@ -56,5 +56,18 @@ describe("inviteSchema", () => {
     }
     const short = searchQuerySchema.safeParse({ q: "x" });
     expect(short.success).toBe(false);
+  });
+});
+
+describe("historyQuerySchema from/to", () => {
+  test("rejects non-date from/to with 400-shaped failure", () => {
+    expect(historyQuerySchema.safeParse({ from: "not-a-date" }).success).toBe(false);
+    expect(historyQuerySchema.safeParse({ to: "32/13/2024" }).success).toBe(false);
+  });
+  test("accepts empty and ISO dates", () => {
+    const ok = historyQuerySchema.safeParse({ from: "2024-01-01", to: "2024-12-31T23:59:59Z" });
+    expect(ok.success).toBe(true);
+    const empty = historyQuerySchema.safeParse({});
+    expect(empty.success).toBe(true);
   });
 });

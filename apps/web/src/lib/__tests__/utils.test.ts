@@ -4,6 +4,7 @@ import {
   deriveConfidence,
   validateQuestion,
   isBudgetExceeded,
+  combineVerifierWithMemoScan,
   GO_THRESHOLD,
   BUDGET,
 } from "@/lib/utils";
@@ -95,5 +96,24 @@ describe("isBudgetExceeded", () => {
 
   test("not exceeded below both caps", () => {
     expect(isBudgetExceeded(BUDGET.MAX_COST_USD - 0.1, BUDGET.MAX_TOOL_CALLS - 1)).toBe(false);
+  });
+});
+
+describe("combineVerifierWithMemoScan (post-memo rescan)", () => {
+  const ev = [{ claim: "pilot cohort retention", source_url: "https://x.test/pilot" }];
+  test("clean memo returns verifier unchanged", () => {
+    const v = { approved: true, unsupportedClaims: [] as string[] };
+    expect(combineVerifierWithMemoScan(v, "Evidence evaluated, more interviews needed", ev)).toBe(v);
+  });
+  test("memo-introduced figure forces disapproval + union", () => {
+    const v = { approved: true, unsupportedClaims: [] as string[] };
+    const out = combineVerifierWithMemoScan(v, "The market is worth $5B and growing fast", ev);
+    expect(out.approved).toBe(false);
+    expect(out.unsupportedClaims.length).toBeGreaterThan(0);
+  });
+  test("no duplicate lines when memo repeats planner flag", () => {
+    const v = { approved: false, unsupportedClaims: ["Market is worth $5B"] };
+    const out = combineVerifierWithMemoScan(v, "Market is worth $5B", ev);
+    expect(out.unsupportedClaims).toEqual(["Market is worth $5B"]);
   });
 });

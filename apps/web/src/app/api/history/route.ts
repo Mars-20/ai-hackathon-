@@ -45,17 +45,17 @@ export async function GET(request: NextRequest) {
     order: searchParams.get("order") || "desc",
     page: searchParams.get("page") || "1",
     limit: searchParams.get("limit") || "20",
+    from: searchParams.get("from") || "",
+    to: searchParams.get("to") || "",
   });
   if (!parsedFilters.success) {
     return NextResponse.json({ error: "Invalid query", issues: parsedFilters.error.issues }, { status: 400 });
   }
-  const { q, verdicts, stages, confidences, sort, order: orderStr, page, limit } = parsedFilters.data;
+  const { q, verdicts, stages, confidences, sort, order: orderStr, page, limit, from, to } = parsedFilters.data;
   // Explicit boolean: zod owns the "asc"|"desc" string (orderStr); the DB
   // driver needs a boolean, so convert once here and never reuse the string
   // where a boolean is expected.
   const ascending = orderStr === "asc";
-  const from = searchParams.get("from") || "";
-  const to = searchParams.get("to") || "";
   const offset = (page - 1) * limit;
   const startupIdParam = searchParams.get("startup_id")?.trim() || "";
   if (startupIdParam && !workspaceIdSchema.safeParse(startupIdParam).success) {

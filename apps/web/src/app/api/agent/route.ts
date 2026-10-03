@@ -20,6 +20,7 @@ import {
   deriveConfidence,
   applyVerifierGate,
   findUnsupportedFactualClaims,
+  combineVerifierWithMemoScan,
   BUDGET,
   isBudgetExceeded,
   sampleStats,
@@ -1068,7 +1069,22 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
   // Verifier gate (spec §4.4, Task 10): go + unsupported>0 → test_more +
   // warnings[] — the verifier blocks go, never merely advises, and never
   // downgrades stop/iterate/test_more (max-severity preserved).
-  const gate = applyVerifierGate(verdict, verifier ?? { approved: true, unsupportedClaims: [] });
+  // Post-memo rescan: the verifier checked the planner summary before this
+  // memo existed — re-scan the memo text itself with the same deterministic
+  // net so model-introduced figures cannot slip past the gate.
+  const memoText = `${parsed.rationale ?? ""}\n${parsed.next_experiment ?? ""}`;
+  const baseVerifier = verifier ?? { approved: true, unsupportedClaims: [] };
+  const combinedVerifier = combineVerifierWithMemoScan(baseVerifier, memoText, allEvidence);
+  if (combinedVerifier.unsupportedClaims.length > baseVerifier.unsupportedClaims.length) {
+    trace.push(
+      makeTrace("verifier", "verification", {
+        action: "memo_rescan",
+        reason: "memo text introduced unsupported factual line(s)",
+        added: combinedVerifier.unsupportedClaims.slice(baseVerifier.unsupportedClaims.length),
+      })
+    );
+  }
+  const gate = applyVerifierGate(verdict, combinedVerifier);
   if (gate.overridden) {
     trace.push(
       makeTrace("verifier", "verification", {
