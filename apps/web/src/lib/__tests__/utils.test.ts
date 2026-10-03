@@ -1,0 +1,89 @@
+import { describe, test, expect } from "vitest";
+import {
+  meetsGoThreshold,
+  deriveConfidence,
+  validateQuestion,
+  isBudgetExceeded,
+  GO_THRESHOLD,
+  BUDGET,
+} from "@/lib/utils";
+
+describe("meetsGoThreshold (Gate 1)", () => {
+  test("thin opinion → ineligible", () => {
+    const r = meetsGoThreshold([{ strength: "opinion", sample_size: 1 }]);
+    expect(r.eligible).toBe(false);
+  });
+
+  test("rung4 x3 n>=30 → eligible", () => {
+    const perSource = Math.ceil(
+      GO_THRESHOLD.MIN_SAMPLE_QUANT / GO_THRESHOLD.MIN_INDEPENDENT_SOURCES
+    );
+    const evidence = Array.from({ length: GO_THRESHOLD.MIN_INDEPENDENT_SOURCES }, () => ({
+      strength: "contact_shared" as const,
+      sample_size: perSource,
+    }));
+    const r = meetsGoThreshold(evidence);
+    expect(r.eligible).toBe(true);
+  });
+});
+
+describe("validateQuestion (leading EN+AR rejected)", () => {
+  test("leading EN rejected", () => {
+    const r = validateQuestion("Don't you think our product is amazing?");
+    expect(r.isLeading).toBe(true);
+    expect(r.approved).toBe(false);
+  });
+
+  test("leading AR rejected", () => {
+    const r = validateQuestion("أليس صحيح أن هذا المنتج مفيد؟");
+    expect(r.isLeading).toBe(true);
+    expect(r.approved).toBe(false);
+  });
+
+  test("open past-behavior question approved", () => {
+    const r = validateQuestion("Tell me about the last time you tried to solve billing?");
+    expect(r.approved).toBe(true);
+  });
+});
+
+describe("deriveConfidence", () => {
+  test("high: rung5 x3 with n>=quant", () => {
+    const perSource = Math.ceil(
+      GO_THRESHOLD.MIN_SAMPLE_QUANT / GO_THRESHOLD.MIN_INDEPENDENT_SOURCES
+    );
+    const evidence = Array.from({ length: GO_THRESHOLD.MIN_INDEPENDENT_SOURCES }, () => ({
+      strength: "commitment" as const,
+      sample_size: perSource,
+    }));
+    expect(deriveConfidence(evidence)).toBe("high");
+  });
+
+  test("medium: rung4 x3 with n>=interviews floor", () => {
+    const perSource = Math.ceil(
+      GO_THRESHOLD.MIN_INTERVIEWS_SATURATED / GO_THRESHOLD.MIN_INDEPENDENT_SOURCES
+    );
+    const evidence = Array.from({ length: GO_THRESHOLD.MIN_INDEPENDENT_SOURCES }, () => ({
+      strength: "contact_shared" as const,
+      sample_size: perSource,
+    }));
+    expect(deriveConfidence(evidence)).toBe("medium");
+  });
+
+  test("low: thin opinion", () => {
+    expect(deriveConfidence([{ strength: "opinion", sample_size: 1 }])).toBe("low");
+  });
+});
+
+describe("isBudgetExceeded", () => {
+  test("exceeded at cost cap", () => {
+    expect(isBudgetExceeded(BUDGET.MAX_COST_USD, 0)).toBe(true);
+  });
+
+  test("exceeded at tool-call cap", () => {
+    expect(isBudgetExceeded(0, BUDGET.MAX_TOOL_CALLS)).toBe(true);
+  });
+
+  test("not exceeded below both caps", () => {
+    expect(isBudgetExceeded(BUDGET.MAX_COST_USD - 0.1, BUDGET.MAX_TOOL_CALLS - 1)).toBe(false);
+  });
+});
