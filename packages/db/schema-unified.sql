@@ -4,6 +4,15 @@
 -- Merges: packages/db/schema.sql (leads/messages/trace) +
 --         docs/supabase-schema.sql (workspaces multi-tenancy)
 -- Source of truth after 2026-09-27 audit. Supersedes both files.
+-- docs/supabase-schema.sql is SUPERSEDED — do not run it directly;
+-- run this file (then supabase/migrations/0001 + 0002) instead.
+-- Task 4 hardening (mirrors 20240101000002_hardening.sql):
+--  * RLS helpers live in private.* (SECURITY DEFINER, fixed
+--    search_path = '', REVOKE EXECUTE FROM anon, authenticated);
+--    public.* names kept as deprecated shims delegating to private.*.
+--  * trace_events: no WITH CHECK (true) for authenticated; insert
+--    requires startup link + member+ (or owner); select drops the
+--    startup_id IS NULL bypass (service_role path documented).
 -- Conventions (Supabase RLS best practices):
 --  * (select auth.uid()) wrapped — initPlan cached per-statement
 --  * SECURITY DEFINER helpers in public with fixed search_path
@@ -70,6 +79,9 @@ create table if not exists startups (
 
 -- Backfill: workspace_id nullable for legacy rows (single-tenant demo data).
 -- New rows MUST supply workspace_id (enforced in API + app policy below).
+-- NOT NULL follow-up (deferred, see 0002): backfill legacy rows to owner
+-- personal workspaces, verify zero NULLs, then ALTER ... SET NOT NULL
+-- in a separate migration. Do NOT enforce NOT NULL while prod has NULLs.
 
 -- ── Assumptions ─────────────────────────────────────────────
 create table if not exists assumptions (
@@ -203,7 +215,11 @@ create index if not exists idx_startups_name_trgm on startups using gin (name gi
 create index if not exists idx_evidence_claim_trgm on evidence using gin (claim gin_trgm_ops);
 
 -- ── RLS helpers (SECURITY DEFINER, fixed search_path) ───────
-create or replace function is_workspace_member(p_workspace_id uuid)
+-- Canonical location is private.* (Task 4). Public names are
+-- deprecated shims delegating to private.* for backward compat.
+create schema if not exists private;
+
+create or replace function private.is_workspace_member(p_workspace_id uuid)
 returns boolean language sql security definer stable set search_path = '' as $$
   select exists (
     select 1 from public.workspace_members
@@ -211,11 +227,28 @@ returns boolean language sql security definer stable set search_path = '' as $$
   );
 $$;
 
-create or replace function workspace_role(p_workspace_id uuid)
+create or replace function private.workspace_role(p_workspace_id uuid)
 returns text language sql security definer stable set search_path = '' as $$
   select role from public.workspace_members
   where workspace_id = p_workspace_id and user_id = (select auth.uid())
   limit 1;
+$$;
+
+revoke all on function private.is_workspace_member(uuid) from public;
+revoke all on function private.workspace_role(uuid) from public;
+revoke execute on function private.is_workspace_member(uuid) from anon, authenticated;
+revoke execute on function private.workspace_role(uuid) from anon, authenticated;
+grant execute on function private.is_workspace_member(uuid) to authenticated, service_role;
+grant execute on function private.workspace_role(uuid) to authenticated, service_role;
+
+create or replace function is_workspace_member(p_workspace_id uuid)
+returns boolean language sql security definer stable set search_path = '' as $$
+  select private.is_workspace_member(p_workspace_id);
+$$;
+
+create or replace function workspace_role(p_workspace_id uuid)
+returns text language sql security definer stable set search_path = '' as $$
+  select private.workspace_role(p_workspace_id);
 $$;
 
 -- ── Enable RLS ──────────────────────────────────────────────
@@ -234,58 +267,58 @@ alter table trace_events enable row level security;
 -- ── Policies (drop-if-exists for re-runnable migration) ─────
 drop policy if exists "workspaces_select" on workspaces;
 create policy "workspaces_select" on workspaces for select to authenticated
-  using (is_workspace_member(id));
+  using (private.is_workspace_member(id));
 drop policy if exists "workspaces_insert" on workspaces;
 create policy "workspaces_insert" on workspaces for insert to authenticated
   with check ((select auth.uid()) = owner_id);
 drop policy if exists "workspaces_update" on workspaces;
 create policy "workspaces_update" on workspaces for update to authenticated
-  using (workspace_role(id) in ('owner','admin'));
+  using (private.workspace_role(id) in ('owner','admin'));
 drop policy if exists "workspaces_delete" on workspaces;
 create policy "workspaces_delete" on workspaces for delete to authenticated
-  using (workspace_role(id) = 'owner');
+  using (private.workspace_role(id) = 'owner');
 
 drop policy if exists "members_select" on workspace_members;
 create policy "members_select" on workspace_members for select to authenticated
-  using (is_workspace_member(workspace_id));
+  using (private.is_workspace_member(workspace_id));
 drop policy if exists "members_insert" on workspace_members;
 create policy "members_insert" on workspace_members for insert to authenticated
-  with check (workspace_role(workspace_id) in ('owner','admin'));
+  with check (private.workspace_role(workspace_id) in ('owner','admin'));
 drop policy if exists "members_delete" on workspace_members;
 create policy "members_delete" on workspace_members for delete to authenticated
-  using (workspace_role(workspace_id) = 'owner' or user_id = (select auth.uid()));
+  using (private.workspace_role(workspace_id) = 'owner' or user_id = (select auth.uid()));
 
 drop policy if exists "invites_select" on workspace_invites;
 create policy "invites_select" on workspace_invites for select to authenticated
-  using (is_workspace_member(workspace_id));
+  using (private.is_workspace_member(workspace_id));
 drop policy if exists "invites_insert" on workspace_invites;
 create policy "invites_insert" on workspace_invites for insert to authenticated
-  with check (workspace_role(workspace_id) in ('owner','admin'));
+  with check (private.workspace_role(workspace_id) in ('owner','admin'));
 
 -- startups: member+ can read/insert/update; admin+ can delete.
 -- Legacy rows with NULL workspace_id fall back to owner check.
 drop policy if exists "startups_select" on startups;
 create policy "startups_select" on startups for select to authenticated
   using (
-    (workspace_id is not null and is_workspace_member(workspace_id))
+    (workspace_id is not null and private.is_workspace_member(workspace_id))
     or owner_id = (select auth.uid())
   );
 drop policy if exists "startups_insert" on startups;
 create policy "startups_insert" on startups for insert to authenticated
   with check (
     (select auth.uid()) = owner_id
-    and (workspace_id is null or workspace_role(workspace_id) in ('owner','admin','member'))
+    and (workspace_id is null or private.workspace_role(workspace_id) in ('owner','admin','member'))
   );
 drop policy if exists "startups_update" on startups;
 create policy "startups_update" on startups for update to authenticated
   using (
-    (workspace_id is not null and workspace_role(workspace_id) in ('owner','admin','member'))
+    (workspace_id is not null and private.workspace_role(workspace_id) in ('owner','admin','member'))
     or owner_id = (select auth.uid())
   );
 drop policy if exists "startups_delete" on startups;
 create policy "startups_delete" on startups for delete to authenticated
   using (
-    (workspace_id is not null and workspace_role(workspace_id) in ('owner','admin'))
+    (workspace_id is not null and private.workspace_role(workspace_id) in ('owner','admin'))
     or owner_id = (select auth.uid())
   );
 
@@ -295,14 +328,14 @@ create policy "assumptions_all" on assumptions for all to authenticated
   using (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
@@ -312,14 +345,14 @@ create policy "evidence_all" on evidence for all to authenticated
   using (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
@@ -329,14 +362,14 @@ create policy "experiments_all" on experiments for all to authenticated
   using (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
@@ -346,14 +379,14 @@ create policy "leads_all" on leads for all to authenticated
   using (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
@@ -363,14 +396,14 @@ create policy "messages_all" on messages for all to authenticated
   using (
     lead_id in (
       select l.id from leads l join startups s on s.id = l.startup_id
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     lead_id in (
       select l.id from leads l join startups s on s.id = l.startup_id
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
@@ -380,42 +413,57 @@ create policy "decisions_all" on decisions for all to authenticated
   using (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   )
   with check (
     startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and workspace_role(s.workspace_id) in ('owner','admin','member'))
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
          or s.owner_id = (select auth.uid())
     )
   );
 
+-- trace_events (Task 4 hardened): no WITH CHECK (true) for
+-- authenticated; insert requires startup link + member+ (or owner);
+-- select drops the startup_id IS NULL bypass. Service-role path is
+-- explicit (service_role bypasses RLS regardless). Mirrors 0002.
 drop policy if exists "trace_select" on trace_events;
 create policy "trace_select" on trace_events for select to authenticated
   using (
-    startup_id is null or startup_id in (
+    startup_id in (
       select s.id from startups s
-      where (s.workspace_id is not null and is_workspace_member(s.workspace_id))
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
          or s.owner_id = (select auth.uid())
     )
   );
 drop policy if exists "trace_insert" on trace_events;
 create policy "trace_insert" on trace_events for insert to authenticated
+  with check (
+    startup_id is not null and startup_id in (
+      select s.id from startups s
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
+         or s.owner_id = (select auth.uid())
+    )
+  );
+
+drop policy if exists "trace_service_all" on trace_events;
+create policy "trace_service_all" on trace_events for all to service_role
+  using (true)
   with check (true);
 
--- ── updated_at triggers ─────────────────────────────────────
-create or replace function update_updated_at()
-returns trigger language plpgsql as $$
+-- ── updated_at triggers (Task 4: fixed search_path) ──────────
+create or replace function public.update_updated_at()
+returns trigger language plpgsql set search_path = '' as $$
 begin new.updated_at = now(); return new; end; $$;
 
 drop trigger if exists trg_workspaces_updated_at on workspaces;
 create trigger trg_workspaces_updated_at before update on workspaces
-  for each row execute function update_updated_at();
+  for each row execute function public.update_updated_at();
 drop trigger if exists trg_startups_updated_at on startups;
 create trigger trg_startups_updated_at before update on startups
-  for each row execute function update_updated_at();
+  for each row execute function public.update_updated_at();
 
 -- ── Auto-create personal workspace on signup ────────────────
 create or replace function handle_new_user()
