@@ -1021,6 +1021,7 @@ EVIDENCE (${allEvidence.length} items):
 ${evidenceSummary}
 
 THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go threshold: ${thresholdReason}`}
+THIN-EVIDENCE RULE: a single source repeated, or several items sharing one URL once de-duplicated, is thin evidence and MUST NOT produce "go" — "go" needs 3+ DISTINCT sources. When in doubt, output "test_more".
 CONFIDENCE LEVEL: ${confidence.toUpperCase()}
 PRIMARY EVIDENCE COUNT: ${primaryEvidence.length}
 

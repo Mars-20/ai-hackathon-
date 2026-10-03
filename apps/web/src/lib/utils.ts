@@ -194,10 +194,33 @@ export const GO_THRESHOLD = {
   MIN_INTERVIEWS_SATURATED: 12,
 } as const;
 
+// Normalize a source URL for independence counting: case-insensitive with
+// trailing slashes and fragments stripped — same document, one source.
+function normalizeSourceUrl(u: unknown): string | undefined {
+  if (typeof u !== "string" || u.trim().length === 0) return undefined;
+  return u.trim().toLowerCase().split("#")[0].replace(/\/+$/, "");
+}
+
+// Distinct independent sources (Task 7 thin-evidence gate): URL-bearing items
+// de-duplicate by normalized URL; URL-less primary items (interviews / field
+// notes with no link) each count as their own source. One URL repeated N
+// times is ONE source — repeating a citation never manufactures independence.
+function countDistinctSources(items: Array<{ source_url?: string }>): number {
+  const urls = new Set<string>();
+  let urlLess = 0;
+  for (const e of items) {
+    const n = normalizeSourceUrl(e.source_url);
+    if (n) urls.add(n);
+    else urlLess++;
+  }
+  return urls.size + urlLess;
+}
+
 export function meetsGoThreshold(
-  primaryEvidence: Array<{ strength: EvidenceStrength; sample_size?: number; source_type?: string }>
+  primaryEvidence: Array<{ strength: EvidenceStrength; sample_size?: number; source_type?: string; source_url?: string }>
 ): { eligible: boolean; reason: string } {
   const rung4Plus = primaryEvidence.filter((e) => STRENGTH_RUNG[e.strength] >= GO_THRESHOLD.MIN_RUNG);
+  const distinctSources = countDistinctSources(rung4Plus);
   const totalSample = rung4Plus.reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
   const interviewSample = rung4Plus
     .filter((e) => e.source_type === "interview")
@@ -206,10 +229,10 @@ export function meetsGoThreshold(
   if (rung4Plus.length === 0) {
     return { eligible: false, reason: "No rung-4+ primary evidence. Minimum: contact shared (rung 4)." };
   }
-  if (rung4Plus.length < GO_THRESHOLD.MIN_INDEPENDENT_SOURCES) {
+  if (distinctSources < GO_THRESHOLD.MIN_INDEPENDENT_SOURCES) {
     return {
       eligible: false,
-      reason: `Only ${rung4Plus.length} independent rung-4+ source(s). Minimum ${GO_THRESHOLD.MIN_INDEPENDENT_SOURCES} required.`,
+      reason: `Only ${distinctSources} independent rung-4+ source(s) after URL de-dup. Minimum ${GO_THRESHOLD.MIN_INDEPENDENT_SOURCES} distinct sources required — a single repeated URL is thin evidence.`,
     };
   }
   if (totalSample >= GO_THRESHOLD.MIN_SAMPLE_QUANT) {
