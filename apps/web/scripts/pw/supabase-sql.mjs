@@ -12,7 +12,7 @@
 // Without --apply this only verifies the editor opens (dry run).
 import fs from "node:fs";
 import path from "node:path";
-import { REPO_ROOT, arg, hasFlag, launchPersistent, shot } from "./common.mjs";
+import { REPO_ROOT, arg, hasFlag, launchPersistent, shot, waitForLogin } from "./common.mjs";
 
 const MIGRATIONS = [
   "supabase/migrations/20240101000002_hardening.sql",
@@ -23,19 +23,27 @@ const MIGRATIONS = [
   "supabase/constraint.sql",
 ];
 
-async function ensureLoggedIn(page) {
-  await page.goto("https://supabase.com/dashboard/projects", { waitUntil: "domcontentloaded" });
-  if (/supabase\.com\/dashboard\/sign-in|supabase\.com\/auth/.test(page.url()) || (await page.getByRole("button", { name: /sign in/i }).count())) {
-    console.log("LOGIN NEEDED: sign in to Supabase in the opened browser window.");
-    console.log("The script waits up to 10 minutes, then continues automatically.");
-    await page.waitForURL((u) => /supabase\.com\/dashboard\/projects/.test(u.href), { timeout: 600_000 });
-  }
+async function ensureLoggedIn(context) {
+  const probe = await context.newPage();
+  await probe.goto("https://supabase.com/dashboard/projects", { waitUntil: "domcontentloaded" }).catch(() => {});
+  const needsLogin =
+    /supabase\.com\/dashboard\/sign-in|supabase\.com\/auth/.test(probe.url()) ||
+    ((await probe.getByRole("button", { name: /sign in/i }).count()) > 0 &&
+      !/supabase\.com\/dashboard\/projects/.test(probe.url()));
+  if (!needsLogin) return probe;
+  console.log("LOGIN NEEDED: complete sign-in in the opened browser window.");
+  console.log("Keep the window open — the script waits up to 10 minutes, then continues automatically.");
+  const logged = await waitForLogin(context, {
+    homepage: "https://supabase.com/dashboard/projects",
+    match: (u) => /supabase\.com\/dashboard\/projects/.test(u) || /supabase\.com\/dashboard\/project\//.test(u),
+  });
+  await probe.close().catch(() => {});
+  return logged;
 }
 
 async function discover(context) {
-  const page = await context.newPage();
+  const page = await ensureLoggedIn(context);
   try {
-    await ensureLoggedIn(page);
     await page.goto("https://supabase.com/dashboard/projects", { waitUntil: "networkidle" }).catch(() => {});
     await page.waitForTimeout(3000);
     const links = await page.$$eval('a[href*="/dashboard/project/"]', (as) =>
@@ -75,9 +83,8 @@ async function pasteAndRun(page, name, sql) {
 }
 
 async function applyMigrations(context, projectRef, apply) {
-  const page = await context.newPage();
+  const page = await ensureLoggedIn(context);
   try {
-    await ensureLoggedIn(page);
     let ref = projectRef;
     if (!/^https?:\/\//.test(ref)) {
       // Try to resolve a bare ref or name via the projects list.

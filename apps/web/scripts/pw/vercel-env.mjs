@@ -11,7 +11,7 @@
 //   node scripts/pw/vercel-env.mjs --discover
 //   node scripts/pw/vercel-env.mjs --project=<slug-or-full-url> [--apply] [--app-url=https://...]
 // Without --apply this is a dry run: it shows which vars exist vs missing.
-import { arg, hasFlag, isPlaceholder, launchPersistent, readLocalEnv, shot } from "./common.mjs";
+import { arg, hasFlag, isPlaceholder, launchPersistent, readLocalEnv, shot, waitForLogin } from "./common.mjs";
 
 const KNOWN_KEYS = [
   "GEMINI_API_KEY",
@@ -25,20 +25,23 @@ const MANUAL_KEYS = ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"];
 const APP_URL_KEY = "NEXT_PUBLIC_APP_URL";
 const ENVS = ["Production", "Preview", "Development"];
 
-async function ensureLoggedIn(page) {
-  await page.goto("https://vercel.com/dashboard", { waitUntil: "domcontentloaded" });
-  if (/vercel\.com\/login/.test(page.url())) {
-    console.log("LOGIN NEEDED: sign in to Vercel in the opened browser window.");
-    console.log("The script waits up to 10 minutes, then continues automatically.");
-    await page.waitForURL((u) => !/vercel\.com\/login/.test(u.href), { timeout: 600_000 });
-  }
-  await page.waitForURL(/vercel\.com\/[^/]+\/[^/]+|vercel\.com\/dashboard/, { timeout: 60_000 });
+async function ensureLoggedIn(context) {
+  const probe = await context.newPage();
+  await probe.goto("https://vercel.com/dashboard", { waitUntil: "domcontentloaded" }).catch(() => {});
+  if (!/vercel\.com\/login/.test(probe.url())) return probe;
+  console.log("LOGIN NEEDED: complete sign-in (GitHub OAuth is fine) in the opened browser window.");
+  console.log("Keep the window open — the script waits up to 10 minutes, then continues automatically.");
+  const logged = await waitForLogin(context, {
+    homepage: "https://vercel.com/dashboard",
+    match: (u) => /vercel\.com/.test(u) && !/vercel\.com\/login/.test(u),
+  });
+  await probe.close().catch(() => {});
+  return logged;
 }
 
 async function discover(context) {
-  const page = await context.newPage();
+  const page = await ensureLoggedIn(context);
   try {
-    await ensureLoggedIn(page);
     await page.goto("https://vercel.com/dashboard", { waitUntil: "networkidle" }).catch(() => {});
     const links = await page.$$eval('a[href^="/"]', (as) =>
       as
@@ -92,9 +95,8 @@ async function addVar(page, key, value) {
 }
 
 async function fillProject(context, projectRef, apply, appUrlOverride) {
-  const page = await context.newPage();
+  const page = await ensureLoggedIn(context);
   try {
-    await ensureLoggedIn(page);
     const base = projectRef.startsWith("http") ? projectRef.replace(/\/$/, "") : null;
     if (base) {
       await page.goto(base, { waitUntil: "networkidle" }).catch(() => {});

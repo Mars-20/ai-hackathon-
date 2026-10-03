@@ -76,6 +76,38 @@ export function isPlaceholder(v) {
   return !v || /your_|here$|localhost/i.test(v);
 }
 
+// Poll every open page until one matches (OAuth hops across vercel.com →
+// github.com → back, sometimes in popups). Survives page closes: if the
+// user closes all tabs, a fresh dashboard page is opened for them.
+export async function waitForLogin(context, { match, homepage, timeoutMs = 600_000 }) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    let pages = [];
+    try {
+      pages = context.pages();
+    } catch {
+      throw new Error("Browser was closed. Re-run the script and keep the window open.");
+    }
+    for (const p of pages) {
+      try {
+        if (match(p.url())) return p;
+      } catch {
+        // dead page — ignore
+      }
+    }
+    if (!pages.length) {
+      try {
+        const p = await context.newPage();
+        await p.goto(homepage).catch(() => {});
+      } catch {
+        throw new Error("Browser was closed. Re-run the script and keep the window open.");
+      }
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error("Login wait timed out after 10 minutes.");
+}
+
 export async function shot(page, name) {
   const p = path.join(SHOT_DIR, `${Date.now()}-${name}.png`);
   await page.screenshot({ path: p });
