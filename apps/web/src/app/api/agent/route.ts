@@ -25,14 +25,14 @@ import {
 import {
   checkRateLimit,
   resolveRateLimitKey,
+  getClientIp,
   RATE_MAX,
   RATE_WINDOW_MS,
 } from "@/lib/rate-limit";
 import {
-  COST_TABLE,
   checkBudget,
   extractUsageCost,
-  recordSpend,
+  recordSpendAsync,
 } from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
@@ -1186,8 +1186,9 @@ function sanitizeForPrompt(s: string): string {
     .slice(0, MAX_IDEA_CHARS + MAX_DATA_CHARS);
 }
 
-// Per-call costs live in lib/cost (COST_TABLE fallback + usageMetadata
-// extractor). Imported above — single source of truth, never copied here.
+// Per-call costs live in lib/cost via extractUsageCost (usageMetadata when
+// available, COST_TABLE fallback marked inside lib/cost). SINGLE SOURCE: this
+// route must never reference COST_TABLE directly — always extractUsageCost.
 
 export async function POST(req: NextRequest) {
   // ── Pre-flight: distributed rate limit (fail-closed) ───────────────────
@@ -1201,7 +1202,9 @@ export async function POST(req: NextRequest) {
   } catch {
     rateUserId = "";
   }
-  const rateIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  // getClientIp documents the trusted-proxy caveat (Task 9 infra follow-up);
+  // the authenticated user key takes precedence wherever available.
+  const rateIp = getClientIp(req.headers);
   const rateKey = resolveRateLimitKey({ userId: rateUserId, ip: rateIp, route: "/api/agent" });
   let rate: { limited: boolean; retryAfter: number };
   try {
@@ -1249,24 +1252,32 @@ export async function POST(req: NextRequest) {
   } catch {
     peekWorkspaceId = "";
   }
-  const budgetKey = peekWorkspaceId || rateUserId;
-  if (budgetKey) {
-    try {
-      const b = await checkBudget(budgetKey);
-      if (!b.allowed) {
-        const retryAfter = b.retryAfter ?? 60;
-        return new Response(
-          JSON.stringify({ error: "Budget exceeded for this workspace.", retryAfter }),
-          {
-            status: 402,
-            headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) },
-          }
-        );
-      }
-    } catch {
-      // Budget store unavailable pre-stream: fail open here; the in-stream
-      // BUDGET guard below still enforces per-request caps.
+  // Budget pre-flight is MANDATORY for every caller, including anonymous:
+  // unauthenticated requests are ledgered under the rate-limit key so anon
+  // abuse still hits the spend cap. Fail-closed on store error (explicit 429)
+  // — never silently bypass the budget.
+  const budgetKey = peekWorkspaceId || rateUserId || rateKey;
+  try {
+    const b = await checkBudget(budgetKey);
+    if (!b.allowed) {
+      const retryAfter = b.retryAfter ?? 60;
+      return new Response(
+        JSON.stringify({ error: "Budget exceeded for this workspace.", retryAfter }),
+        {
+          status: 402,
+          headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) },
+        }
+      );
     }
+  } catch {
+    // Fail-closed: ledger unreadable → reject, never bypass.
+    return new Response(
+      JSON.stringify({ error: "Budget check unavailable. Try again shortly.", retryAfter: 60 }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "60" },
+      }
+    );
   }
 
   const encoder = new TextEncoder();
@@ -1331,14 +1342,14 @@ export async function POST(req: NextRequest) {
       await send({ type: "assumptions", assumptions, trace: [...trace] });
 
       toolCalls++;
-      totalCost += COST_TABLE.gemini_call;
+      totalCost += extractUsageCost(undefined, "gemini_call");
       checkTimeout();
 
       // ── Phase 4: Market Research ────────────────────────────────────────────
       await send({ type: "phase", phase: "research", trace: [...trace] });
       const secondaryEvidence = await runMarketResearchSkill(startup, assumptions, trace);
       toolCalls += 3; // 3 search queries
-      totalCost += COST_TABLE.gemini_call + 3 * COST_TABLE.search;
+      totalCost += extractUsageCost(undefined, "gemini_call") + 3 * extractUsageCost(undefined, "search");
       checkTimeout();
       await send({ type: "evidence", evidence: secondaryEvidence, trace: [...trace] });
 
@@ -1346,7 +1357,7 @@ export async function POST(req: NextRequest) {
       await send({ type: "phase", phase: "experiment", trace: [...trace] });
       const experiment = await runExperimentDesignerSkill(startup, assumptions, trace);
       toolCalls++;
-      totalCost += COST_TABLE.gemini_call;
+      totalCost += extractUsageCost(undefined, "gemini_call");
       checkTimeout();
       await send({ type: "experiment", experiment, trace: [...trace] });
 
@@ -1355,7 +1366,7 @@ export async function POST(req: NextRequest) {
       await send({ type: "phase", phase: "leads", trace: [...trace] });
       const leads = await runLeadFinderSkill(startup, trace);
       toolCalls++;
-      totalCost += COST_TABLE.search;
+      totalCost += extractUsageCost(undefined, "search");
       checkTimeout();
       if (leads.length > 0) {
         await send({
@@ -1372,7 +1383,7 @@ export async function POST(req: NextRequest) {
         await send({ type: "phase", phase: "evidence", trace: [...trace] });
         primaryEvidence = await runResponseAnalyzerSkill(startup, uploaded_data, experiment, trace);
         toolCalls++;
-        totalCost += COST_TABLE.gemini_call;
+        totalCost += extractUsageCost(undefined, "gemini_call");
         checkTimeout();
         await send({ type: "primary_evidence", evidence: primaryEvidence, trace: [...trace] });
       }
@@ -1390,14 +1401,14 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
       await send({ type: "phase", phase: "verifying", trace: [...trace] });
       const verifierResult = await runVerifier(plannerSummary, allEvidence, trace);
       toolCalls++;
-      totalCost += COST_TABLE.gemini_call;
+      totalCost += extractUsageCost(undefined, "gemini_call");
       checkTimeout();
 
       // ── Phase 7: Decision Memo ──────────────────────────────────────────────
       await send({ type: "phase", phase: "memo", trace: [...trace] });
       const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace);
       toolCalls++;
-      totalCost += COST_TABLE.gemini_call;
+      totalCost += extractUsageCost(undefined, "gemini_call");
 
       // ── Persist (best-effort; never breaks streaming) ─────────────────────
       if (ownerId) {
@@ -1488,8 +1499,13 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
         }
       }
 
-      // Ledger this run's spend (best-effort; feeds pre-flight checkBudget).
-      if (budgetKey) recordSpend(budgetKey, totalCost);
+      // Ledger this run's spend (best-effort atomic RPC; feeds pre-flight
+      // checkBudget). budgetKey is always set (anon → rateKey fallback).
+      try {
+        await recordSpendAsync(budgetKey, totalCost);
+      } catch {
+        // best-effort only — ledger failure must not break the stream
+      }
 
       await send({
         type: "done",
@@ -1512,7 +1528,11 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       // Ledger partial spend even on failure — the run consumed providers.
-      if (budgetKey) recordSpend(budgetKey, totalCost);
+      try {
+        await recordSpendAsync(budgetKey, totalCost);
+      } catch {
+        // best-effort only
+      }
       trace.push(makeTrace("executor", "error", { error: message }));
       await send({ type: "error", message, trace });
     } finally {
