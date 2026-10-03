@@ -1,0 +1,60 @@
+{
+  "id": "gt-006",
+  "verdict": "test_more",
+  "confidence": "low",
+  "reason": "New vertical, same methodology: 6 assumptions mapped, cited evidence recorded, verdict test_more.",
+  "assumptions": [
+    {
+      "category": "desirability",
+      "text": "International buyers want authentic Egyptian pottery, textiles and jewelry with provenance."
+    },
+    {
+      "category": "desirability",
+      "text": "Craftspeople will list inventory on a marketplace that handles cross-border payments."
+    },
+    {
+      "category": "viability",
+      "text": "Direct-shipping margins cover marketplace fees plus international parcel cost."
+    },
+    {
+      "category": "viability",
+      "text": "Repeat purchase rate from gift buyers sustains acquisition spend."
+    },
+    {
+      "category": "feasibility",
+      "text": "Quality inspection can be standardized across pottery, textiles and jewelry sellers."
+    },
+    {
+      "category": "feasibility",
+      "text": "Export paperwork for handicrafts clears without per-item licenses."
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_type": "primary",
+      "strength": "intent",
+      "sample_size": 7,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-006/craft-seller-interviews"
+    },
+    {
+      "evidence_type": "secondary",
+      "strength": "opinion",
+      "sample_size": 1,
+      "source_type": "desk",
+      "source_url": "https://recorded.local/gt-006/desk-handicraft-exports"
+    }
+  ],
+  "trace": [
+    {
+      "event_type": "intake_complete"
+    },
+    {
+      "event_type": "assumption_mapped"
+    },
+    {
+      "event_type": "evidence_recorded"
+    }
+  ],
+  "verifier_flags": []
+}

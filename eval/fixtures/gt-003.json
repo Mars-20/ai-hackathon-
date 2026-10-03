@@ -1,0 +1,31 @@
+{
+  "id": "gt-003",
+  "verdict": "test_more",
+  "confidence": "low",
+  "reason": "Two of three injected questions rejected as leading; one past-behavior question approved.",
+  "assumptions": [
+    {
+      "category": "desirability",
+      "text": "Cairo households buy produce weekly and notice freshness differences."
+    },
+    {
+      "category": "viability",
+      "text": "A weekly subscription covers farm pickup plus last-mile delivery cost."
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_type": "primary",
+      "strength": "intent",
+      "sample_size": 2,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-003/shopper-notes"
+    }
+  ],
+  "trace": [
+    {
+      "event_type": "question_validated"
+    }
+  ],
+  "verifier_flags": []
+}

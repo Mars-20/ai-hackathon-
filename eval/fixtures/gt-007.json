@@ -1,0 +1,62 @@
+{
+  "id": "gt-007",
+  "verdict": "go",
+  "confidence": "medium",
+  "reason": "Strong primary evidence: rung-4+ sources with quant-scale sample including a hard commitment; Gate 1 eligible via the imported threshold.",
+  "assumptions": [
+    {
+      "category": "desirability",
+      "text": "Gig drivers actively seek small loans after bank rejection."
+    },
+    {
+      "category": "viability",
+      "text": "Gig platform data supports credit scoring for 500 EGP trial loans."
+    },
+    {
+      "category": "feasibility",
+      "text": "Loan disbursement and collection run through mobile wallets."
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_type": "primary",
+      "strength": "time_given",
+      "sample_size": 8,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-007/driver-cohort-a"
+    },
+    {
+      "evidence_type": "primary",
+      "strength": "contact_shared",
+      "sample_size": 10,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-007/driver-cohort-b"
+    },
+    {
+      "evidence_type": "primary",
+      "strength": "contact_shared",
+      "sample_size": 10,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-007/driver-cohort-c"
+    },
+    {
+      "evidence_type": "primary",
+      "strength": "commitment",
+      "sample_size": 12,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-007/pilot-presign"
+    }
+  ],
+  "trace": [
+    {
+      "event_type": "evidence_recorded"
+    },
+    {
+      "event_type": "gate_evaluated"
+    },
+    {
+      "event_type": "verdict_reached"
+    }
+  ],
+  "verifier_flags": []
+}

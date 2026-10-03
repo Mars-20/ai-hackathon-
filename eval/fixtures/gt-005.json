@@ -1,0 +1,22 @@
+{
+  "id": "gt-005",
+  "verdict": "test_more",
+  "confidence": "low",
+  "reason": "Off-domain cooking question routed to a graceful validation offer instead of crashing.",
+  "assumptions": [
+    {
+      "category": "desirability",
+      "text": "The user accepts a graceful redirect toward startup validation help."
+    }
+  ],
+  "evidence": [],
+  "trace": [
+    {
+      "event_type": "router_fallback"
+    },
+    {
+      "event_type": "graceful_response"
+    }
+  ],
+  "verifier_flags": []
+}

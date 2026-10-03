@@ -1,0 +1,34 @@
+{
+  "id": "gt-004",
+  "verdict": "test_more",
+  "confidence": "low",
+  "reason": "All evidence is opinion (rung 1), sample < 15",
+  "assumptions": [
+    {
+      "category": "desirability",
+      "text": "Egyptian university students will open a CBT-based wellness app during stressful weeks."
+    },
+    {
+      "category": "feasibility",
+      "text": "Short CBT exercises can be delivered safely without a human counselor in the loop."
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_type": "primary",
+      "strength": "opinion",
+      "sample_size": 3,
+      "source_type": "interview",
+      "source_url": "https://recorded.local/gt-004/quote-notes"
+    }
+  ],
+  "trace": [
+    {
+      "event_type": "evidence_recorded"
+    },
+    {
+      "event_type": "gate_evaluated"
+    }
+  ],
+  "verifier_flags": []
+}

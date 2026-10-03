@@ -1,0 +1,58 @@
+[
+  {
+    "id": "gt-001",
+    "verdict_got": "test_more",
+    "verdict_want": "test_more",
+    "citations_got": 2,
+    "pass": true
+  },
+  {
+    "id": "gt-002",
+    "verdict_got": "test_more",
+    "verdict_want": "any",
+    "citations_got": 1,
+    "pass": true
+  },
+  {
+    "id": "gt-003",
+    "verdict_got": "test_more",
+    "verdict_want": "any",
+    "citations_got": 1,
+    "pass": true
+  },
+  {
+    "id": "gt-004",
+    "verdict_got": "test_more",
+    "verdict_want": "test_more",
+    "citations_got": 1,
+    "pass": true
+  },
+  {
+    "id": "gt-005",
+    "verdict_got": "test_more",
+    "verdict_want": "any",
+    "citations_got": 0,
+    "pass": true
+  },
+  {
+    "id": "gt-006",
+    "verdict_got": "test_more",
+    "verdict_want": "test_more/iterate",
+    "citations_got": 2,
+    "pass": true
+  },
+  {
+    "id": "gt-007",
+    "verdict_got": "go",
+    "verdict_want": "go/iterate",
+    "citations_got": 4,
+    "pass": true
+  },
+  {
+    "id": "gt-008",
+    "verdict_got": "test_more",
+    "verdict_want": "any",
+    "citations_got": 1,
+    "pass": true
+  }
+]
