@@ -82,11 +82,14 @@ export function recordSpend(workspaceId: string, amountUsd: number): number {
 // Migration: supabase/migrations/20240101000003_workspace_spend.sql creates
 // table workspace_spend + functions get_workspace_spend(p_key) and
 // add_workspace_spend(p_key, p_amount) (single-statement upsert → atomic).
+// Spend-ledger auth (Task 6): service_role ONLY. The anon key must never
+// authorize spend writes/reads — the ledger is server-only. When the service
+// key is absent (dev/test without Supabase env), callers fall back to the
+// in-memory ledger below; production without a service key fails closed in
+// checkBudget/recordSpendAsync via the missing-RPC path.
 function spendRpcEnv(): { url: string; key: string } | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) return null;
   return { url: url.replace(/\/+$/, ""), key };
 }

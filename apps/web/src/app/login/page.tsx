@@ -4,6 +4,11 @@ import { Suspense, useState, useEffect } from "react";
 import { Brain, ArrowRight, Mail, Lock, User, Eye, EyeOff, Github, Chrome } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ConsentCheckbox,
+  DEFAULT_CONSENT_CHECKED,
+  buildConsentRecord,
+} from "@/components/consent-checkbox";
 
 type AuthMode = "login" | "signup";
 
@@ -20,6 +25,8 @@ function AuthForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // Research-contact consent (Task 6): unchecked by default, explicit opt-in.
+  const [consentGiven, setConsentGiven] = useState<boolean>(DEFAULT_CONSENT_CHECKED);
 
   const supabase = createClient();
 
@@ -38,11 +45,22 @@ function AuthForm() {
 
     try {
       if (mode === "signup") {
+        const consent = buildConsentRecord(consentGiven);
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { full_name: fullName },
+            data: {
+              full_name: fullName,
+              // Stored only when the user opts in (unchecked default).
+              ...(consent
+                ? {
+                    consent_given: consent.consent_given,
+                    consent_text: consent.consent_text,
+                    consent_timestamp: consent.consent_timestamp,
+                  }
+                : {}),
+            },
           },
         });
         if (signUpError) throw signUpError;
@@ -202,6 +220,11 @@ function AuthForm() {
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+
+            {/* Research-contact consent (Task 6): signup-only, unchecked default */}
+            {mode === "signup" && (
+              <ConsentCheckbox checked={consentGiven} onChange={setConsentGiven} />
+            )}
 
             {/* Error / Success messages */}
             {error && (

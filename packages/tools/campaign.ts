@@ -27,7 +27,8 @@ export interface MessagePayload {
   sender_address: string;
   idempotency_key?: string;
   experiment_id?: string;
-  channel?: "email" | "whatsapp";
+  // Email-only until PDPL marketing license (WhatsApp deferred to P2).
+  channel?: "email";
 }
 
 export interface CampaignResult {
@@ -172,7 +173,7 @@ export async function executeCampaignAction(
       // NOTE (Task 5): the lead_has_consent flag is only a pre-check for the
       // demo/in-memory path below. On the DB path consent is ALWAYS
       // re-verified from leads (never trust the flag). L3 experiment
-      // approval-status itself is Task 6 — not enforced here.
+      // approval-status is enforced below (Task 6) on the DB path.
       const { lead_has_consent, body_text } = payload as { lead_has_consent?: boolean; body_text?: string };
       if (!lead_has_consent) {
         return {
@@ -246,6 +247,37 @@ export async function executeCampaignAction(
           action,
           error: "Compliance Violation: consent must be re-verified from leads (Section 11 PDPL audit).",
         };
+      }
+      // L3 approval gate (Task 6): when an experiment_id is given, the
+      // experiments row must be approved AND stamped (approved_by/at
+      // non-null). Fail closed: missing row, non-approved status, or a
+      // missing stamp blocks the queue. The API layer surfaces this as 403.
+      // No experiment_id → no L3 scope (Task 5 behaviour preserved).
+      if (p.experiment_id) {
+        const { data: experiment, error: experimentError } = await supabase
+          .from("experiments")
+          .select("id, status, approved_by, approved_at")
+          .eq("id", p.experiment_id)
+          .maybeSingle();
+        const exp = experiment as {
+          status?: unknown;
+          approved_by?: unknown;
+          approved_at?: unknown;
+        } | null;
+        if (
+          experimentError ||
+          !exp ||
+          exp.status !== "approved" ||
+          !exp.approved_by ||
+          !exp.approved_at
+        ) {
+          return {
+            success: false,
+            action,
+            error:
+              "L3 approval required (403): experiment must have status='approved' with approved_by/at before queueing (Section 10).",
+          };
+        }
       }
       // Daily send cap (Task 5): block the (CAP+1)-th message queued today.
       const dayStart = new Date();

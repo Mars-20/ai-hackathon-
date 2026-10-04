@@ -116,7 +116,7 @@ if (verdict === "go" && !allowGo) {
 | `SUPABASE_URL` | ✅ P0 | Database |
 | `SUPABASE_ANON_KEY` | ✅ P0 | Client-side DB access |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ P0 | Server-side DB access |
-| `EMAIL_PROVIDER_API_KEY` | P1 only | Email outreach campaigns |
+| `RESEND_API_KEY` | P1 only | Email outreach campaigns (provider pick Task 6: Resend; delivery wiring out-of-scope v1) |
 
 > ⚠️ Use a **paid** Gemini key for the demo. Free tier will 429 mid-demo.
 
