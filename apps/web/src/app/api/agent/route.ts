@@ -61,6 +61,18 @@ export interface AiUsage {
   candidatesTokenCount?: number;
 }
 
+// Raw Groq (OpenAI-compatible) chat-completion payload shape — only the
+// fields this route reads. Keeps `fetchGroqWithBackoff` free of `any`
+// without changing any runtime behavior.
+export interface GroqChatCompletion {
+  choices?: Array<{ message?: { content?: string | null } | null } | null> | null;
+  usage?: {
+    total_tokens?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  } | null;
+}
+
 // Per-field cap for untrusted content embedded in prompts: each
 // user-controlled field is truncated individually so one huge field cannot
 // crowd out the rest of the prompt.
@@ -125,7 +137,7 @@ async function fetchGroqWithBackoff(
   body: Record<string, unknown>,
   trace: TraceEvent[],
   skillName: string
-): Promise<{ data: any; usage?: AiUsage }> {
+): Promise<{ data: GroqChatCompletion; usage?: AiUsage }> {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   if (!groqKey) throw new Error("Groq API key not configured");
   let lastErr: unknown = new Error(`Groq unavailable for ${skillName}`);

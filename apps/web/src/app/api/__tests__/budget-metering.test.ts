@@ -11,7 +11,7 @@ import { extractUsageCost } from "@/lib/cost";
 
 describe("budget metering", () => {
   test("real usageMetadata overrides static table", () => {
-    const c = extractUsageCost({ totalTokenCount: 100000 } as any, "gemini_call");
+    const c = extractUsageCost({ totalTokenCount: 100000 }, "gemini_call");
     expect(c).not.toBe(0.004); // must reflect 100k tokens, not static fallback
   });
 
