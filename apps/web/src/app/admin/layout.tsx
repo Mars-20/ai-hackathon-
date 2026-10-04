@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin layout — server-rendered nav shell (spec §2). The redirect for
 // non-admins is UX only; requireAdmin() inside each /api/admin/* route is
-// the authoritative gate. Tier comes from the lightweight GET
-// /api/admin/me route (Task 6 contract) via adminApiFetch — never a direct
-// Supabase read from layout code. Ops (audit/settings/grants) is
+// the authoritative gate. Tier comes from the cached DAL gate
+// getCachedAdminContext() (React-cache()d requireAdminFromSupabase) —
+// zero self-HTTP from layout code. Ops (audit/settings/grants) is
 // platform-only per the §7 matrix and hidden from the workspace tier; the
 // remaining links stay visible because workspace admin/owner tiers hold
 // read or scoped write rights there. All Task 7 pages are live.
@@ -11,8 +11,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { adminApiFetch } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { getCachedAdminContext } from "@/lib/admin-dal";
 
 interface NavItem {
   href: string;
@@ -29,25 +28,13 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/ops", label: "Ops", platformOnly: true },
 ];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 async function resolveTier(): Promise<"platform" | "workspace"> {
-  let body: unknown;
   try {
-    body = await adminApiFetch("/api/admin/me");
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
+    const ctx = await getCachedAdminContext();
+    return ctx.tier === "platform" ? "platform" : "workspace";
+  } catch {
     redirect("/login");
   }
-  if (
-    isRecord(body) &&
-    (body["tier"] === "platform" || body["tier"] === "workspace")
-  ) {
-    return body["tier"];
-  }
-  redirect("/login");
 }
 
 export default async function AdminLayout({
