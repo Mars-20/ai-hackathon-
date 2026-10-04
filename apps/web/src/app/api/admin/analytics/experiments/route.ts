@@ -4,8 +4,10 @@
 // reads directly); the ?format=csv branch calls queryExperimentViews for
 // its rows and formats CSV inline (byte-identical output).
 // Sort columns allowlist: name, status, sample_size (?sort=,
-// ?order=asc|desc; invalid → 400 inside the helper). Pagination via
-// getPagination (defaults page 20 / max 100, inside the helper).
+// ?order=asc|desc; invalid → 400). ?format=json|csv (invalid → 400).
+// Validation order sort → order → format → pagination runs BEFORE any reads
+// (cheap pre-check in the route; helpers re-validate internally).
+// Pagination via getPagination (defaults page 20 / max 100).
 // ?format=csv returns the full sorted (cap-bound) set as text/csv with a
 // header row. Column semantics: name = parent startup name (fallback:
 // design.title); status = experiments.status; sample_size =
@@ -22,11 +24,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
+  getPagination,
   requireAdminFromSupabase,
   toEnvelope,
 } from "@/lib/admin";
 import { createQueryDeps } from "@/lib/admin-queries/shared";
 import {
+  parseExperimentFormat,
+  parseExperimentSortOrder,
   queryExperiments,
   queryExperimentViews,
 } from "@/lib/admin-queries/analytics";
@@ -67,12 +72,26 @@ export async function GET(request: NextRequest) {
 
   try {
     const params = new URL(request.url).searchParams;
-    const rawFormat = (params.get("format") ?? "json").trim().toLowerCase();
+    // Cheap pre-validation BEFORE any reads, mirroring the original inline
+    // order sort → order → format → pagination (zero DB cost — the helpers
+    // re-validate the same inputs internally before reading). This keeps
+    // doubly-invalid precedence (sort first) while invalid-format requests
+    // never pay the EXPERIMENT_CAP + startup-lookup reads.
+    parseExperimentSortOrder({
+      sort: params.get("sort"),
+      order: params.get("order"),
+    });
+    const rawFormat = parseExperimentFormat(params.get("format"));
+    // Original ran getPagination before the CSV branch even though the CSV
+    // rows ignore pagination — restore that call so bogus page/limit go
+    // through the same validation on both paths (result intentionally
+    // unused here; the JSON helper re-parses for slicing).
+    getPagination({ page: params.get("page"), limit: params.get("limit") });
 
     if (rawFormat === "csv") {
-      // CSV branch: rows come from the helper (sort/order validate inside
-      // and throw before any formatting — same precedence as the inline
-      // code); formatting stays here, byte-identical.
+      // CSV branch: rows come from the helper (sort/order re-validate
+      // inside and throw before any formatting); formatting stays here,
+      // byte-identical.
       const deps = await createQueryDeps(admin);
       const { views } = await queryExperimentViews(deps, {
         sort: params.get("sort"),
@@ -87,9 +106,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // JSON branch: the helper validates sort/order first (same precedence
-    // as the inline code), then format is checked — an invalid format with
-    // valid sort/order still returns the exact 400 below.
+    // JSON branch: format already validated above (no post-read 400, no
+    // wasted reads); the helper re-validates sort/order/pagination then
+    // reads.
     const deps = await createQueryDeps(admin);
     const dto = await queryExperiments(deps, {
       sort: params.get("sort"),
@@ -97,12 +116,6 @@ export async function GET(request: NextRequest) {
       page: params.get("page"),
       limit: params.get("limit"),
     });
-    if (rawFormat !== "json") {
-      return NextResponse.json(
-        { error: "Invalid format (expected json or csv)", code: "BAD_REQUEST" },
-        { status: 400 },
-      );
-    }
     return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);

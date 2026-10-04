@@ -624,6 +624,82 @@ describe("analytics route delegation", () => {
       code: "BAD_REQUEST",
     });
   });
+
+  test("experiments GET rejects invalid format before any helper reads", async () => {
+    const state = seedState();
+    setup(state);
+    mockedGate.mockResolvedValue({ ...PLATFORM_ADMIN });
+
+    const res = await experimentsGET(
+      new NextRequest(
+        "http://x/api/admin/analytics/experiments?format=bogus",
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Invalid format (expected json or csv)",
+      code: "BAD_REQUEST",
+    });
+    // No wasted reads: neither the JSON nor the CSV helper may run once
+    // the format is known-bad.
+    expect(experimentsSpy).not.toHaveBeenCalled();
+    expect(viewsSpy).not.toHaveBeenCalled();
+  });
+
+  test("experiments GET keeps sort→order→format precedence (no wasted reads)", async () => {
+    const state = seedState();
+    setup(state);
+    mockedGate.mockResolvedValue({ ...PLATFORM_ADMIN });
+
+    const sortFirst = await experimentsGET(
+      new NextRequest(
+        "http://x/api/admin/analytics/experiments?sort=bogus&format=bogus",
+      ),
+    );
+    expect(sortFirst.status).toBe(400);
+    expect(await sortFirst.json()).toEqual({
+      error: "Invalid sort (expected name, status, sample_size)",
+      code: "BAD_REQUEST",
+    });
+
+    const orderFirst = await experimentsGET(
+      new NextRequest(
+        "http://x/api/admin/analytics/experiments?order=sideways&format=bogus",
+      ),
+    );
+    expect(orderFirst.status).toBe(400);
+    expect(await orderFirst.json()).toEqual({
+      error: "Invalid order (expected asc or desc)",
+      code: "BAD_REQUEST",
+    });
+    expect(experimentsSpy).not.toHaveBeenCalled();
+    expect(viewsSpy).not.toHaveBeenCalled();
+  });
+
+  test("experiments CSV ignores bogus page/limit but still validates the path", async () => {
+    const state = seedState();
+    setup(state);
+    mockedGate.mockResolvedValue({ ...PLATFORM_ADMIN });
+
+    const res = await experimentsGET(
+      new NextRequest(
+        "http://x/api/admin/analytics/experiments?format=csv&sort=name&order=asc&page=bogus&limit=bogus",
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    const text = await res.text();
+    expect(text).toBe(
+      [
+        "id,name,startup_id,status,type,sample_size,created_at",
+        "e3,Acme,s3,completed,ab,10,2026-09-03T00:00:00.000Z",
+        "e2,Design Two,s2,draft,ab,50,2026-09-02T00:00:00.000Z",
+        "e1,Startup One,s1,running,ab,100,2026-09-01T00:00:00.000Z",
+        "e4,Untitled,s9,paused,ab,0,2026-09-04T00:00:00.000Z",
+        "",
+      ].join("\n"),
+    );
+  });
 });
 
 describe("analytics DAL parity", () => {

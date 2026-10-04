@@ -274,7 +274,14 @@ function sortViews(
   });
 }
 
-function parseExperimentSortOrder(input: ExperimentViewsInput): {
+/**
+ * Validate experiment sort/order WITHOUT any reads (route pre-check mirrors
+ * the original inline order sort → order → format → pagination, so
+ * invalid-format requests never pay the EXPERIMENT_CAP + startup-lookup
+ * cost; the helpers re-validate internally before reading — this is purely
+ * the cheap early gate).
+ */
+export function parseExperimentSortOrder(input: ExperimentViewsInput): {
   sort: ExperimentSortCol;
   order: "asc" | "desc";
 } {
@@ -295,6 +302,24 @@ function parseExperimentSortOrder(input: ExperimentViewsInput): {
     );
   }
   return { sort: rawSort as ExperimentSortCol, order: rawOrder };
+}
+
+/**
+ * Validate the experiments `?format=` param WITHOUT any reads (original
+ * inline order checked format before getPagination + reads; the route calls
+ * this before createQueryDeps/helper so invalid formats return the exact
+ * 400 with zero DB cost).
+ */
+export function parseExperimentFormat(raw: string | null): "json" | "csv" {
+  const normalized = (raw ?? "json").trim().toLowerCase();
+  if (normalized !== "json" && normalized !== "csv") {
+    throw structuralAdminError(
+      400,
+      "BAD_REQUEST",
+      "Invalid format (expected json or csv)",
+    );
+  }
+  return normalized;
 }
 
 /**
