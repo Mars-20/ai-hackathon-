@@ -114,6 +114,8 @@ A **trace panel** alongside the main flow shows every tool call, every source, a
 
 **Where it lives technically:** HERMAS is its own lightweight loop — a Groq-backed delegation step for the cheap routing decision, a Gemini call when it needs to reason about cross-pack priority — sitting one level above the per-pack loops in Section 5.1. No new database, no new provider: it reuses everything already specified in Sections 6–9, plus a `hermas_events` read model over `trace_events` for its monitoring job (Section 20's glossary entry and the notification channel — dashboard banner and/or Telegram — are the only new surface area).
 
+**Build-or-defer decision (build record — Validation Copilot ships first):** DEFER the full HERMAS loop; DOWNGRADE to the shared-table continuity mechanism now. With exactly one Skill Pack built, a delegation layer has nothing to delegate between — so there is no orchestrator loop, no `hermas_events` table, and no new surface area in this build. Cross-pack continuity is carried by the existing Section 5.4 / Section 9 schema (startup-scoped assumptions, evidence, decisions, `trace_events`), which HERMAS will read through when a second pack lands. The L3-approval and Verifier boundaries above apply unchanged. Revisit only when Skill Pack #2 enters scope.
+
 ### 5.1 Skill Pack Runtime Loop
 
 A single agent loop, not a swarm — the v1.0 spec's own guidance to start with 3–5 tools and grow later applies to skills as well.
@@ -489,10 +491,10 @@ Build a set of **20–30 test tasks across at least 5 domains** (e.g. edtech, e-
 | Agent runtime | Node.js + TypeScript | Fast to build with Claude Code; first-class SDKs for Gemini and Groq |
 | Web dashboard | Next.js + React + Tailwind | Speed of build; good fit for tables, citation lists, and a live trace panel — needed for the demo (Section 3) |
 | Database / Auth | Supabase (Postgres + Auth + RLS) | Matches the founder's standing "no Firebase, Supabase-only" preference; RLS gives per-founder data isolation for free |
-| Email sending (P1) | Any provider with unsubscribe-header support (e.g. Resend, SendGrid) | `[OPEN]` — pick one before P1 starts; both work, pick based on ease of Node integration |
+| Email sending (P1) | Resend (decided — SendGrid deferred, no account/keys) | Picked for ease of Node integration; delivery wiring stays out-of-scope v1 |
 | Hosting | Vercel (web + API routes) + Supabase Cloud | Zero-ops for a hackathon timeline |
 
-`[OPEN — decide before coding starts]`: exact model IDs (verify against Section 21-B on the day you start), email provider choice, whether the dashboard needs auth for the demo or can run single-tenant for speed.
+`[RESOLVED — build record]`: (1) exact model IDs — re-verify against Section 21-B on the day you start; build defaults are `gemini-2.5-flash` (planner/verifier) and `llama-3.3-70b-versatile` (router) with env overrides (`GEMINI_PLANNER_MODEL`, `GEMINI_VERIFIER_MODEL`, `GROQ_ROUTER_MODEL`); (2) email provider — Resend, SendGrid deferred; (3) dashboard auth — auth-required via Supabase Auth + RLS (middleware protects `/validate`, `/dashboard`, `/workspace`, `/admin`); single-tenant anon demo mode rejected.
 
 **Environment variables (fill in `.env`, never commit):**
 ```
@@ -563,6 +565,8 @@ EMAIL_PROVIDER_API_KEY=       # P1 only
 **What is explicitly NOT built in this window:** live outreach sending (P1/C2), and all three Roadmap Skill Packs in Section 4.1 (Brand & Identity, Customer Communication, Business Health Check-in). They are fully designed in this document and belong in the pitch as roadmap, not in the live demo as features.
 
 **If Day 2 runs long and something must drop, cut in this order:** the golden-task count (never below 6, never to zero) → domain coverage (2 domains instead of 3) → dashboard polish. **Never cut** the Verifier, the leading-question validator, or the evidence-strength distinction — those three are the product's actual thesis and the reason it beats a generic chatbot.
+
+**Freeze rule (restored from v2.0 §16 — Day-3-proof-only):** freeze new features at ~75% of total remaining build time regardless of phase; the last quarter is evaluation, demo rehearsal, and the recorded fallback run, not new capability. Percentages are of total remaining build time, not fixed days — plug in the actual deadline. Day 3 (or final hours) is reserved for proof and rehearsal only, never new capability (§17 fail-safe video, §18 scope-creep mitigation).
 
 ---
 
