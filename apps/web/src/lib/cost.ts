@@ -46,7 +46,7 @@ export function extractUsageCost(
 ): number {
   const total = usageMetadata?.totalTokenCount;
   if (typeof total === "number" && Number.isFinite(total) && total > 0) {
-    return (total / 1000) * BLENDED_USD_PER_1K_TOKENS;
+    return +((total / 1000) * BLENDED_USD_PER_1K_TOKENS).toFixed(6);
   }
   return COST_TABLE[fallbackKind]; // FALLBACK: no provider metering available
 }

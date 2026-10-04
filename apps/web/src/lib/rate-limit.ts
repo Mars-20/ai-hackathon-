@@ -38,19 +38,23 @@ export interface RateLimitResult {
 }
 
 /**
- * Resolve the bucket key. Authenticated user id wins; anonymous callers fall
- * back to ip+route.
+ * Resolve the bucket key. Authenticated user id wins; else the workspace id
+ * (so one abusive workspace cannot hide behind rotating ips); anonymous
+ * callers without a workspace fall back to ip+route.
  *
  * TRUSTED-PROXY NOTE (Task 9 infra follow-up): `x-forwarded-for` is
  * client-spoofable unless an edge proxy overwrites it. Never treat the ip key
  * as an identity — it is only a coarse abuse brake. Behind a CDN/LB, configure
  * trusted proxies (or use the platform-provided client ip, e.g. Vercel's
  * `x-vercel-forwarded-for` / `x-real-ip`) so the first XFF entry is the edge
- * value, not attacker input. Authenticated `user:` keys are always preferred.
+ * value, not attacker input. Authenticated `user:` keys are always preferred,
+ * `workspace:` keys second; the `ip:` key is last resort only.
  */
-export function resolveRateLimitKey(parts: { userId?: string; ip?: string; route?: string }): string {
+export function resolveRateLimitKey(parts: { userId?: string; workspaceId?: string; ip?: string; route?: string }): string {
   const uid = parts.userId?.trim();
   if (uid) return `${RATE_KEY_PREFIX}user:${uid}`;
+  const ws = parts.workspaceId?.trim();
+  if (ws) return `${RATE_KEY_PREFIX}workspace:${ws}`;
   return `${RATE_KEY_PREFIX}ip:${parts.ip?.trim() || "unknown"}:${parts.route ?? ""}`;
 }
 
