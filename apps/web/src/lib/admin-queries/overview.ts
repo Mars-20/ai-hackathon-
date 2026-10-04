@@ -55,6 +55,9 @@ function asTraceRows(value: unknown): TraceWindowRow[] {
     const cost = item["cost_usd"];
     const created = item["created_at"];
     if (typeof created !== "string") continue;
+    // Drop malformed timestamps: buildTrends calls toISOString(), which
+    // throws RangeError on Invalid Date and would 500 the whole page.
+    if (Number.isNaN(Date.parse(created))) continue;
     out.push({
       workspace_id: typeof ws === "string" ? ws : null,
       cost_usd:
@@ -170,37 +173,36 @@ export async function queryOverview(
   const { admin, userClient, service } = deps;
 
   if (admin.tier === "platform") {
-    const profilesRes = await service
-      .from("profiles")
-      .select("user_id", { count: "exact", head: true });
+    // One concurrent round: the four reads are independent.
+    const [profilesRes, startupsRes, tracesRes, decisionsRes] =
+      await Promise.all([
+        service.from("profiles").select("user_id", { count: "exact", head: true }),
+        // NULL workspace_id rows EXCLUDED — never attributed.
+        service
+          .from("startups")
+          .select("id", { count: "exact", head: true })
+          .not("workspace_id", "is", null),
+        // NULL workspace_id rows EXCLUDED from every aggregation.
+        service
+          .from("trace_events")
+          .select("workspace_id,cost_usd,created_at")
+          .gte("created_at", since)
+          .not("workspace_id", "is", null)
+          .order("created_at", { ascending: true })
+          .limit(10000),
+        service
+          .from("decisions")
+          .select("verdict,created_at")
+          .gte("created_at", since)
+          .not("workspace_id", "is", null)
+          .limit(5000),
+      ]);
     const userCount =
       typeof profilesRes.count === "number" ? profilesRes.count : 0;
-
-    // NULL workspace_id rows EXCLUDED — never attributed.
-    const startupsRes = await service
-      .from("startups")
-      .select("id", { count: "exact", head: true })
-      .not("workspace_id", "is", null);
     const startupCount =
       typeof startupsRes.count === "number" ? startupsRes.count : 0;
-
-    // NULL workspace_id rows EXCLUDED from every aggregation.
-    const tracesRes = await service
-      .from("trace_events")
-      .select("workspace_id,cost_usd,created_at")
-      .gte("created_at", since)
-      .not("workspace_id", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(10000);
     if (tracesRes.error) throw tracesRes.error;
     const traces = asTraceRows(tracesRes.data);
-
-    const decisionsRes = await service
-      .from("decisions")
-      .select("verdict,created_at")
-      .gte("created_at", since)
-      .not("workspace_id", "is", null)
-      .limit(5000);
     if (decisionsRes.error) throw decisionsRes.error;
     const decisions = asDecisionRows(decisionsRes.data);
 

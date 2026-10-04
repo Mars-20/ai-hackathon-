@@ -3,10 +3,17 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(),
-  createServiceRoleClient: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => {
+  const userClient = vi.fn();
+  const serviceClient = vi.fn();
+  return {
+    createServerSupabaseClient: userClient,
+    createServiceRoleClient: serviceClient,
+    // Request-memoized getters resolve the same fakes (prod: React cache()).
+    getRequestUserClient: userClient,
+    getRequestServiceClient: serviceClient,
+  };
+});
 
 vi.mock("@/lib/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin")>();
@@ -236,8 +243,7 @@ describe("queryOverview helper", () => {
     }
   });
 
-  test("workspace tier aggregates only its own workspaces", async () => {
-    const state = seedState();
+  test("workspace tier aggregates only its own workspaces", async () => {    const state = seedState();
     const res = await queryOverview(depsFor(state, WORKSPACE_ADMIN), 7);
     // Distinct members of w1 only (u1 counted once despite the dup row).
     expect(res.kpis.users).toBe(2);
@@ -247,6 +253,18 @@ describe("queryOverview helper", () => {
     expect(res.kpis.rejectRate).toBe(0.667);
     expect(res.kpis.spend).toEqual({ value: 4, estimated: true });
     expect(JSON.stringify(res)).not.toContain("w9");
+  });
+
+  test("malformed trace timestamps are skipped instead of failing the page", async () => {
+    const state = seedState();
+    state.traces.push({
+      workspace_id: "w1",
+      cost_usd: 3,
+      created_at: "not-a-date",
+    });
+    const res = await queryOverview(depsFor(state, PLATFORM_ADMIN), 7);
+    const totalRuns = res.trends.reduce((n, p) => n + p.runs, 0);
+    expect(totalRuns).toBe(4);
   });
 
   test("days=999 clamps to 90; NaN falls back to 7", async () => {

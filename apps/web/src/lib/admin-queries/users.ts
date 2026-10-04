@@ -95,6 +95,9 @@ async function fetchSuspendedSet(
   service: AdminQueryDeps["service"],
   userIds: string[],
 ): Promise<Set<string>> {
+  // Fail-CLOSED: no per-user catch. A suspension lookup failure rejects the
+  // whole list (500 → "unavailable") instead of rendering the user as
+  // confidently "active" with an unverified ban status.
   const suspended = new Set<string>();
   await Promise.all(
     userIds.map((id) =>
@@ -108,8 +111,7 @@ async function fetchSuspendedSet(
           if (typeof banned === "string" && banned.length > 0) {
             suspended.add(id);
           }
-        })
-        .catch(() => undefined),
+        }),
     ),
   );
   return suspended;

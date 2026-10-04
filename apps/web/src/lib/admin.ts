@@ -9,7 +9,7 @@
 // Service-role key never leaves the server (this module is server-only).
 // ─────────────────────────────────────────────────────────────────────────────
 import "server-only";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getRequestUserClient } from "@/lib/supabase/server";
 import { requireAdmin } from "../../../../packages/admin/requireAdmin";
 import type {
   RequireAdminDeps,
@@ -47,7 +47,7 @@ export type { RequireAdminDeps };
  * user client so packages/admin never imports apps/web Supabase wiring.
  */
 export async function requireAdminFromSupabase(): Promise<RequireAdminResult> {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await getRequestUserClient();
   return requireAdmin({
     getUser: () => {
       return supabase.auth.getUser().then(({ data }) => ({

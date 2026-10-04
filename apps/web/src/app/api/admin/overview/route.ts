@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const deps = await createQueryDeps(admin);
+    // Parse-first: raw params are extracted before any client is built so
+    // invalid-input (400) paths do the minimum work.
     const url = new URL(request.url);
     const rawDays = Number.parseInt(url.searchParams.get("days") ?? "7", 10);
+    const deps = await createQueryDeps(admin);
     const dto = await queryOverview(deps, rawDays);
     return NextResponse.json(dto);
   } catch (err: unknown) {

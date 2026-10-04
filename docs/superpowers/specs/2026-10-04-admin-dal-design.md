@@ -93,6 +93,12 @@ task (routes keep serving islands and the CSV download); page-side
 `narrow*` functions stay untouched — if the shape matches, behavior is
 preserved, which is the mechanical no-break check.
 
+Deliberate contract addition (blessed in review, pinned by
+`admin-queries-ops.test.ts` route↔DAL parity): `GET
+/api/admin/ops/limits` returns `meta: { source, readOnly, tier,
+fetched_at }` alongside the original body, for parity with the agent
+route. Additive only — existing fields are byte-identical.
+
 Expected result: one gate (~3 Supabase roundtrips, parallelized where
 independent) plus parallel reads per page — about 1s instead of 3-5s,
 with zero self-HTTP.

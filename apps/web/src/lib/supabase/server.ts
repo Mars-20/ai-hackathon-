@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase Client — Server (Server Components, Route Handlers, Middleware)
 // ─────────────────────────────────────────────────────────────────────────────
-
+import "server-only";
+import { cache } from "react";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
@@ -40,3 +41,10 @@ export function createServiceRoleClient() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 }
+
+// Per-request memoized clients: the gate plus every DAL read in one request
+// share a single user client and a single service client (React cache()
+// scope = one request in the App Router). Clients hold no sockets — this
+// only avoids redundant construction/cookie reads, never changes behavior.
+export const getRequestUserClient = cache(() => createServerSupabaseClient());
+export const getRequestServiceClient = cache(() => createServiceRoleClient());

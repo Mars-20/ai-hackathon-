@@ -331,6 +331,9 @@ export async function queryWorkspaceDetail(
   const { admin, service } = deps;
 
   if (admin.tier !== "platform" && !admin.workspaceIds.includes(id)) {
+    // Existence-oracle note (accepted): 403 here distinguishes "exists, out
+    // of scope" from the 404 below. IDs are unguessable UUIDs and callers
+    // are admins — documented rather than flattened.
     throw structuralAdminError(403, "FORBIDDEN", "Workspace out of scope");
   }
 

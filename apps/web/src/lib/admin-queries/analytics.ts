@@ -132,6 +132,9 @@ function asTraceRows(value: unknown): TraceRow[] {
   for (const item of value) {
     if (!isRecord(item)) continue;
     if (typeof item["created_at"] !== "string") continue;
+    // Drop malformed timestamps: buildTrends calls toISOString(), which
+    // throws RangeError on Invalid Date and would 500 the whole page.
+    if (Number.isNaN(Date.parse(item["created_at"] as string))) continue;
     const cost = item["cost_usd"];
     const ws = item["workspace_id"];
     out.push({
@@ -358,35 +361,38 @@ export async function queryAnalytics(
   let truncated = false;
 
   if (admin.tier === "platform") {
-    // NULL workspace_id rows EXCLUDED — never attributed.
-    const tracesRes = await service
-      .from("trace_events")
-      .select("workspace_id,cost_usd,created_at,event_type,payload")
-      .gte("created_at", window.from)
-      .lte("created_at", window.to)
-      .not("workspace_id", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(TRACE_CAP);
+    // One concurrent round: the three reads are independent. NULL
+    // workspace_id rows EXCLUDED — never attributed.
+    const [tracesRes, decisionsRes, signupsRes] = await Promise.all([
+      service
+        .from("trace_events")
+        .select("workspace_id,cost_usd,created_at,event_type,payload")
+        .gte("created_at", window.from)
+        .lte("created_at", window.to)
+        .not("workspace_id", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(TRACE_CAP),
+      service
+        .from("decisions")
+        .select("verdict,created_at")
+        .gte("created_at", window.from)
+        .lte("created_at", window.to)
+        .not("workspace_id", "is", null)
+        .limit(DECISION_CAP),
+      service
+        .from("profiles")
+        .select("user_id", { count: "exact", head: true })
+        .gte("created_at", window.from)
+        .lte("created_at", window.to),
+    ]);
     if (tracesRes.error) throw tracesRes.error;
     traces = asTraceRows(tracesRes.data);
     if (traces.length >= TRACE_CAP) truncated = true;
 
-    const decisionsRes = await service
-      .from("decisions")
-      .select("verdict,created_at")
-      .gte("created_at", window.from)
-      .lte("created_at", window.to)
-      .not("workspace_id", "is", null)
-      .limit(DECISION_CAP);
     if (decisionsRes.error) throw decisionsRes.error;
     decisions = asDecisionRows(decisionsRes.data);
     if (decisions.length >= DECISION_CAP) truncated = true;
 
-    const signupsRes = await service
-      .from("profiles")
-      .select("user_id", { count: "exact", head: true })
-      .gte("created_at", window.from)
-      .lte("created_at", window.to);
     if (signupsRes.error) throw signupsRes.error;
     signups = typeof signupsRes.count === "number" ? signupsRes.count : 0;
   } else {

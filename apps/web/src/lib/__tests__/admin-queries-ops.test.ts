@@ -3,10 +3,17 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(),
-  createServiceRoleClient: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => {
+  const userClient = vi.fn();
+  const serviceClient = vi.fn();
+  return {
+    createServerSupabaseClient: userClient,
+    createServiceRoleClient: serviceClient,
+    // Request-memoized getters resolve the same fakes (prod: React cache()).
+    getRequestUserClient: userClient,
+    getRequestServiceClient: serviceClient,
+  };
+});
 
 vi.mock("@/lib/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin")>();
@@ -395,6 +402,28 @@ describe("queryOpsLimits helper", () => {
     expect(res.rateLimited429).toBe(1);
     expect(res.configured.maxCostUsd).toBe(BUDGET.MAX_COST_USD);
     expect(res.truncated).toBe(false);
+  });
+
+  test("incidental 429 substrings do not count as rate limits", async () => {
+    const state = seedState();
+    state.traces.push({
+      actor: "a1",
+      event_type: "error",
+      payload: { msg: "order 14290 confirmed" },
+      workspace_id: "w1",
+      created_at: isoAgo(1),
+    });
+    state.traces.push({
+      actor: "a1",
+      event_type: "error",
+      payload: { rate_limited: true, key: "k", route: "/api/agent" },
+      workspace_id: "w1",
+      created_at: isoAgo(1),
+    });
+    const res = await queryOpsLimits(depsFor(state, PLATFORM_ADMIN), "7d");
+    // Genuine "boom 429 rate limited" + structured rate_limited: true = 2.
+    // The digit-glued "14290" must not count.
+    expect(res.rateLimited429).toBe(2);
   });
 
   test("workspace tier sees only its own traces", async () => {

@@ -1,0 +1,2 @@
+ALTER TABLE workspace_invites
+  VALIDATE CONSTRAINT workspace_invites_token_hash_required;

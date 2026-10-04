@@ -37,11 +37,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Parse-first: raw params are extracted before any client is built so
+    // invalid-input (400) paths do the minimum work.
+    const rawWindow = new URL(request.url).searchParams.get("window");
     const deps = await createQueryDeps(admin);
-    const dto = await queryOpsLimits(
-      deps,
-      new URL(request.url).searchParams.get("window"),
-    );
+    const dto = await queryOpsLimits(deps, rawWindow);
     return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);

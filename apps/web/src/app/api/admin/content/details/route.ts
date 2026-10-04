@@ -30,11 +30,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Parse-first: raw params are extracted before any client is built so
+    // invalid-input (400) paths do the minimum work.
+    const startupId = new URL(request.url).searchParams.get("startup_id");
     const deps = await createQueryDeps(admin);
-    const dto = await queryContentDetails(
-      deps,
-      new URL(request.url).searchParams.get("startup_id"),
-    );
+    const dto = await queryContentDetails(deps, startupId);
     return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);

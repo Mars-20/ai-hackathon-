@@ -179,10 +179,19 @@ function isWarningEvent(row: TraceRow): boolean {
 }
 
 function mentionsRateLimit(payload: unknown): boolean {
+  // Structured signals first: real 429 denials are traced with
+  // payload.rate_limited (agent pre-flight) or payload.status 429.
+  // The string fallback covers older rows but is digit-boundaried so
+  // incidental substrings (e.g. order id "14290") do not count.
+  if (isRecord(payload)) {
+    if (payload["rate_limited"] === true) return true;
+    const status = payload["status"];
+    if (status === 429 || status === "429") return true;
+  }
   if (payload === null || payload === undefined) return false;
   const text =
     typeof payload === "string" ? payload : JSON.stringify(payload);
-  return /429|rate.?limit/i.test(text);
+  return /(^|[^0-9])429([^0-9]|$)|rate.?limit/i.test(text);
 }
 
 function asAuditEntries(value: unknown): OpsAuditEntry[] {

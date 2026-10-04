@@ -3,10 +3,17 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(),
-  createServiceRoleClient: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => {
+  const userClient = vi.fn();
+  const serviceClient = vi.fn();
+  return {
+    createServerSupabaseClient: userClient,
+    createServiceRoleClient: serviceClient,
+    // Request-memoized getters resolve the same fakes (prod: React cache()).
+    getRequestUserClient: userClient,
+    getRequestServiceClient: serviceClient,
+  };
+});
 
 vi.mock("@/lib/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin")>();
@@ -248,8 +255,7 @@ describe("queryUsersList helper", () => {
     ]);
   });
 
-  test("workspace tier sees only in-scope emails (no PII leak)", async () => {
-    const state = seedState();
+  test("workspace tier sees only in-scope emails (no PII leak)", async () => {    const state = seedState();
     state.profiles.push(OUTSIDER);
     state.members.push({
       user_id: OUTSIDER.user_id,
@@ -262,6 +268,31 @@ describe("queryUsersList helper", () => {
     expect(res.users.map((u) => u.id)).toEqual([U1.user_id]);
     expect(res.total).toBe(1);
     expect(JSON.stringify(res)).not.toContain("outsider@example.com");
+  });
+
+  test("suspension lookup failure fails the list instead of rendering active", async () => {
+    // Fail-closed: a user whose ban status cannot be verified must never
+    // render as confidently "active".
+    const state = seedState();
+    const base = makeUsersClient(state);
+    const failing = {
+      ...base,
+      auth: {
+        admin: {
+          getUserById: async () => {
+            throw new Error("auth down");
+          },
+        },
+      },
+    };
+    const deps: AdminQueryDeps = {
+      admin: PLATFORM_ADMIN as AdminQueryDeps["admin"],
+      userClient: failing as unknown as AdminQueryDeps["userClient"],
+      service: failing as unknown as AdminQueryDeps["service"],
+    };
+    await expect(queryUsersList(deps, { ...BASE_INPUT })).rejects.toThrow(
+      "auth down",
+    );
   });
 
   test("limit=999999 is capped by getPagination", async () => {

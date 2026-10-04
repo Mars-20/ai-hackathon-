@@ -25,10 +25,17 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(),
-  createServiceRoleClient: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => {
+  const userClient = vi.fn();
+  const serviceClient = vi.fn();
+  return {
+    createServerSupabaseClient: userClient,
+    createServiceRoleClient: serviceClient,
+    // Request-memoized getters resolve the same fakes (prod: React cache()).
+    getRequestUserClient: userClient,
+    getRequestServiceClient: serviceClient,
+  };
+});
 
 vi.mock("@/lib/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin")>();

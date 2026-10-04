@@ -3,10 +3,17 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(),
-  createServiceRoleClient: vi.fn(),
-}));
+vi.mock("@/lib/supabase/server", () => {
+  const userClient = vi.fn();
+  const serviceClient = vi.fn();
+  return {
+    createServerSupabaseClient: userClient,
+    createServiceRoleClient: serviceClient,
+    // Request-memoized getters resolve the same fakes (prod: React cache()).
+    getRequestUserClient: userClient,
+    getRequestServiceClient: serviceClient,
+  };
+});
 
 vi.mock("@/lib/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin")>();
@@ -379,6 +386,26 @@ describe("queryAnalytics helper", () => {
     expect(res.trends).toHaveLength(8);
     expect(res.trends.reduce((sum, t) => sum + t.runs, 0)).toBe(4);
     expect(JSON.stringify(res)).not.toContain("99");
+  });
+
+  test("malformed trace timestamps are skipped instead of failing the page", async () => {
+    const state = seedState();
+    // In-window lexicographically (passes gte/lte string bounds) but not a
+    // real timestamp: invalid hour/minute/second.
+    const inWindow = new Date(Date.now() - DAY_MS).toISOString();
+    state.traces.push({
+      workspace_id: "w1",
+      cost_usd: 3,
+      created_at: `${inWindow.slice(0, 11)}25:99:99.000Z`,
+      event_type: "run",
+      payload: null,
+    });
+    const res = await queryAnalytics(depsFor(state, PLATFORM_ADMIN), {
+      window: "7d",
+      from: null,
+      to: null,
+    });
+    expect(res.trends.reduce((sum, t) => sum + t.runs, 0)).toBe(4);
   });
 
   test("cost figures carry the estimated label", async () => {

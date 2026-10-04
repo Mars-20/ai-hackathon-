@@ -35,8 +35,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const deps = await createQueryDeps(admin);
+    // Parse-first: raw params are extracted before any client is built so
+    // invalid-input (400) paths do the minimum work.
     const url = new URL(request.url);
+    const deps = await createQueryDeps(admin);
     const dto = await queryUsersList(deps, {
       page: url.searchParams.get("page"),
       limit: url.searchParams.get("limit"),

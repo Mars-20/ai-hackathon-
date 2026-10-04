@@ -129,6 +129,10 @@ export async function POST(request: NextRequest) {
     // first and checks membership/rank on it — the single-id equivalent of
     // the list-path `.in('workspace_id', workspaceIds)` predicate (which
     // lives in scopedQuery); the RPC re-checks scope + rank atomically.
+    // Existence-oracle note (accepted): an authenticated workspace admin can
+    // distinguish 403 (exists, out of scope) from 404 (absent). IDs are
+    // unguessable UUIDs and callers are admins, so this is documented rather
+    // than flattened — content/details intentionally returns 404 for both.
     if (admin.tier !== "platform") {
       if (!admin.workspaceIds.includes(startupWs)) {
         return NextResponse.json(
