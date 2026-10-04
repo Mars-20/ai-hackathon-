@@ -73,17 +73,26 @@ export async function requireAdmin(deps: RequireAdminDeps): Promise<RequireAdmin
   }
 
   // Platform tier via SECURITY DEFINER helper (Task 1 migration).
-  // Fail CLOSED on RPC error: fall through to the workspace path, which
-  // still enforces membership (a missing migration never grants access).
-  let isPlatform = false;
-  try {
-    isPlatform = await deps.checkPlatformAdmin(user.id);
-  } catch (err: unknown) {
-    console.warn("[admin:requireAdmin] platform check failed, failing closed", err);
-    isPlatform = false;
-  }
-
-  const memberships: MembershipRow[] = await deps.listMemberships(user.id);
+  // Fail CLOSED on RPC error. The platform check and the memberships list
+  // are independent, so they run CONCURRENTLY: each is a Supabase roundtrip
+  // and sequential awaits multiply gate latency on every /api/admin/* call.
+  // Rejection semantics are unchanged (memberships still throws on error).
+  const platformCheck: Promise<boolean> = Promise.resolve(
+    deps.checkPlatformAdmin(user.id),
+  ).catch((err: unknown) => {
+    console.warn(
+      "[admin:requireAdmin] platform check failed, failing closed",
+      err,
+    );
+    return false;
+  });
+  const membershipsPromise: Promise<MembershipRow[]> = Promise.resolve(
+    deps.listMemberships(user.id),
+  );
+  const [isPlatform, memberships] = await Promise.all([
+    platformCheck,
+    membershipsPromise,
+  ]);
   const ownWorkspaceIds = memberships.map((m) => m.workspace_id);
 
   if (isPlatform) {

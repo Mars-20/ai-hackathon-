@@ -160,16 +160,22 @@ export async function GET(request: NextRequest) {
       const total = typeof count === "number" ? count : profiles.length;
 
       const pageIds = profiles.map((p) => p.user_id);
+      // Members lookup and suspension statuses need only the page ids, so
+      // they run CONCURRENTLY (each is a Supabase roundtrip).
       let members: MemberRow[] = [];
+      let suspended = new Set<string>();
       if (pageIds.length > 0) {
-        const mRes = await service
-          .from("workspace_members")
-          .select("user_id,workspace_id,role")
-          .in("user_id", pageIds);
+        const [mRes, suspendedSet] = await Promise.all([
+          service
+            .from("workspace_members")
+            .select("user_id,workspace_id,role")
+            .in("user_id", pageIds),
+          fetchSuspendedSet(service, pageIds),
+        ]);
         if (mRes.error) throw mRes.error;
         members = asMemberRows(mRes.data);
+        suspended = suspendedSet;
       }
-      const suspended = await fetchSuspendedSet(service, pageIds);
       const byUser = new Map<string, MembershipBrief[]>();
       for (const m of members) {
         const list = byUser.get(m.user_id) ?? [];
