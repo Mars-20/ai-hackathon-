@@ -53,6 +53,27 @@ justification; routes stay secured by the same gate).
    shared helpers imported by both routes and DAL functions. Same lines
    means authorization cannot drift.
 5. Fail-closed is preserved: any gate error denies, exactly as today.
+6. INVIOLABLE two-client pattern: routes that read cross-user data use
+   the cookie-scoped user client (RLS) to discover scope FIRST, then the
+   service-role client FILTERED to in-scope ids only (e.g. profiles PII
+   in the users route). Extraction must preserve this order and the
+   filter. A service-role-only "simplification" is forbidden: it would
+   silently widen workspace-tier reads to all users' PII.
+7. Validation moves WITH the query: sort allowlists, `escapePostgrest`,
+   search parsing, pagination caps, and window parsing are part of the
+   extracted helper, not left behind in the route. Shared helpers
+   validate their inputs independently (defense in depth — the routes
+   stay exposed and keep working).
+8. DAL error contract (reproduces `adminApiFetch` + layout semantics
+   exactly):
+
+   | Situation | DAL behavior | Page/layout behavior |
+   |---|---|---|
+   | Gate 401 (no user) | throw, then caller redirects | `redirect("/login")` |
+   | Gate 403 in layout | throw | `redirect("/login")` (layout redirects on ANY gate error today) |
+   | Gate 403 in a page DAL call | throw AdminError(403) | error panel (unreachable in practice: layout gates first) |
+   | Data 404 (e.g. unknown workspace id) | throw AdminError(404) | same "not found" panel as today |
+   | Data other failure | throw AdminError(status, code, message) | same error panel as today's `AdminApiError` mapping |
 
 ## 5. Function map (approved)
 
@@ -78,11 +99,16 @@ with zero self-HTTP.
 
 ## 6. Tests (approved)
 
-1. Parity tests per DAL function: same inputs produce byte-identical
-   output shape to the current API responses. Any deviation fails.
+1. Parity tests per DAL function: same inputs produce the same DTO
+   body the route returns today (parity is at the DTO-body level for
+   success paths, and at the (status, code) level for failure paths per
+   the §4 error table — not at the HTTP-response level). Any deviation
+   fails.
 2. Authorization tests per function: workspace tier sees only its scope,
    unauthenticated callers are rejected, gate errors fail closed — the
-   same cases the route tests cover today.
+   same cases the route tests cover today. Mandatory negative PII test:
+   a workspace-tier caller must NOT receive out-of-scope users' emails
+   (guards the §4 two-client pattern).
 3. Cached-gate test: two DAL calls in one request execute the gate once
    (spy counter), and contexts never cross users.
 4. DTO minimization snapshot: returned fields are pinned; any new
@@ -107,3 +133,14 @@ with zero self-HTTP.
 - Changing the tier matrix, RLS migrations, rate limits, or pricing.
 - Fixing Hobby cold starts or Vercel/Supabase region colocation (tracked
   separately; still recommended afterward).
+
+## 9. Advisory notes (do not block planning)
+
+- Freshness equivalence: pages fetch today with `cache: "no-store"`;
+  DAL functions use direct Supabase reads (no `fetch`, no cache), and
+  cookie usage keeps every admin render dynamic. No caching behavior
+  changes.
+- Commit sizing: one clean commit preserves single-`revert` rollback.
+  If reviewability suffers, stacked per-domain commits under one deploy
+  are acceptable as long as every intermediate state passes the §6
+  guards.
