@@ -42,12 +42,16 @@ export function hasFlag(name) {
 export async function launchPersistent({ headless = false } = {}) {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   fs.mkdirSync(SHOT_DIR, { recursive: true });
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    executablePath: CHROME_EXE,
+  // PW_CHANNEL=chrome|msedge uses the real installed browser instead of the
+  // bundled Chromium (friendlier for OAuth logins).
+  const channel = process.env.PW_CHANNEL || undefined;
+  const launchOpts = {
     headless,
     viewport: { width: 1400, height: 950 },
     permissions: ["clipboard-read", "clipboard-write"],
-  });
+    ...(channel ? { channel } : { executablePath: CHROME_EXE }),
+  };
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, launchOpts);
   return context;
 }
 
