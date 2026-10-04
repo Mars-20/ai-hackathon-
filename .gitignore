@@ -6,6 +6,8 @@ dist
 .next 
 .turbo 
 .superpowers/
+.opencode/
+.claims-v2/
 .worktrees/
 *.tsbuildinfo
 eval/report.json
