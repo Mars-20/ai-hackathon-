@@ -1,112 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// /admin — Overview (Server Component, spec §§2-4). Fetches the Task 3
-// GET /api/admin/overview through adminApiFetch (cookies + Bearer token
-// forwarded; no direct Supabase reads from the page). KPI cards render
-// spend with the "estimated" label; trends render as a day-bucketed table
-// (date_trunc('day', created_at) equivalent, computed server-side in the
-// route). NULL-workspace legacy rows are excluded by the route.
+// /admin — Overview (Server Component, spec §§2-4). Reads DIRECTLY via the
+// admin DAL (runAdminQuery + queryOverview — same helper the GET
+// /api/admin/overview route delegates to, so figures are identical). KPI
+// cards render spend with the "estimated" label; trends render as a
+// day-bucketed table (date_trunc('day', created_at) equivalent, computed
+// in the helper). NULL-workspace legacy rows are excluded by the helper.
 // ─────────────────────────────────────────────────────────────────────────────
 import KpiCard from "@/components/admin/KpiCard";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
-
-interface TrendPoint {
-  day: string;
-  runs: number;
-  cost: number;
-}
-
-interface OverviewKpis {
-  users: number;
-  activeWorkspaces: number;
-  startups: number;
-  runs7d: number;
-  rejectRate: number | null;
-  spend: { value: number; estimated: true };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function narrowOverview(body: unknown): {
-  kpis: OverviewKpis;
-  trends: TrendPoint[];
-} | null {
-  if (!isRecord(body)) return null;
-  const kpisRaw = body["kpis"];
-  const trendsRaw = body["trends"];
-  if (!isRecord(kpisRaw) || !Array.isArray(trendsRaw)) return null;
-  const users = asNumber(kpisRaw["users"]);
-  const activeWorkspaces = asNumber(kpisRaw["activeWorkspaces"]);
-  const startups = asNumber(kpisRaw["startups"]);
-  const runs7d = asNumber(kpisRaw["runs7d"]);
-  const spendRaw = kpisRaw["spend"];
-  if (
-    users === null ||
-    activeWorkspaces === null ||
-    startups === null ||
-    runs7d === null ||
-    !isRecord(spendRaw)
-  ) {
-    return null;
-  }
-  const spendValue = asNumber(spendRaw["value"]);
-  if (spendValue === null) return null;
-  const rejectRaw = kpisRaw["rejectRate"];
-  const rejectRate =
-    rejectRaw === null || rejectRaw === undefined
-      ? null
-      : asNumber(rejectRaw);
-  if (rejectRaw !== null && rejectRaw !== undefined && rejectRate === null) {
-    return null;
-  }
-  const trends: TrendPoint[] = [];
-  for (const item of trendsRaw) {
-    if (!isRecord(item)) continue;
-    if (typeof item["day"] !== "string") continue;
-    const runs = asNumber(item["runs"]);
-    const cost = asNumber(item["cost"]);
-    if (runs === null || cost === null) continue;
-    trends.push({
-      day: item["day"] as string,
-      runs,
-      cost,
-    });
-  }
-  return {
-    kpis: {
-      users,
-      activeWorkspaces,
-      startups,
-      runs7d,
-      rejectRate,
-      spend: { value: spendValue, estimated: true },
-    },
-    trends,
-  };
-}
+import { runAdminQuery } from "@/lib/admin-dal";
+import {
+  queryOverview,
+  type OverviewKpis,
+  type TrendPoint,
+} from "@/lib/admin-queries/overview";
 
 export default async function AdminOverviewPage() {
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    body = await adminApiFetch("/api/admin/overview");
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError
-        ? err.message
-        : "Failed to load overview";
-  }
+  // Direct DAL read (same helper the route delegates to). Data failures
+  // arrive as values; gate failures (401 → /login) throw redirect errors
+  // that propagate uncaught, exactly like the loader's rethrows.
+  const result = await runAdminQuery((deps) => queryOverview(deps, 7));
 
-  const overview = body !== null ? narrowOverview(body) : null;
-  if (overview === null && loadError === null) {
-    loadError = "Unexpected overview response shape";
+  let loadError: string | null = null;
+  let overview: { kpis: OverviewKpis; trends: TrendPoint[] } | null = null;
+  if (result.ok) {
+    overview = result.data;
+  } else {
+    loadError = result.error.message;
   }
 
   return (
