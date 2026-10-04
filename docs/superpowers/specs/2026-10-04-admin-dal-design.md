@@ -97,13 +97,25 @@ Expected result: one gate (~3 Supabase roundtrips, parallelized where
 independent) plus parallel reads per page — about 1s instead of 3-5s,
 with zero self-HTTP.
 
-## 6. Tests (approved)
+## 6. Tests (approved, hardened in review round 2)
 
+0. No dead auth plumbing: once the last page stops using them,
+   `lib/admin-fetch.ts` (self-HTTP + Bearer forwarding) and
+   `lib/admin-page-data.ts` (fetch-based loaders) are DELETED along
+   with the loader tests they own. Rationale: dead modules that know
+   how to reach admin APIs invite future misuse and confuse readers.
+   `tsc` + the suite prove nothing references them. (The dashboard
+   Admin link uses a plain client `fetch` to the kept `/api/admin/me`
+   route and is unaffected.)
 1. Parity tests per DAL function: same inputs produce the same DTO
    body the route returns today (parity is at the DTO-body level for
    success paths, and at the (status, code) level for failure paths per
-   the §4 error table — not at the HTTP-response level). Any deviation
-   fails.
+   the §4 error table — not at the HTTP-response level). Parity holds
+   BY CONSTRUCTION wherever route and DAL delegate to the same
+   extracted helper; tests then target the helper directly per tier
+   plus the DAL wrapper for gate/DTO mapping, with at least one
+   delegation test per domain proving route and DAL call the same
+   helper with the same arguments. Any deviation fails.
 2. Authorization tests per function: workspace tier sees only its scope,
    unauthenticated callers are rejected, gate errors fail closed — the
    same cases the route tests cover today. Mandatory negative PII test:
@@ -116,16 +128,31 @@ with zero self-HTTP.
 5. Existing guards stay green: full suite (currently 113 tests) + `tsc`
    + `eslint` + `next build` (the build itself proves `server-only`:
    any client leak fails compilation).
+6. Test seams reuse the established pattern: DAL unit tests mock
+   `@/lib/supabase/server` (`createServerSupabaseClient`,
+   `createServiceRoleClient`) with fake in-memory state, exactly as the
+   route tests do today. No live Supabase and no `next/headers`
+   `cookies()` inside unit tests — request-scoped dependencies stop at
+   the mocked seam.
 
 ## 7. Live verification and rollout (approved)
 
 1. Smoke: login, then render all six pages and compare rows/figures with
    pre-change screenshots.
-2. Performance: repeat the endpoint/page timing table; target ~1s pages.
+2. Performance (pass/fail, not vibes): repeat the endpoint/page timing
+   table against the pre-change baselines (users ~3.3s DOM, ops ~5.1s
+   DOM, endpoint floor ~0.9-1.3s). PASS = every admin page renders at
+   most 50% of its pre-change DOM time AND no page regresses. If any
+   page misses, the task is not done — diagnose before deploying.
 3. Security: logged-out `/admin/users` redirects to `/login`; a
    workspace-tier user never sees platform sections.
-4. Rollback: the work ships as one clean commit; any defect reverts with
-   a single `revert`.
+4. Rollback: the work ships as stacked per-domain commits (one domain
+   per commit: users, ops, content, analytics, workspaces, layout),
+   each independently green under the §6 guards; a single deploy at
+   the end. Rollback reverts the range in reverse order. (This
+   supersedes the earlier "one clean commit": same deploy atomicity,
+   but reviewable units — reviewability is a security property for a
+   change of this sensitivity.)
 
 ## 8. Non-goals
 
