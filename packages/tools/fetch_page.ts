@@ -1,7 +1,8 @@
 /**
  * fetch_page tool (Section 7)
  * Safely fetches and extracts text from competitor/pricing pages.
- * Respects 10s timeout, returns explicit error rather than hallucinating content.
+ * Respects robots.txt Disallow (cached per origin), 10s timeout, returns
+ * explicit error rather than hallucinating content.
  */
 
 export interface FetchPageResult {
@@ -9,6 +10,57 @@ export interface FetchPageResult {
   url: string;
   fetched_at: string;
   error?: string;
+}
+
+/** Per-origin robots cache: origin -> { at, disallows }. TTL 1h. */
+const robotsCache = new Map<string, { at: number; disallows: string[] }>();
+const ROBOTS_TTL_MS = 60 * 60 * 1000;
+
+/** Minimal robots.txt parser: collects Disallow paths from `User-agent: *` groups. */
+export function parseRobotsDisallows(robotsText: string): string[] {
+  const disallows: string[] = [];
+  let applies = false;
+  for (const rawLine of robotsText.split("\n")) {
+    const line = rawLine.split("#")[0].trim();
+    if (!line) continue;
+    const ua = line.match(/^user-agent\s*:\s*(.*)$/i);
+    if (ua) {
+      applies = ua[1].trim() === "*";
+      continue;
+    }
+    if (!applies) continue;
+    const d = line.match(/^disallow\s*:\s*(.*)$/i);
+    if (d && d[1].trim()) disallows.push(d[1].trim());
+  }
+  return disallows;
+}
+
+export function isPathDisallowed(pathname: string, disallows: string[]): boolean {
+  return disallows.some((rule) => pathname.startsWith(rule));
+}
+
+async function getRobotsDisallows(origin: string, timeoutMs: number): Promise<string[]> {
+  const cached = robotsCache.get(origin);
+  if (cached && Date.now() - cached.at < ROBOTS_TTL_MS) return cached.disallows;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(`${origin}/robots.txt`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "ValidationCopilot/2.0 (+https://github.com/validation-copilot)" },
+    });
+    clearTimeout(timeoutId);
+    // Fail-open: missing/unreachable robots.txt means allow (standard behaviour).
+    if (!res.ok) {
+      robotsCache.set(origin, { at: Date.now(), disallows: [] });
+      return [];
+    }
+    const disallows = parseRobotsDisallows(await res.text());
+    robotsCache.set(origin, { at: Date.now(), disallows });
+    return disallows;
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchPage(url: string, timeoutMs = 10000): Promise<FetchPageResult> {
@@ -32,6 +84,11 @@ export async function fetchPage(url: string, timeoutMs = 10000): Promise<FetchPa
     return { url, fetched_at, text: "", error: "Blocked private/internal host (SSRF guard)" };
   }
   try {
+    // robots.txt check (fail-open on fetch error; cached per origin).
+    const disallows = await getRobotsDisallows(parsed.origin, timeoutMs);
+    if (isPathDisallowed(parsed.pathname, disallows)) {
+      return { url, fetched_at, text: "", error: "Blocked by robots.txt Disallow" };
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
