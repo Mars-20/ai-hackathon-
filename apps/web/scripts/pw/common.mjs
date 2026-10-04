@@ -17,15 +17,7 @@ export const REPO_ROOT = path.resolve(
 
 export const CHROME_EXE =
   process.env.PW_CHROME_EXE ??
-  path.join(
-    process.env.USERPROFILE ?? "C:\\Users\\Marslino",
-    "AppData",
-    "Local",
-    "ms-playwright",
-    "chromium-1247",
-    "chrome-win64",
-    "chrome.exe"
-  );
+  "C:\\Users\\Marslino\\.agent-browser\\browsers\\chrome-153.0.8010.52\\chrome.exe";
 
 // Outside the repo on purpose (holds login cookies).
 export const PROFILE_DIR =
