@@ -13,8 +13,9 @@ import type { NextRequest } from "next/server";
 import { requireAdminFromSupabase, toEnvelope } from "@/lib/admin";
 import {
   createServerSupabaseClient,
-  createServiceRoleClient,
 } from "@/lib/supabase/server";
+import { createQueryDeps } from "@/lib/admin-queries/shared";
+import { queryWorkspaceDetail } from "@/lib/admin-queries/workspaces";
 
 const VALID_PLANS = ["free", "pro", "team"] as const;
 const VALID_STATUS = ["active", "suspended"] as const;
@@ -43,15 +44,6 @@ function rpcDenyToStatus(errorCode: string): number {
   }
 }
 
-function toCostNumber(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -66,103 +58,9 @@ export async function GET(
   const { id } = await context.params;
 
   try {
-    if (admin.tier !== "platform" && !admin.workspaceIds.includes(id)) {
-      return NextResponse.json(
-        { error: "Workspace out of scope", code: "FORBIDDEN" },
-        { status: 403 },
-      );
-    }
-
-    const service = createServiceRoleClient();
-    const { data: workspace, error: wsError } = await service
-      .from("workspaces")
-      .select("id,name,slug,plan,status,created_at")
-      .eq("id", id)
-      .maybeSingle();
-    if (wsError) throw wsError;
-    if (!isRecord(workspace)) {
-      return NextResponse.json(
-        { error: "Workspace not found", code: "NOT_FOUND" },
-        { status: 404 },
-      );
-    }
-
-    // Members + profile emails, and basic metrics — all strictly filtered
-    // to this workspace (`.in('workspace_id', [id])` / `.eq`), so a
-    // workspace-tier caller never sees cross-rows. Profile emails are
-    // fetched with `.in("user_id", memberIds)` (chunked) — never a
-    // cross-tenant full-table read filtered in JS.
-    const [membersRes, startupsRes, evidenceRes, tracesRes] =
-      await Promise.all([
-        service.from("workspace_members").select("user_id,role,joined_at").eq("workspace_id", id).limit(1000),
-        service.from("startups").select("id", { count: "exact", head: true }).eq("workspace_id", id),
-        service.from("evidence").select("id", { count: "exact", head: true }).eq("workspace_id", id),
-        service.from("trace_events").select("cost_usd").eq("workspace_id", id).limit(10000),
-      ]);
-    if (membersRes.error) throw membersRes.error;
-    if (startupsRes.error) throw startupsRes.error;
-    if (evidenceRes.error) throw evidenceRes.error;
-    if (tracesRes.error) throw tracesRes.error;
-
-    const memberRows: unknown[] = Array.isArray(membersRes.data) ? membersRes.data : [];
-    const memberIds = memberRows
-      .filter(isRecord)
-      .map((m) => m["user_id"])
-      .filter((v): v is string => typeof v === "string");
-    const profileRows: unknown[] = [];
-    const CHUNK_SIZE = 200;
-    for (let i = 0; i < memberIds.length; i += CHUNK_SIZE) {
-      const chunk = memberIds.slice(i, i + CHUNK_SIZE);
-      if (chunk.length === 0) continue;
-      const chunkRes = await service
-        .from("profiles")
-        .select("user_id,email")
-        .in("user_id", chunk);
-      if (chunkRes.error) throw chunkRes.error;
-      if (Array.isArray(chunkRes.data)) profileRows.push(...chunkRes.data);
-    }
-    const emailByUser = new Map<string, string>();
-    for (const p of profileRows) {
-      if (!isRecord(p)) continue;
-      if (typeof p["user_id"] !== "string") continue;
-      emailByUser.set(p["user_id"] as string, typeof p["email"] === "string" ? (p["email"] as string) : "");
-    }
-    const members = memberRows.filter(isRecord).map((m) => ({
-      user_id: typeof m["user_id"] === "string" ? (m["user_id"] as string) : "",
-      role: typeof m["role"] === "string" ? (m["role"] as string) : "",
-      joined_at: typeof m["joined_at"] === "string" ? (m["joined_at"] as string) : null,
-      email: emailByUser.get(typeof m["user_id"] === "string" ? (m["user_id"] as string) : "") ?? "",
-    }));
-
-    const traceRows: unknown[] = Array.isArray(tracesRes.data) ? tracesRes.data : [];
-    let spendRaw = 0;
-    for (const row of traceRows) {
-      if (!isRecord(row)) continue;
-      spendRaw += toCostNumber(row["cost_usd"]);
-    }
-
-    return NextResponse.json({
-      workspace: {
-        id: workspace["id"],
-        name: workspace["name"],
-        slug: workspace["slug"],
-        plan: workspace["plan"],
-        status: workspace["status"] ?? "active",
-        created_at: workspace["created_at"],
-      },
-      members,
-      metrics: {
-        members: members.length,
-        startups: typeof startupsRes.count === "number" ? startupsRes.count : 0,
-        evidence: typeof evidenceRes.count === "number" ? evidenceRes.count : 0,
-        runs: traceRows.length,
-        // Estimated — COST_TABLE metering, not provider billing.
-        spend: {
-          value: Math.round((spendRaw + Number.EPSILON) * 100) / 100,
-          estimated: true,
-        },
-      },
-    });
+    const deps = await createQueryDeps(admin);
+    const dto = await queryWorkspaceDetail(deps, id);
+    return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);
     return NextResponse.json(envelope.body, { status: envelope.status });

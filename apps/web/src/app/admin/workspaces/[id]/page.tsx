@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/workspaces/[id] — workspace detail (Server Component, spec §§2-3,7).
-// Reads GET /api/admin/workspaces/[id] through adminApiFetch (no direct
-// Supabase reads). Sections: workspace facts (plan + status shown read-only
+// Reads DIRECTLY via the admin DAL (runAdminQuery + queryWorkspaceDetail —
+// same helper the GET /api/admin/workspaces/[id] route delegates to); the
+// sibling switcher list reads queryWorkspacesList. Both fire concurrently.
+// Sections: workspace facts (plan + status shown read-only
 // with a v1 note — spec §9 non-goal: no plan changing until entitlements
 // are defined; the platform PATCH API/RPC stays, UI only is read-only),
 // usage metrics (estimated spend labeled), member roster.
@@ -9,10 +11,11 @@
 import Link from "next/link";
 import KpiCard from "@/components/admin/KpiCard";
 import WorkspaceSwitcher from "@/components/admin/WorkspaceSwitcher";
+import { runAdminQuery } from "@/lib/admin-dal";
 import {
-  loadWorkspaceDetailPageData,
-  settledErrorMessage,
-} from "@/lib/admin-page-data";
+  queryWorkspacesList,
+  queryWorkspaceDetail,
+} from "@/lib/admin-queries/workspaces";
 
 interface MemberRow {
   user_id: string;
@@ -98,14 +101,27 @@ export default async function AdminWorkspaceDetailPage({
   const { id } = await params;
 
   // Detail and sibling switcher list are independent — one concurrent
-  // loader round (see lib/admin-page-data.ts). Redirects rethrow inside.
-  const wsData = await loadWorkspaceDetailPageData(id);
+  // DAL round (same helpers the routes delegate to). DAL data failures
+  // arrive as values; gate failures (401 → /login) throw redirect errors
+  // that propagate uncaught from the Promise.all, exactly like the
+  // loader's rethrows.
+  const [detailResult, siblingsResult] = await Promise.all([
+    runAdminQuery((deps) => queryWorkspaceDetail(deps, id)),
+    runAdminQuery((deps) =>
+      queryWorkspacesList(deps, {
+        page: 1,
+        limit: 100,
+        sort: "name",
+        order: "asc",
+        q: null,
+        plan: null,
+        status: null,
+      }),
+    ),
+  ]);
 
-  const body = wsData.detail.body;
-  let loadError = settledErrorMessage(
-    wsData.detail.error,
-    "Failed to load workspace",
-  );
+  const body = detailResult.ok ? detailResult.data : null;
+  let loadError = detailResult.ok ? null : detailResult.error.message;
 
   const detail = body !== null ? narrowDetail(body) : null;
   if (detail === null && loadError === null) {
@@ -113,17 +129,14 @@ export default async function AdminWorkspaceDetailPage({
   }
 
   // Sibling options for the switcher (auxiliary — never fails the page).
-  const siblings: { id: string; name: string; slug: string }[] = [];
-  if (isRecord(wsData.siblings.body) && Array.isArray(wsData.siblings.body["workspaces"])) {
-    for (const item of wsData.siblings.body["workspaces"] as unknown[]) {
-      if (!isRecord(item) || typeof item["id"] !== "string") continue;
-      siblings.push({
-        id: item["id"] as string,
-        name: typeof item["name"] === "string" ? (item["name"] as string) : "",
-        slug: typeof item["slug"] === "string" ? (item["slug"] as string) : "",
-      });
-    }
-  }
+  const siblings: { id: string; name: string; slug: string }[] =
+    siblingsResult.ok
+      ? siblingsResult.data.workspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+        }))
+      : [];
 
   if (loadError !== null || detail === null) {
     return (

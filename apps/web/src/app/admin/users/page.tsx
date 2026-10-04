@@ -4,8 +4,8 @@
 // allowlisted sort: email, created_at). The users list reads DIRECTLY via
 // the admin DAL (runAdminQuery + queryUsersList — same helper the
 // GET /api/admin/users route delegates to, so rows are identical); the
-// workspace picker still comes from loadUsersPageData until Task 2 moves it
-// to queryWorkspacesList (temporary DAL + loader mix). Both fire
+// workspace picker reads queryWorkspacesList (same helper the GET
+// /api/admin/workspaces route delegates to). Both fire
 // concurrently. Row moderation (role change via PATCH, suspend/unsuspend
 // with confirm + reason) lives in the UserActions client island; the API
 // routes enforce ROLE_RANK anti-escalation, self-suspend 400, and
@@ -18,7 +18,6 @@ import AdminTable, {
 } from "@/components/admin/AdminTable";
 import UserActions from "@/components/admin/UserActions";
 import {
-  buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
@@ -26,7 +25,7 @@ import {
   queryUsersList,
   type AdminUserRow,
 } from "@/lib/admin-queries/users";
-import { loadUsersPageData } from "@/lib/admin-page-data";
+import { queryWorkspacesList } from "@/lib/admin-queries/workspaces";
 
 const USERS_SORT_ALLOWLIST = ["email", "created_at"] as const;
 const USERS_DEFAULT_SORT = "created_at";
@@ -61,11 +60,14 @@ export default async function AdminUsersPage({
   );
 
   // The users list reads directly through the DAL (same helper the route
-  // delegates to); the workspace picker still comes from the loader until
-  // Task 2. Both fire concurrently. DAL data failures arrive as values;
-  // gate failures (401 → /login) throw redirect errors that propagate
-  // uncaught from the Promise.all, exactly like the loader's rethrows.
-  const [usersResult, loaded] = await Promise.all([
+  // delegates to); the workspace picker reads queryWorkspacesList (same
+  // helper the workspaces route delegates to, same picker params the
+  // loader used: page 1, limit 100, name asc). Both fire concurrently.
+  // DAL data failures arrive as values; the picker degrades to an empty
+  // list on failure; gate failures (401 → /login) throw redirect errors
+  // that propagate uncaught from the Promise.all, exactly like the
+  // loader's rethrows.
+  const [usersResult, pickerResult] = await Promise.all([
     runAdminQuery((deps) =>
       queryUsersList(deps, {
         page: params.page,
@@ -75,9 +77,26 @@ export default async function AdminUsersPage({
         q: params.q,
       }),
     ),
-    loadUsersPageData(buildAdminTableQuery(params)),
+    runAdminQuery((deps) =>
+      queryWorkspacesList(deps, {
+        page: 1,
+        limit: 100,
+        sort: "name",
+        order: "asc",
+        q: null,
+        plan: null,
+        status: null,
+      }),
+    ),
   ]);
-  const pickerWorkspaces = loaded.pickerWorkspaces;
+  const pickerWorkspaces: { id: string; name: string; slug: string }[] =
+    pickerResult.ok
+      ? pickerResult.data.workspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+        }))
+      : [];
 
   let loadError: string | null = null;
   let data: {
