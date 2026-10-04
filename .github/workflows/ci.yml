@@ -34,6 +34,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: schema-hash
+        working-directory: ${{ github.workspace }}
+        run: node -e "const fs=require('fs'),c=require('crypto');for(const f of ['packages/db/schema-unified.sql','supabase/migrations/20240101000000_schema_unified.sql']){console.log(f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0,12))}"
+
       - name: secret-scan
         working-directory: ${{ github.workspace }}
         run: |
