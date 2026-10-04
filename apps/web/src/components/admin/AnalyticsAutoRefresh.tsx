@@ -22,11 +22,18 @@ function formatTime(date: Date): string {
 
 export default function AnalyticsAutoRefresh() {
   const router = useRouter();
-  const [lastUpdated, setLastUpdated] = useState(() => new Date());
-  const [paused, setPaused] = useState(
-    () => typeof document !== "undefined" && document.hidden,
-  );
+  // Mount-guarded clock: rendering `new Date()` (or `document.hidden`)
+  // during SSR/hydration emits server-clock HTML that the client almost
+  // always mismatches (React #418 hydration error on every load). Render a
+  // deterministic placeholder until mounted, then start the real clock.
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [paused, setPaused] = useState(false);
   const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    setLastUpdated(new Date());
+    setPaused(document.hidden);
+  }, []);
 
   useEffect(() => {
     function onVisibility() {
@@ -50,7 +57,7 @@ export default function AnalyticsAutoRefresh() {
   return (
     <p className="text-xs text-slate-500" aria-live="polite">
       Auto-refresh {paused ? "paused (tab hidden)" : "every 60s"} · last
-      updated {formatTime(lastUpdated)}
+      updated {lastUpdated === null ? "—" : formatTime(lastUpdated)}
     </p>
   );
 }
