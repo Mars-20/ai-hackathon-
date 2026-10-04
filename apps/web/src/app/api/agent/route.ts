@@ -1036,9 +1036,21 @@ Design 4-7 interview/survey questions. Make them open-ended and past-behavior fo
     questions?: Array<{ id: string; text: string; type: string }>;
   }>(rawText, {});
 
-  // Run leading-question validator on each question
-  const validatedQuestions = (parsed.questions || []).map((q) => {
+  // Run leading-question validator on each question — hard-reject (Task 4):
+  // !approved questions are filtered out, traced as leading_rejected,
+  // never shown to founder.
+  const validatedQuestions = (parsed.questions || []).flatMap((q) => {
     const validation = validateQuestion(q.text);
+    if (!validation.approved) {
+      trace.push(
+        makeTrace("skill:survey-designer", "verification", {
+          action: "leading_rejected",
+          question: q.text,
+          warnings: validation.warnings,
+        })
+      );
+      return [];
+    }
     trace.push(
       makeTrace("skill:survey-designer", "verification", {
         question: q.text,
@@ -1050,13 +1062,15 @@ Design 4-7 interview/survey questions. Make them open-ended and past-behavior fo
     const qType = validTypes.includes(q.type as (typeof validTypes)[number])
       ? (q.type as (typeof validTypes)[number])
       : "open";
-    return {
-      id: q.id || crypto.randomUUID(),
-      text: q.text,
-      type: qType,
-      is_leading: validation.isLeading,
-      warning: validation.warnings[0],
-    };
+    return [
+      {
+        id: q.id || crypto.randomUUID(),
+        text: q.text,
+        type: qType,
+        is_leading: validation.isLeading,
+        warning: validation.warnings[0],
+      },
+    ];
   });
 
   const experiment: Experiment = {

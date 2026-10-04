@@ -3,6 +3,7 @@ import {
   meetsGoThreshold,
   deriveConfidence,
   validateQuestion,
+  normalizeSourceUrl,
   isBudgetExceeded,
   combineVerifierWithMemoScan,
   GO_THRESHOLD,
@@ -82,6 +83,24 @@ describe("deriveConfidence", () => {
 
   test("low: thin opinion", () => {
     expect(deriveConfidence([{ strength: "opinion", sample_size: 1 }])).toBe("low");
+  });
+});
+
+describe("skills fixes (Task 4)", () => {
+  test("Would you pay rejected", () => {
+    expect(validateQuestion("Would you pay 20 dollars per month for this?").approved).toBe(false);
+  });
+  test("utm variants collapse", () => {
+    expect(normalizeSourceUrl("https://example.com/r/?utm_source=x")).toBe(normalizeSourceUrl("https://example.com/r/"));
+  });
+  test("same-URL x3 never medium", () => {
+    const ev = [1,2,3].map(() => ({ strength: "contact_shared" as const, sample_size: 4, source_type: "interview" as const, source_url: "https://x.test/r" }));
+    expect(meetsGoThreshold(ev).eligible).toBe(false);
+    expect(deriveConfidence(ev)).toBe("low");
+  });
+  test("rung4 padding never high", () => {
+    const ev = [{ strength: "commitment" as const, sample_size: 2, source_url: "https://a.test" },{ strength: "commitment" as const, sample_size: 2, source_url: "https://b.test" },{ strength: "commitment" as const, sample_size: 2, source_url: "https://c.test" },{ strength: "contact_shared" as const, sample_size: 30, source_url: "https://d.test" }];
+    expect(deriveConfidence(ev)).not.toBe("high");
   });
 });
 

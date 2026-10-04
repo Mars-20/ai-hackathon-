@@ -93,6 +93,9 @@ const HYPOTHETICAL_ONLY_PATTERNS = [
   /^(would|could|might|do you think) you (ever |consider |want |like |use |buy )/i,
   /^if .* would you/i,
   /^imagine .* would you/i,
+  /would you (ever |consider |want |like |use |buy |pay )/i,
+  /how much would you pay/i,
+  /would you pay/i,
   // Arabic hypothetical-only
   /هل (ستشتري|ستستخدم|ستدفع|ستجرب)/,
   /تخيل .* هل/,
@@ -194,12 +197,15 @@ export const GO_THRESHOLD = {
   MIN_INTERVIEWS_SATURATED: 12,
 } as const;
 
-// Normalize a source URL for independence counting: case-insensitive with
-// trailing slashes and fragments stripped — same document, one source.
-// Exported for the eval ts-bridge (single-source counting, no local recount).
+// Normalize a source URL for independence counting: lowercase, http→https,
+// www. stripped, query + fragment stripped, trailing slashes stripped —
+// same document, one source. UTM/campaign variants collapse to the base URL.
 export function normalizeSourceUrl(u: unknown): string | undefined {
   if (typeof u !== "string" || u.trim().length === 0) return undefined;
-  return u.trim().toLowerCase().split("#")[0].replace(/\/+$/, "");
+  let s = u.trim().toLowerCase();
+  s = s.split("#")[0].split("?")[0];
+  s = s.replace(/^http:\/\//, "https://").replace(/^https:\/\/www\./, "https://");
+  return s.replace(/\/+$/, "");
 }
 
 // Distinct independent sources (Task 7 thin-evidence gate): URL-bearing items
@@ -250,19 +256,24 @@ export function meetsGoThreshold(
 }
 
 export function deriveConfidence(
-  primaryEvidence: Array<{ strength: EvidenceStrength; sample_size?: number; source_type?: string }>
+  primaryEvidence: Array<{ strength: EvidenceStrength; sample_size?: number; source_type?: string; source_url?: string }>
 ): Confidence {
   const rung5 = primaryEvidence.filter((e) => STRENGTH_RUNG[e.strength] >= 5);
   const rung4Plus = primaryEvidence.filter((e) => STRENGTH_RUNG[e.strength] >= GO_THRESHOLD.MIN_RUNG);
-  const totalSample = rung4Plus.reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
+  // Confidence rests on DISTINCT independent sources — repeating one URL
+  // never manufactures medium/high (same-URL x3 stays low).
+  const distinctSources = countDistinctSources(rung4Plus);
+  // High rests on rung-5 depth specifically: padding a thin rung-5 base with
+  // rung-4 volume must never read as high.
+  const rung5Sample = rung5.reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
   // Spec §2: the medium floor counts saturated INTERVIEWS only — survey/
   // usage volume must never masquerade as interview depth.
   const interviewSample = rung4Plus
     .filter((e) => e.source_type === "interview")
     .reduce((acc, e) => acc + (e.sample_size ?? 1), 0);
 
-  if (rung5.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && totalSample >= GO_THRESHOLD.MIN_SAMPLE_QUANT) return "high";
-  if (rung4Plus.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && interviewSample >= GO_THRESHOLD.MIN_INTERVIEWS_SATURATED) return "medium";
+  if (distinctSources >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && rung5.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && rung5Sample >= GO_THRESHOLD.MIN_SAMPLE_QUANT) return "high";
+  if (distinctSources >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && rung4Plus.length >= GO_THRESHOLD.MIN_INDEPENDENT_SOURCES && interviewSample >= GO_THRESHOLD.MIN_INTERVIEWS_SATURATED) return "medium";
   return "low";
 }
 
