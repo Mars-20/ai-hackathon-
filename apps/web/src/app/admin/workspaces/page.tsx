@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/workspaces — workspace directory (Server Component, spec §§2-3,7).
-// Lists GET /api/admin/workspaces through adminApiFetch (cookies + Bearer
-// forwarded; no direct Supabase reads). Plan column is read-only in v1
+// The list reads DIRECTLY via the admin DAL (runAdminQuery +
+// queryWorkspacesList — same helper the GET /api/admin/workspaces route
+// delegates to, so rows are identical). Plan column is read-only in v1
 // (spec I1 — changing plans needs entitlements sign-off, deferred); per-
 // workspace usage (members, startups, runs, evidence, estimated spend).
 // Filters: plan (free/pro/team), status (active/suspended), q (name/slug),
@@ -19,8 +20,11 @@ import {
   buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { runAdminQuery } from "@/lib/admin-dal";
+import {
+  queryWorkspacesList,
+  type WorkspaceUsageRow,
+} from "@/lib/admin-queries/workspaces";
 
 const WS_SORT_ALLOWLIST = ["name", "created_at", "plan"] as const;
 const WS_DEFAULT_SORT = "created_at";
@@ -36,68 +40,6 @@ const WS_COLUMNS: AdminTableColumn[] = [
 
 const VALID_PLANS = ["free", "pro", "team"] as const;
 const VALID_STATUS = ["active", "suspended"] as const;
-
-interface WorkspaceUsage {
-  id: string;
-  name: string;
-  slug: string;
-  plan: string;
-  status: string;
-  created_at: string;
-  memberCount: number;
-  startupCount: number;
-  runs: number;
-  evidenceCount: number;
-  spend: { value: number };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function narrowWorkspaces(body: unknown): {
-  workspaces: WorkspaceUsage[];
-  total: number;
-  pages: number;
-  page: number;
-  limit: number;
-} | null {
-  if (!isRecord(body) || !Array.isArray(body["workspaces"])) return null;
-  const workspaces: WorkspaceUsage[] = [];
-  for (const item of body["workspaces"] as unknown[]) {
-    if (!isRecord(item) || typeof item["id"] !== "string") continue;
-    const spendRaw = item["spend"];
-    workspaces.push({
-      id: item["id"] as string,
-      name: typeof item["name"] === "string" ? (item["name"] as string) : "",
-      slug: typeof item["slug"] === "string" ? (item["slug"] as string) : "",
-      plan: typeof item["plan"] === "string" ? (item["plan"] as string) : "free",
-      status:
-        typeof item["status"] === "string" ? (item["status"] as string) : "active",
-      created_at:
-        typeof item["created_at"] === "string"
-          ? (item["created_at"] as string)
-          : "",
-      memberCount: asNumber(item["memberCount"]),
-      startupCount: asNumber(item["startupCount"]),
-      runs: asNumber(item["runs"]),
-      evidenceCount: asNumber(item["evidenceCount"]),
-      spend: {
-        value: isRecord(spendRaw) ? asNumber(spendRaw["value"]) : 0,
-      },
-    });
-  }
-  const total =
-    typeof body["total"] === "number" ? body["total"] : workspaces.length;
-  const pages = typeof body["pages"] === "number" ? body["pages"] : 0;
-  const page = typeof body["page"] === "number" ? body["page"] : 1;
-  const limit = typeof body["limit"] === "number" ? body["limit"] : 20;
-  return { workspaces, total, pages, page, limit };
-}
 
 function formatDate(iso: string): string {
   const ms = Date.parse(iso);
@@ -144,22 +86,37 @@ export default async function AdminWorkspacesPage({
       ? statusRaw
       : null;
 
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    const qs = new URLSearchParams(buildAdminTableQuery(params));
-    if (plan !== null) qs.set("plan", plan);
-    if (status !== null) qs.set("status", status);
-    body = await adminApiFetch("/api/admin/workspaces", qs.toString());
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError ? err.message : "Failed to load workspaces";
-  }
+  // The list reads directly through the DAL (same helper the GET
+  // /api/admin/workspaces route delegates to, so rows are identical).
+  // DAL data failures arrive as values; gate failures (401 → /login)
+  // throw redirect errors that propagate uncaught, exactly like the
+  // loader's rethrows. Plan/status are pre-validated here (invalid values
+  // mean "no filter"), so the helper never sees junk from the page — the
+  // route still validates raw URL strings itself.
+  const result = await runAdminQuery((deps) =>
+    queryWorkspacesList(deps, {
+      page: params.page,
+      limit: params.limit,
+      sort: params.sort,
+      order: params.order,
+      q: params.q,
+      plan,
+      status,
+    }),
+  );
 
-  const data = body !== null ? narrowWorkspaces(body) : null;
-  if (data === null && loadError === null) {
-    loadError = "Unexpected workspaces response shape";
+  let loadError: string | null = null;
+  let data: {
+    workspaces: WorkspaceUsageRow[];
+    total: number;
+    pages: number;
+    page: number;
+    limit: number;
+  } | null = null;
+  if (result.ok) {
+    data = result.data;
+  } else {
+    loadError = result.error.message;
   }
 
   const rows: AdminTableRow[] =

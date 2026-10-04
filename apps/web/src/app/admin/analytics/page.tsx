@@ -1,22 +1,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/analytics — product analytics (Server Component, spec §§2-3,5,7).
-// Reads GET /api/admin/analytics?window= through adminApiFetch (no direct
-// Supabase reads): signups, runs/day + cost/day trends, verdict
+// Reads DIRECTLY via the admin DAL (runAdminQuery + queryAnalytics /
+// queryExperiments — same helpers the GET routes delegate to, so figures
+// are identical): signups, runs/day + cost/day trends, verdict
 // distribution, cost per run (estimated), unsupported-claim rate. Charts
 // are inline SVG bars (no chart lib, YAGNI). The AnalyticsAutoRefresh
 // island re-renders the server graphs every 60s (pausing while the tab is
 // hidden); the ReportGenerator island builds experiments CSV downloads
 // (GET /api/admin/analytics/experiments?format=csv). Window presets
-// 7d/30d/90d; workspace-tier rows are scoped server-side by the API.
+// 7d/30d/90d; workspace-tier rows are scoped server-side by the helper.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
 import AnalyticsAutoRefresh from "@/components/admin/AnalyticsAutoRefresh";
 import KpiCard from "@/components/admin/KpiCard";
 import ReportGenerator from "@/components/admin/ReportGenerator";
+import { runAdminQuery } from "@/lib/admin-dal";
 import {
-  loadAnalyticsPageData,
-  settledErrorMessage,
-} from "@/lib/admin-page-data";
+  queryAnalytics,
+  queryExperiments,
+} from "@/lib/admin-queries/analytics";
 
 const WINDOWS = ["7d", "30d", "90d"] as const;
 
@@ -236,15 +238,30 @@ export default async function AdminAnalyticsPage({
     ? windowStr
     : "7d";
 
-  // Snapshot and experiments table are independent — one concurrent
-  // loader round (see lib/admin-page-data.ts). Redirects rethrow inside.
-  const analyticsData = await loadAnalyticsPageData(window);
+  // Snapshot and experiments table are independent — one concurrent DAL
+  // round (same helpers the GET routes delegate to, so figures are
+  // identical). Gate failures (401 → /login) throw redirect errors that
+  // propagate uncaught; data failures arrive as values and the snapshot
+  // renders its error panel, exactly like the loader's settled pattern.
+  const [analyticsResult, experimentsResult] = await Promise.all([
+    runAdminQuery((deps) =>
+      queryAnalytics(deps, { window, from: null, to: null }),
+    ),
+    runAdminQuery((deps) =>
+      queryExperiments(deps, {
+        sort: "name",
+        order: "asc",
+        page: "1",
+        limit: "20",
+      }),
+    ),
+  ]);
 
-  const body = analyticsData.analytics.body;
-  let loadError = settledErrorMessage(
-    analyticsData.analytics.error,
-    "Failed to load analytics",
-  );
+  const body = analyticsResult.ok === true ? analyticsResult.data : null;
+  let loadError =
+    analyticsResult.ok === true
+      ? null
+      : (analyticsResult.error.message ?? "Failed to load analytics");
 
   const data = body !== null ? narrowAnalytics(body) : null;
   if (data === null && loadError === null) {
@@ -255,8 +272,8 @@ export default async function AdminAnalyticsPage({
   let experiments: ExperimentView[] = [];
   let experimentsTotal = 0;
   const narrowed =
-    analyticsData.experiments.body !== null
-      ? narrowExperiments(analyticsData.experiments.body)
+    experimentsResult.ok === true
+      ? narrowExperiments(experimentsResult.data)
       : null;
   if (narrowed !== null) {
     experiments = narrowed.experiments;

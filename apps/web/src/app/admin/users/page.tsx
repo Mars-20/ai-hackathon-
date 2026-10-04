@@ -1,14 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/users — Users table (Server Component, spec §§2-4,7-8). Parses
 // list params with parseAdminTableParams (page 20/max 100, q min 2,
-// allowlisted sort: email, created_at), fetches the Task 3
-// GET /api/admin/users through adminApiFetch (cookies + Bearer token
-// forwarded; no direct Supabase reads), and renders rows via AdminTable.
-// Row moderation (role change via PATCH, suspend/unsuspend with confirm +
-// reason) lives in the UserActions client island; the API routes enforce
-// ROLE_RANK anti-escalation, self-suspend 400, and last-admin 409.
-// Suspension takes full effect within ~1 hour (ban blocks refresh +
-// sign-in; live JWTs expire naturally) — stated in the confirm copy.
+// allowlisted sort: email, created_at). The users list reads DIRECTLY via
+// the admin DAL (runAdminQuery + queryUsersList — same helper the
+// GET /api/admin/users route delegates to, so rows are identical); the
+// workspace picker reads queryWorkspacesList (same helper the GET
+// /api/admin/workspaces route delegates to). Both fire
+// concurrently. Row moderation (role change via PATCH, suspend/unsuspend
+// with confirm + reason) lives in the UserActions client island; the API
+// routes enforce ROLE_RANK anti-escalation, self-suspend 400, and
+// last-admin 409. Suspension takes full effect within ~1 hour (ban blocks
+// refresh + sign-in; live JWTs expire naturally) — stated in the confirm copy.
 // ─────────────────────────────────────────────────────────────────────────────
 import AdminTable, {
   type AdminTableColumn,
@@ -16,10 +18,14 @@ import AdminTable, {
 } from "@/components/admin/AdminTable";
 import UserActions from "@/components/admin/UserActions";
 import {
-  buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
-import { loadUsersPageData } from "@/lib/admin-page-data";
+import { runAdminQuery } from "@/lib/admin-dal";
+import {
+  queryUsersList,
+  type AdminUserRow,
+} from "@/lib/admin-queries/users";
+import { queryWorkspacesList } from "@/lib/admin-queries/workspaces";
 
 const USERS_SORT_ALLOWLIST = ["email", "created_at"] as const;
 const USERS_DEFAULT_SORT = "created_at";
@@ -31,76 +37,6 @@ const USERS_COLUMNS: AdminTableColumn[] = [
   { key: "workspaces", label: "Workspaces", sortable: false },
   { key: "actions", label: "Actions", sortable: false },
 ];
-
-interface MembershipBrief {
-  workspace_id: string;
-  role: string;
-}
-
-interface AdminUserRow {
-  id: string;
-  email: string;
-  created_at: string;
-  status: "active" | "suspended";
-  workspaces: MembershipBrief[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asMemberships(value: unknown): MembershipBrief[] {
-  if (!Array.isArray(value)) return [];
-  const out: MembershipBrief[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) continue;
-    if (
-      typeof item["workspace_id"] === "string" &&
-      typeof item["role"] === "string"
-    ) {
-      out.push({
-        workspace_id: item["workspace_id"] as string,
-        role: item["role"] as string,
-      });
-    }
-  }
-  return out;
-}
-
-function narrowUsers(body: unknown): {
-  users: AdminUserRow[];
-  total: number;
-  pages: number;
-  page: number;
-  limit: number;
-} | null {
-  if (!isRecord(body)) return null;
-  if (!Array.isArray(body["users"])) return null;
-  const users: AdminUserRow[] = [];
-  for (const item of body["users"] as unknown[]) {
-    if (!isRecord(item)) continue;
-    if (
-      typeof item["id"] !== "string" ||
-      typeof item["email"] !== "string" ||
-      typeof item["created_at"] !== "string"
-    ) {
-      continue;
-    }
-    const status = item["status"];
-    users.push({
-      id: item["id"] as string,
-      email: item["email"] as string,
-      created_at: item["created_at"] as string,
-      status: status === "suspended" ? "suspended" : "active",
-      workspaces: asMemberships(item["workspaces"]),
-    });
-  }
-  const total = typeof body["total"] === "number" ? body["total"] : users.length;
-  const pages = typeof body["pages"] === "number" ? body["pages"] : 0;
-  const page = typeof body["page"] === "number" ? body["page"] : 1;
-  const limit = typeof body["limit"] === "number" ? body["limit"] : 20;
-  return { users, total, pages, page, limit };
-}
 
 function formatDate(iso: string): string {
   const ms = Date.parse(iso);
@@ -123,18 +59,57 @@ export default async function AdminUsersPage({
     USERS_DEFAULT_SORT,
   );
 
-  // Both backend calls (/api/admin/users + workspace picker options) fire
-  // concurrently inside loadUsersPageData — they are independent, and each
-  // hop carries a full requireAdmin gate, so sequential awaits multiply
-  // latency. Next.js redirect errors (401 → /login) propagate uncaught.
-  const loaded = await loadUsersPageData(buildAdminTableQuery(params));
-  const body: unknown | null = loaded.usersBody;
-  let loadError: string | null = loaded.usersError;
-  const pickerWorkspaces = loaded.pickerWorkspaces;
+  // The users list reads directly through the DAL (same helper the route
+  // delegates to); the workspace picker reads queryWorkspacesList (same
+  // helper the workspaces route delegates to, same picker params the
+  // loader used: page 1, limit 100, name asc). Both fire concurrently.
+  // DAL data failures arrive as values; the picker degrades to an empty
+  // list on failure; gate failures (401 → /login) throw redirect errors
+  // that propagate uncaught from the Promise.all, exactly like the
+  // loader's rethrows.
+  const [usersResult, pickerResult] = await Promise.all([
+    runAdminQuery((deps) =>
+      queryUsersList(deps, {
+        page: params.page,
+        limit: params.limit,
+        sort: params.sort,
+        order: params.order,
+        q: params.q,
+      }),
+    ),
+    runAdminQuery((deps) =>
+      queryWorkspacesList(deps, {
+        page: 1,
+        limit: 100,
+        sort: "name",
+        order: "asc",
+        q: null,
+        plan: null,
+        status: null,
+      }),
+    ),
+  ]);
+  const pickerWorkspaces: { id: string; name: string; slug: string }[] =
+    pickerResult.ok
+      ? pickerResult.data.workspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+        }))
+      : [];
 
-  const data = body !== null ? narrowUsers(body) : null;
-  if (data === null && loadError === null) {
-    loadError = "Unexpected users response shape";
+  let loadError: string | null = null;
+  let data: {
+    users: AdminUserRow[];
+    total: number;
+    pages: number;
+    page: number;
+    limit: number;
+  } | null = null;
+  if (usersResult.ok) {
+    data = usersResult.data;
+  } else {
+    loadError = usersResult.error.message;
   }
 
   const rows: AdminTableRow[] =
