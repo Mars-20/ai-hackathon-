@@ -412,6 +412,9 @@ function DecisionMemoPanel({ decision }: { decision: Decision }) {
             {decision.sample_size !== undefined && decision.sample_size > 0 && (
               <span className="text-xs text-slate-500">n={decision.sample_size}</span>
             )}
+            {decision.response_rate !== undefined && (
+              <span className="text-xs text-slate-500">response {decision.response_rate}%</span>
+            )}
           </div>
         </div>
       </div>
@@ -446,6 +449,8 @@ function ValidateDashboard() {
   const [uploadedData, setUploadedData] = useState("");
   const [phase, setPhase] = useState<SessionPhase>("idle");
   const [startup, setStartup] = useState<Startup | null>(null);
+  // Task 7: intake clarifying_questions (<=3) streamed on the startup frame.
+  const [questions, setQuestions] = useState<string[]>([]);
   const [assumptions, setAssumptions] = useState<Assumption[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [experiment, setExperiment] = useState<Experiment | null>(null);
@@ -532,6 +537,7 @@ function ValidateDashboard() {
     setIsLoading(true);
     setError(null);
     setStartup(null);
+    setQuestions([]);
     setAssumptions([]);
     setEvidence([]);
     setExperiment(null);
@@ -610,6 +616,7 @@ function ValidateDashboard() {
                 break;
               case "startup":
                 setStartup(data.startup);
+                if (Array.isArray(data.questions)) setQuestions(data.questions.slice(0, 3));
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "assumptions":
@@ -937,6 +944,22 @@ function ValidateDashboard() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Task 7: intake clarifying_questions frame (<=3, never guessed) */}
+              {questions.length > 0 && (
+                <section className="animate-fade-in">
+                  <div className="glass rounded-2xl p-5 border border-white/5">
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">
+                      Clarifying questions
+                    </div>
+                    <ul className="space-y-1.5">
+                      {questions.map((q, i) => (
+                        <li key={i} className="text-sm text-slate-200">• {q}</li>
+                      ))}
+                    </ul>
                   </div>
                 </section>
               )}

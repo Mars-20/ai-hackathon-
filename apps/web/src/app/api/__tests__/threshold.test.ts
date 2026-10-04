@@ -78,3 +78,89 @@ describe("threshold single-source (no literal copy in route)", () => {
     expect(GO_THRESHOLD.MIN_INDEPENDENT_SOURCES).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("stats tools + misc helpers (Task 7: coverage gate)", () => {
+  test("sampleStats: empty, even median, single", async () => {
+    const m = await import("@/lib/utils");
+    expect(m.sampleStats([])).toEqual({ n: 0, mean: 0, median: 0, min: 0, max: 0, std: 0 });
+    const r = m.sampleStats([1, 2, 3, 4]);
+    expect(r).toMatchObject({ n: 4, mean: 2.5, median: 2.5, min: 1, max: 4 });
+    expect(m.sampleStats([5])).toMatchObject({ n: 1, mean: 5, median: 5, std: 0 });
+    expect(m.sampleStats([1, 2, 3])).toMatchObject({ median: 2 });
+  });
+
+  test("seanEllisScore: empty, strong, moderate, weak", async () => {
+    const m = await import("@/lib/utils");
+    expect(m.seanEllisScore([]).pmf_reached).toBe(false);
+    expect(m.seanEllisScore([1, 1, 2, 3]).pmf_reached).toBe(true);
+    expect(m.seanEllisScore([1, 2, 2, 3]).interpretation).toMatch(/Moderate/);
+    expect(m.seanEllisScore([2, 3, 3, 3]).interpretation).toMatch(/Weak/);
+  });
+
+  test("responseRate: zero sent, all bands incl. Task 7 memo math", async () => {
+    const m = await import("@/lib/utils");
+    expect(m.responseRate(0, 0)).toEqual({ rate: 0, label: "No messages sent" });
+    expect(m.responseRate(100, 40).label).toBe("Excellent");
+    expect(m.responseRate(100, 20).label).toBe("Good");
+    expect(m.responseRate(100, 10).label).toBe("Typical");
+    expect(m.responseRate(100, 1).label).toBe("Low");
+    // Task 7 decision-memo math: engaged sample over total primary sample.
+    const primary = [
+      { strength: "opinion" as const, sample_size: 4 },
+      { strength: "contact_shared" as const, sample_size: 12 },
+    ];
+    const sent = primary.reduce((a, e) => a + (e.sample_size ?? 1), 0);
+    const replied = primary.filter((e) => e.strength !== "opinion").reduce((a, e) => a + (e.sample_size ?? 1), 0);
+    expect(m.responseRate(sent, replied).rate).toBe(Math.round((12 / 16) * 100));
+  });
+
+  test("confidenceInterval: empty + bounded wilson", async () => {
+    const m = await import("@/lib/utils");
+    expect(m.confidenceInterval(0, 0)).toEqual({ lower: 0, upper: 0, center: 0 });
+    const r = m.confidenceInterval(30, 100);
+    expect(r.lower).toBeLessThanOrEqual(r.center);
+    expect(r.center).toBeLessThanOrEqual(r.upper);
+    const r90 = m.confidenceInterval(30, 100, 0.9);
+    expect(r90.center).toBeGreaterThan(0);
+  });
+
+  test("meetsGoThreshold: 3 distinct sources but thin sample → ineligible", async () => {
+    const m = await import("@/lib/utils");
+    const r = m.meetsGoThreshold([
+      { strength: "contact_shared" as const, sample_size: 1, source_url: "https://a.example/r1" },
+      { strength: "contact_shared" as const, sample_size: 1, source_url: "https://b.example/r2" },
+      { strength: "contact_shared" as const, sample_size: 1, source_url: "https://c.example/r3" },
+    ]);
+    expect(r.eligible).toBe(false);
+    expect(r.reason).toMatch(/Sample too small/);
+  });
+
+  test("misc helpers: cn/formatUsd/formatMs/truncate/colors", async () => {
+    const m = await import("@/lib/utils");
+    expect(m.cn("a", undefined, false, null, "b")).toBe("a b");
+    expect(m.formatUsd(0.5)).toBe("$0.5000");
+    expect(m.formatMs(1500)).toBe("1.5s");
+    expect(m.formatMs(500)).toBe("500ms");
+    expect(m.truncate("abcdef", 5)).toBe("ab...");
+    expect(m.truncate("abc", 5)).toBe("abc");
+    expect(m.getVerdictColor("go")).toBe("#40c057");
+    expect(m.getVerdictColor("bogus")).toBe("#94a3b8");
+    expect(m.getRiskColor("critical")).toBe("#fa5252");
+    expect(m.getRiskColor("bogus")).toBe("#94a3b8");
+  });
+});
+
+describe("golden path completeness (Task 7): intake asks <=3 clarifying Qs", () => {
+  test("intake schema allows clarifying_questions <=3", async () => {
+    const m = await import("@/lib/validation");
+    expect(m.intakeSchema).toBeDefined();
+    const ok3 = m.intakeSchema.safeParse({
+      clarifying_questions: ["Who pays?", "What stage?", "How monetized?"],
+    });
+    expect(ok3.success).toBe(true);
+    const tooMany = m.intakeSchema.safeParse({
+      clarifying_questions: ["q1", "q2", "q3", "q4"],
+    });
+    expect(tooMany.success).toBe(false);
+  });
+});

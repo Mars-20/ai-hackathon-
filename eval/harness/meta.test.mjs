@@ -96,6 +96,41 @@ describe("meta: every expected field maps to an assertion", () => {
   });
 });
 
+describe("meta: report rows carry real §13 metrics (Task 7)", () => {
+  it("every row has citation/unsupported/planted/leading/latency/cost numbers", async () => {
+    const { runEval } = await import("./runner.mjs");
+    const { report, ok } = runEval({ writeReport: false });
+    assert.equal(report.length, 8, "report covers all 8 golden tasks");
+    for (const row of report) {
+      assert.equal(typeof row.citation_coverage_pct, "number", `${row.id} citation_coverage_pct`);
+      assert.ok(row.citation_coverage_pct >= 0 && row.citation_coverage_pct <= 100, `${row.id} coverage in range`);
+      assert.equal(typeof row.unsupported_rate, "number", `${row.id} unsupported_rate`);
+      assert.equal(typeof row.latency_ms, "number", `${row.id} latency_ms`);
+      assert.equal(row.cost_usd, 0, `${row.id} deterministic harness spends 0`);
+      assert.ok(
+        row.planted_catch_rate === null || [0, 100].includes(row.planted_catch_rate),
+        `${row.id} planted_catch_rate null or 0/100`
+      );
+      assert.ok(
+        row.leading_catch_rate === null ||
+          (row.leading_catch_rate >= 0 && row.leading_catch_rate <= 100),
+        `${row.id} leading_catch_rate null or 0-100`
+      );
+    }
+    assert.equal(ok, true, "eval suite passes end to end");
+  });
+
+  it("planted claim caught (gt-002) and leading questions caught (gt-003)", async () => {
+    const { runEval } = await import("./runner.mjs");
+    const { report } = runEval({ writeReport: false });
+    const byId = Object.fromEntries(report.map((r) => [r.id, r]));
+    assert.equal(byId["gt-002"].planted_catch_rate, 100, "gt-002 planted claim caught");
+    assert.equal(byId["gt-003"].leading_catch_rate, 100, "gt-003 leading rejections evidenced");
+    assert.equal(byId["gt-001"].planted_catch_rate, null, "gt-001 has no planted claim");
+    assert.equal(byId["gt-001"].leading_catch_rate, null, "gt-001 has no injected questions");
+  });
+});
+
 describe("meta: harness carries no threshold/validator literals", () => {
   it("no GO_THRESHOLD / MIN_* / LEADING_PATTERNS assignments in eval JS", () => {
     const dir = path.join(ROOT, "eval");

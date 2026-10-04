@@ -23,6 +23,7 @@ import {
   combineVerifierWithMemoScan,
   BUDGET,
   isBudgetExceeded,
+  responseRate,
   sampleStats,
 } from "@/lib/utils";
 import {
@@ -627,12 +628,22 @@ Return JSON with key "results" which is an array of 3-5 items:
 }
 
 // ── Startup Intake (skill: startup-intake) ────────────────────────────────────
+// Task 7: two-pass — extract structured fields, then ask <=3
+// clarifying_questions for missing/ambiguous fields (never guess).
+// Returns { startup, questions }; questions are capped at 3.
+export interface IntakeResult {
+  startup: Startup;
+  questions: string[];
+}
+
+const MAX_INTAKE_QUESTIONS = 3;
+
 async function runIntakeSkill(
   idea: string,
   trace: TraceEvent[],
   opts?: { workspace_id?: string; owner_id?: string },
   usageAcc?: AiUsage[]
-): Promise<Startup> {
+): Promise<IntakeResult> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:startup-intake", "skill_start", { idea }));
 
@@ -649,6 +660,10 @@ async function runIntakeSkill(
         enum: ["idea", "prototype", "live", "scaling"],
       },
       business_model: { type: SchemaType.STRING },
+      clarifying_questions: {
+        type: SchemaType.ARRAY,
+        items: { type: SchemaType.STRING },
+      },
     },
     required: ["name", "one_liner", "domain", "stage"],
   };
@@ -665,7 +680,9 @@ Extract:
 - stage: Current stage (idea/prototype/live/scaling)
 - business_model: How it makes money (subscription, marketplace, transaction fee, etc.)
 
-NEVER guess facts not present — use reasonable inference only.`;
+Then list AT MOST 3 clarifying_questions: short questions about fields that
+are missing or ambiguous in the idea. NEVER guess facts not present — ask
+instead of inventing. If nothing is ambiguous, return an empty list.`;
 
   const rawText = await callAIWithFallback({
     prompt,
@@ -677,23 +694,30 @@ NEVER guess facts not present — use reasonable inference only.`;
   });
 
   const latency = Date.now() - t0;
-  const parsed = parseJsonSafely<Record<string, string>>(rawText, {});
+  const parsed = parseJsonSafely<Record<string, string | string[]>>(rawText, {});
   const startup: Startup = {
     id: crypto.randomUUID(),
     workspace_id: opts?.workspace_id ?? "",
     owner_id: opts?.owner_id ?? "",
-    name: parsed.name || "Untitled Startup",
-    one_liner: parsed.one_liner || idea.slice(0, 80),
-    domain: parsed.domain || "general",
-    target_customer: parsed.target_customer,
+    name: (parsed.name as string) || "Untitled Startup",
+    one_liner: (parsed.one_liner as string) || idea.slice(0, 80),
+    domain: (parsed.domain as string) || "general",
+    target_customer: parsed.target_customer as string | undefined,
     stage: (parsed.stage as Startup["stage"]) || "idea",
-    business_model: parsed.business_model,
+    business_model: parsed.business_model as string | undefined,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
-  trace.push(makeTrace("skill:startup-intake", "skill_end", { startup }, { latency_ms: latency }));
-  return startup;
+  // Cap at MAX_INTAKE_QUESTIONS, drop blanks (mirrors intakeSchema max 3).
+  const rawQuestions = Array.isArray(parsed.clarifying_questions) ? parsed.clarifying_questions : [];
+  const questions = rawQuestions
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 0)
+    .map((q) => q.trim().slice(0, 300))
+    .slice(0, MAX_INTAKE_QUESTIONS);
+
+  trace.push(makeTrace("skill:startup-intake", "skill_end", { startup, questions }, { latency_ms: latency }));
+  return { startup, questions };
 }
 
 // ── Assumption Mapping (skill: assumption-mapping) ────────────────────────────
@@ -1352,7 +1376,17 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
     rationale,
     evidence_ids: allEvidence.map((e) => e.id),
     sample_size: primaryEvidence.reduce((acc, e) => acc + (e.sample_size ?? 1), 0),
-    response_rate: primaryEvidence.length > 0 ? undefined : undefined,
+    // Task 7: real response_rate — engaged (above-opinion) sample over total
+    // primary sample via the deterministic responseRate() tool. No primary
+    // evidence → undefined (never a fabricated number).
+    response_rate: primaryEvidence.length > 0
+      ? responseRate(
+          primaryEvidence.reduce((acc, e) => acc + (e.sample_size ?? 1), 0),
+          primaryEvidence
+            .filter((e) => e.strength !== "opinion")
+            .reduce((acc, e) => acc + (e.sample_size ?? 1), 0)
+        ).rate
+      : undefined,
     next_experiment: verdict !== "go" ? parsed.next_experiment : undefined,
     warnings: gate.warnings,
     created_at: new Date().toISOString(),
@@ -1622,8 +1656,8 @@ export async function POST(req: NextRequest) {
         trace.push(makeTrace("router", "verification", { warning: "unauthenticated session: persistence will be skipped" }));
       }
       const intakeUsage: AiUsage[] = [];
-      const startup = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId }, intakeUsage);
-      await send({ type: "startup", startup, trace: [...trace] });
+      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId }, intakeUsage);
+      await send({ type: "startup", startup, questions, trace: [...trace] });
 
       // Per-phase budget + real metering (usageMetadata when available,
       // COST_TABLE fallback — marked in lib/cost).
