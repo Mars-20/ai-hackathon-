@@ -20,59 +20,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminFromSupabase, scopedAdminQuery, toEnvelope } from "@/lib/admin";
-import {
-  createServerSupabaseClient,
-  createServiceRoleClient,
-} from "@/lib/supabase/server";
-
-// Invite token deliberately excluded — credential-equivalent.
-const PENDING_COLUMNS =
-  "id,workspace_id,email,role,status,expires_at,invited_by,created_at";
-const PENDING_CAP = 1000;
-
-interface PendingInvite {
-  id: string;
-  workspace_id: string;
-  email: string;
-  role: string;
-  status: string;
-  expires_at: string | null;
-  invited_by: string | null;
-  created_at: string;
-}
+import { requireAdminFromSupabase, toEnvelope } from "@/lib/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createQueryDeps } from "@/lib/admin-queries/shared";
+import { queryOpsEmail } from "@/lib/admin-queries/ops";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function asPendingInvites(value: unknown): PendingInvite[] {
-  if (!Array.isArray(value)) return [];
-  const out: PendingInvite[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) continue;
-    if (
-      typeof item["id"] !== "string" ||
-      typeof item["workspace_id"] !== "string" ||
-      typeof item["email"] !== "string" ||
-      typeof item["created_at"] !== "string"
-    ) {
-      continue;
-    }
-    const expires = item["expires_at"];
-    const invitedBy = item["invited_by"];
-    out.push({
-      id: item["id"] as string,
-      workspace_id: item["workspace_id"] as string,
-      email: item["email"] as string,
-      role: typeof item["role"] === "string" ? item["role"] : "",
-      status: typeof item["status"] === "string" ? item["status"] : "",
-      expires_at: typeof expires === "string" ? expires : null,
-      invited_by: typeof invitedBy === "string" ? invitedBy : null,
-      created_at: item["created_at"] as string,
-    });
-  }
-  return out;
 }
 
 function rpcDenyToStatus(errorCode: string): number {
@@ -102,40 +56,9 @@ export async function GET() {
   }
 
   try {
-    let pending: PendingInvite[];
-    if (admin.tier === "platform") {
-      const service = createServiceRoleClient();
-      const { data, error } = await service
-        .from("workspace_invites")
-        .select(PENDING_COLUMNS)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(PENDING_CAP);
-      if (error) throw error;
-      pending = asPendingInvites(data);
-    } else {
-      // Workspace tier: user client (RLS) + scopedQuery — the scoping
-      // predicate `.in('workspace_id', workspaceIds)` is appended inside
-      // scopedQuery (single DB round-trip).
-      const userClient = await createServerSupabaseClient();
-      const rowsUnknown: unknown = await scopedAdminQuery(
-        userClient,
-        "workspace_invites",
-        admin.workspaceIds,
-        (q) =>
-          q
-            .select(PENDING_COLUMNS)
-            .eq("status", "pending")
-            .order("created_at", { ascending: false })
-            .limit(PENDING_CAP),
-      );
-      pending = asPendingInvites(rowsUnknown);
-    }
-    return NextResponse.json({
-      pending,
-      total: pending.length,
-      truncated: pending.length >= PENDING_CAP,
-    });
+    const deps = await createQueryDeps(admin);
+    const dto = await queryOpsEmail(deps);
+    return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);
     return NextResponse.json(envelope.body, { status: envelope.status });

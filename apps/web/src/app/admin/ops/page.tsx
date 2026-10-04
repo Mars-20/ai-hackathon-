@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/ops — operations console (Server Component, spec §§2,5-7).
+// Reads DIRECTLY via the admin DAL (runAdminQuery + queryOps* — same
+// helpers the GET routes delegate to, so figures are identical).
 // Nav entry is platform-only (§7 matrix), but the underlying reads are
 // member+ (audit/limits/email/settings GETs), so a workspace-tier caller
 // reaching this URL directly still gets a scoped, read-only view: audit +
@@ -20,11 +22,14 @@ import EmailResendButton from "@/components/admin/EmailResendButton";
 import PlatformAdminGrantForm from "@/components/admin/PlatformAdminGrantForm";
 import PlatformAdminRevokeButton from "@/components/admin/PlatformAdminRevokeButton";
 import KpiCard from "@/components/admin/KpiCard";
+import { getCachedAdminContext, runAdminQuery } from "@/lib/admin-dal";
 import {
-  loadOpsAdmins,
-  loadOpsPageData,
-  settledErrorMessage,
-} from "@/lib/admin-page-data";
+  queryAgentSettings,
+  queryOpsAdmins,
+  queryOpsAudit,
+  queryOpsEmail,
+  queryOpsLimits,
+} from "@/lib/admin-queries/ops";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -267,58 +272,68 @@ export default async function AdminOpsPage({
       ? Number.parseInt(auditPageRaw, 10)
       : 1;
 
-  // The five ops reads are independent — one concurrent loader round
-  // (see lib/admin-page-data.ts). Redirects (401 → /login) rethrow inside.
-  const auditQs = new URLSearchParams();
-  auditQs.set("page", String(auditPage));
-  auditQs.set("limit", "20");
-  if (actorFilter !== null) auditQs.set("actor", actorFilter);
-  if (actionFilter !== null) auditQs.set("action", actionFilter);
-  const ops = await loadOpsPageData(auditQs.toString());
-  const tier = ops.tier;
+  // The five ops reads are independent — one concurrent DAL round (same
+  // helpers the GET routes delegate to, so figures are identical). Gate
+  // failures (401 → /login) throw redirect errors that propagate uncaught;
+  // data failures arrive as values and each section renders its own
+  // "unavailable" state, exactly like the loader's settled pattern.
+  const admin = await getCachedAdminContext();
+  const tier = admin.tier;
+  const [limitsResult, auditResult, agentResult, emailResult] =
+    await Promise.all([
+      runAdminQuery((deps) => queryOpsLimits(deps, "7d")),
+      runAdminQuery((deps) =>
+        queryOpsAudit(deps, {
+          page: auditPageRaw,
+          limit: "20",
+          actor: actorFilter,
+          action: actionFilter,
+        }),
+      ),
+      runAdminQuery((deps) => queryAgentSettings(deps)),
+      runAdminQuery((deps) => queryOpsEmail(deps)),
+    ]);
 
   const severity =
-    ops.limits.body !== null ? narrowSeverity(ops.limits.body) : null;
+    limitsResult.ok === true ? narrowSeverity(limitsResult.data) : null;
 
   let entries: AuditEntry[] = [];
   let auditTotal = 0;
   let auditPages = 0;
-  const auditError = settledErrorMessage(
-    ops.audit.error,
-    "Failed to load audit log",
-  );
-  if (isRecord(ops.audit.body)) {
-    entries = asAuditEntries(ops.audit.body["entries"]);
-    auditTotal = asNumber(ops.audit.body["total"]);
-    auditPages = asNumber(ops.audit.body["pages"]);
+  const auditError =
+    auditResult.ok === true
+      ? null
+      : (auditResult.error.message ?? "Failed to load audit log");
+  if (auditResult.ok === true) {
+    entries = asAuditEntries(auditResult.data.entries);
+    auditTotal = auditResult.data.total;
+    auditPages = auditResult.data.pages;
   }
 
   const settings: { key: string; value: string; updated_at: string | null }[] =
     [];
-  if (isRecord(ops.agent.body) && isRecord(ops.agent.body["settings"])) {
-    for (const [key, entry] of Object.entries(ops.agent.body["settings"])) {
-      if (!isRecord(entry)) continue;
-      const updated = entry["updated_at"];
+  if (agentResult.ok === true) {
+    for (const [key, entry] of Object.entries(agentResult.data.settings)) {
       settings.push({
         key,
-        value: JSON.stringify(entry["value"] ?? null),
-        updated_at: typeof updated === "string" ? updated : null,
+        value: JSON.stringify(entry.value ?? null),
+        updated_at: entry.updated_at,
       });
     }
     settings.sort((a, b) => a.key.localeCompare(b.key));
   }
 
   let pending: PendingInvite[] = [];
-  if (isRecord(ops.email.body))
-    pending = asPendingInvites(ops.email.body["pending"]);
+  if (emailResult.ok === true)
+    pending = asPendingInvites(emailResult.data.pending);
 
   // Platform-admin grants (platform tier only — never fetched for the
   // workspace tier, so the section below can never render for them).
   let platformAdmins: PlatformAdmin[] = [];
   if (tier === "platform") {
-    const adminsSettled = await loadOpsAdmins();
-    if (isRecord(adminsSettled.body))
-      platformAdmins = asPlatformAdmins(adminsSettled.body["admins"]);
+    const adminsResult = await runAdminQuery((deps) => queryOpsAdmins(deps));
+    if (adminsResult.ok === true)
+      platformAdmins = asPlatformAdmins(adminsResult.data.admins);
   }
 
   const auditBase =

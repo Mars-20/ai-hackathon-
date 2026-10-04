@@ -22,13 +22,8 @@ import {
   createServerSupabaseClient,
   createServiceRoleClient,
 } from "@/lib/supabase/server";
-
-interface PlatformAdminEntry {
-  user_id: string;
-  email: string;
-  granted_by: string | null;
-  granted_at: string;
-}
+import { createQueryDeps } from "@/lib/admin-queries/shared";
+import { queryOpsAdmins } from "@/lib/admin-queries/ops";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -53,28 +48,6 @@ function rpcDenyToStatus(errorCode: string): number {
   }
 }
 
-function asAdminEntries(
-  rows: unknown,
-  emailByUser: Map<string, string>,
-): PlatformAdminEntry[] {
-  if (!Array.isArray(rows)) return [];
-  const out: PlatformAdminEntry[] = [];
-  for (const item of rows) {
-    if (!isRecord(item) || typeof item["user_id"] !== "string") continue;
-    const grantedBy = item["granted_by"];
-    const grantedAt = item["granted_at"];
-    const userId = item["user_id"] as string;
-    out.push({
-      user_id: userId,
-      email: emailByUser.get(userId) ?? "",
-      granted_by: typeof grantedBy === "string" ? grantedBy : null,
-      granted_at: typeof grantedAt === "string" ? grantedAt : "",
-    });
-  }
-  out.sort((a, b) => a.user_id.localeCompare(b.user_id));
-  return out;
-}
-
 export async function GET() {
   let admin;
   try {
@@ -85,58 +58,9 @@ export async function GET() {
   }
 
   try {
-    // Platform-tier only: workspace-tier GET is denied with a committed
-    // `denied` trail (Task-4 PATCH pattern). The grant_platform branch
-    // checks platform-tier first, so an empty target still records a
-    // `forbidden` trail for non-platform callers.
-    if (admin.tier !== "platform") {
-      try {
-        const trailClient = await createServerSupabaseClient();
-        await trailClient.rpc("admin_action", {
-          action: "grant_platform",
-          target: {},
-          payload: {},
-          reason: "platform admins list read",
-        });
-      } catch {
-        // Best-effort trail: a trail failure must not mask the 403.
-      }
-      return NextResponse.json(
-        { error: "Platform admins are platform-managed", code: "FORBIDDEN" },
-        { status: 403 },
-      );
-    }
-
-    const service = createServiceRoleClient();
-    const { data, error } = await service
-      .from("platform_admins")
-      .select("user_id,granted_by,granted_at")
-      .limit(1000);
-    if (error) throw error;
-    const rows: unknown[] = Array.isArray(data) ? data : [];
-    const ids = rows
-      .filter(isRecord)
-      .map((r) => r["user_id"])
-      .filter((v): v is string => typeof v === "string");
-    const emailByUser = new Map<string, string>();
-    if (ids.length > 0) {
-      const { data: profiles, error: profilesError } = await service
-        .from("profiles")
-        .select("user_id,email")
-        .in("user_id", ids);
-      if (profilesError) throw profilesError;
-      if (Array.isArray(profiles)) {
-        for (const p of profiles) {
-          if (!isRecord(p) || typeof p["user_id"] !== "string") continue;
-          emailByUser.set(
-            p["user_id"] as string,
-            typeof p["email"] === "string" ? (p["email"] as string) : "",
-          );
-        }
-      }
-    }
-    const admins = asAdminEntries(rows, emailByUser);
-    return NextResponse.json({ admins, total: admins.length });
+    const deps = await createQueryDeps(admin);
+    const dto = await queryOpsAdmins(deps);
+    return NextResponse.json(dto);
   } catch (err: unknown) {
     const envelope = toEnvelope(err);
     return NextResponse.json(envelope.body, { status: envelope.status });
