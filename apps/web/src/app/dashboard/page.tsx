@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   Brain, Plus, LogOut, Settings, Users, ChevronDown,
   ArrowRight, FlaskConical, Target, CheckCircle2, Clock,
-  TrendingUp, Zap, Crown, User as UserIcon, History,
+  TrendingUp, Zap, Crown, User as UserIcon, History, ShieldCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { AuthUser, Workspace, WorkspaceMember, MemberRole, Startup } from "@/lib/types";
@@ -42,6 +42,7 @@ export default function DashboardPage() {
     startups: [],
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -54,6 +55,16 @@ export default function DashboardPage() {
     setIsLoading(true);
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) { router.replace("/login"); return; }
+
+    // Admin entry point: show the /admin link only when the admin gate passes.
+    // The gate itself stays server-side (requireAdmin); this is UX-only.
+    try {
+      const meRes = await fetch("/api/admin/me");
+      if (meRes.ok) {
+        const meBody: unknown = await meRes.json();
+        if (typeof meBody === "object" && meBody !== null && "tier" in meBody) setIsAdmin(true);
+      }
+    } catch { /* non-admin or offline — link stays hidden */ }
 
     const user: AuthUser = {
       id: authUser.id,
@@ -239,6 +250,19 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+
+            {/* Admin entry (gate-checked, UX-only) */}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
+                id="admin-link"
+                title="Admin"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
+                Admin
+              </Link>
+            )}
 
             {/* User avatar / sign out */}
             <div className="flex items-center gap-2">
