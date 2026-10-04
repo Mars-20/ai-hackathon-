@@ -1,24 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/content — decision review queue (Server Component, spec §§2-3,7).
-// Lists GET /api/admin/content/startups through adminApiFetch (no direct
-// Supabase reads): filters flagged / verdict / confidence / q, sort
+// Reads DIRECTLY via the admin DAL (runAdminQuery + queryContentStartups /
+// queryContentDetails — same helpers the GET routes delegate to, so rows
+// are identical): filters flagged / verdict / confidence / q, sort
 // allowlist (created_at/name/flagged), flagged-first default ordering.
 // Row actions live in the ContentActions island: flag/unflag (member+) and
 // policy screen approve/reject (admin/owner — API-enforced, denials
 // surface as messages). ?startup_id= opens the evidence-inspection panel
-// (GET /api/admin/content/details: assumptions, evidence, decisions,
+// (queryContentDetails: assumptions, evidence, decisions,
 // traces) — the same run-detail target linked from the ops audit table.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
 import ContentActions from "@/components/admin/ContentActions";
 import {
-  buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
+import { runAdminQuery } from "@/lib/admin-dal";
 import {
-  loadContentPageData,
-  settledErrorMessage,
-} from "@/lib/admin-page-data";
+  queryContentDetails,
+  queryContentStartups,
+  type ContentStartupsResult,
+} from "@/lib/admin-queries/content";
 
 const CONTENT_SORT_ALLOWLIST = ["created_at", "name", "flagged"] as const;
 const CONTENT_DEFAULT_SORT = "created_at";
@@ -26,87 +28,8 @@ const CONTENT_DEFAULT_SORT = "created_at";
 const VALID_VERDICTS = ["go", "iterate", "stop", "test_more"] as const;
 const VALID_CONFIDENCE = ["low", "medium", "high"] as const;
 
-interface LatestDecision {
-  verdict: string;
-  confidence: string;
-  created_at: string;
-}
-
-interface StartupEntry {
-  id: string;
-  workspace_id: string | null;
-  name: string;
-  one_liner: string;
-  domain: string;
-  stage: string;
-  flagged: boolean;
-  created_at: string;
-  latestDecision: LatestDecision | null;
-  evidenceCount: number;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function asDecision(value: unknown): LatestDecision | null {
-  if (!isRecord(value)) return null;
-  if (
-    typeof value["verdict"] !== "string" ||
-    typeof value["confidence"] !== "string" ||
-    typeof value["created_at"] !== "string"
-  ) {
-    return null;
-  }
-  return {
-    verdict: value["verdict"] as string,
-    confidence: value["confidence"] as string,
-    created_at: value["created_at"] as string,
-  };
-}
-
-function narrowStartups(body: unknown): {
-  startups: StartupEntry[];
-  total: number;
-  pages: number;
-  page: number;
-  limit: number;
-} | null {
-  if (!isRecord(body) || !Array.isArray(body["startups"])) return null;
-  const startups: StartupEntry[] = [];
-  for (const item of body["startups"] as unknown[]) {
-    if (!isRecord(item) || typeof item["id"] !== "string") continue;
-    const ws = item["workspace_id"];
-    startups.push({
-      id: item["id"] as string,
-      workspace_id: typeof ws === "string" ? ws : null,
-      name: typeof item["name"] === "string" ? (item["name"] as string) : "",
-      one_liner:
-        typeof item["one_liner"] === "string"
-          ? (item["one_liner"] as string)
-          : "",
-      domain:
-        typeof item["domain"] === "string" ? (item["domain"] as string) : "",
-      stage: typeof item["stage"] === "string" ? (item["stage"] as string) : "",
-      flagged: item["flagged"] === true,
-      created_at:
-        typeof item["created_at"] === "string"
-          ? (item["created_at"] as string)
-          : "",
-      latestDecision: asDecision(item["latestDecision"]),
-      evidenceCount:
-        typeof item["evidenceCount"] === "number" &&
-        Number.isFinite(item["evidenceCount"])
-          ? (item["evidenceCount"] as number)
-          : 0,
-    });
-  }
-  const total =
-    typeof body["total"] === "number" ? body["total"] : startups.length;
-  const pages = typeof body["pages"] === "number" ? body["pages"] : 0;
-  const page = typeof body["page"] === "number" ? body["page"] : 1;
-  const limit = typeof body["limit"] === "number" ? body["limit"] : 20;
-  return { startups, total, pages, page, limit };
 }
 
 function readSingle(
@@ -173,28 +96,42 @@ export default async function AdminContentPage({
       : null;
   const focusId = readSingle(raw, "startup_id");
 
-  // Queue list and evidence panel are independent — one concurrent loader
-  // round (see lib/admin-page-data.ts). Redirects rethrow inside.
-  const listQs = new URLSearchParams(buildAdminTableQuery(params));
-  if (flagged !== null) listQs.set("flagged", flagged);
-  if (verdict !== null) listQs.set("verdict", verdict);
-  if (confidence !== null) listQs.set("confidence", confidence);
-  const content = await loadContentPageData(listQs.toString(), focusId);
+  // Queue list and evidence panel are independent — one concurrent DAL
+  // round (same helpers the GET routes delegate to, so figures are
+  // identical). Gate failures (401 → /login) throw redirect errors that
+  // propagate uncaught from the Promise.all; data failures arrive as
+  // values — the list failure fails the queue, the detail failure only
+  // hides the panel, exactly like the loader's settled pattern.
+  const [startupsResult, detailsResult] = await Promise.all([
+    runAdminQuery((deps) =>
+      queryContentStartups(deps, {
+        page: params.page,
+        limit: params.limit,
+        sort: params.sort,
+        order: params.order,
+        q: params.q,
+        flagged,
+        verdict,
+        confidence,
+      }),
+    ),
+    focusId !== null
+      ? runAdminQuery((deps) => queryContentDetails(deps, focusId))
+      : Promise.resolve(null),
+  ]);
 
-  const body = content.startups.body;
-  let loadError = settledErrorMessage(
-    content.startups.error,
-    "Failed to load content",
-  );
-
-  const data = body !== null ? narrowStartups(body) : null;
-  if (data === null && loadError === null) {
-    loadError = "Unexpected content response shape";
+  let loadError: string | null = null;
+  let data: ContentStartupsResult | null = null;
+  if (startupsResult.ok) {
+    data = startupsResult.data;
+  } else {
+    loadError = startupsResult.error.message;
   }
 
   // Evidence-inspection panel (auxiliary — never fails the queue).
   // Arrived in the same concurrent round as the list above.
-  const detailBody = content.details !== null ? content.details.body : null;
+  const detailBody =
+    detailsResult !== null && detailsResult.ok ? detailsResult.data : null;
   let details: {
     startupName: string;
     assumptions: number;
