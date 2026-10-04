@@ -5,9 +5,12 @@
  * eval/fixtures/gt-*.json, maps every expected field to assertions via
  * coverageFor() (throws on any uncovered field), executes the assertions
  * against done.verdict / done.evidence[].source_url / done.trace[].event_type
- * and writes eval/report.json as [{id, verdict_got, verdict_want,
- * citations_got, pass}]. ok is true only when all fixtures are covered and
- * every task passes.
+ * and writes eval/report.json rows as [{id, verdict_got, verdict_want,
+ * citations_got, pass, citation_coverage_pct, unsupported_rate,
+ * planted_catch_rate, leading_catch_rate, latency_ms, cost_usd}].
+ * Every metric is computed from the task + recorded fixture (no invented
+ * numbers): N/A rows carry null, the deterministic harness spends 0 USD.
+ * ok is true only when all fixtures are covered and every task passes.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +37,48 @@ export function citationsCount(done) {
   return n;
 }
 
+const pct1 = (num, den) => (den > 0 ? Math.round((num / den) * 1000) / 10 : 0);
+
+export function citationCoveragePct(done) {
+  const items = done?.evidence ?? [];
+  const cited = items.filter(
+    (e) => typeof e.source_url === "string" && e.source_url.length > 0
+  ).length;
+  return pct1(cited, items.length);
+}
+
+export function unsupportedRate(done) {
+  const items = done?.evidence ?? [];
+  const flags = done?.verifier_flags ?? [];
+  return pct1(flags.length, items.length);
+}
+
+export function plantedCatchRate(task, done) {
+  if (!task?.planted_claim) return null;
+  return (done?.verifier_flags ?? []).length > 0 ? 100 : 0;
+}
+
+export function leadingCatchRate(task, done) {
+  if (!task?.injected_questions) return null;
+  const want = task.expected?.leading_question_rejection_count ?? 0;
+  if (want <= 0) return null;
+  const types = (done?.trace ?? []).map((t) => t.event_type);
+  let rejected = types.filter((t) =>
+    /leading_rejected|question_rejected|leading_flagged/i.test(t)
+  ).length;
+  if (Array.isArray(done?.question_validations)) {
+    rejected = done.question_validations.filter((q) => q.approved === false).length;
+  } else if (done?.leading_validation && typeof done.leading_validation === "object") {
+    rejected =
+      done.leading_validation.rejected ??
+      done.leading_validation.leading_question_rejection_count ??
+      rejected;
+  }
+  return Math.min(100, pct1(rejected, want));
+}
+
 export function evaluateTask(task, done) {
+  const t0 = Date.now();
   const names = coverageFor(task.expected, task);
   const checks = names.map((name) => {
     const fn = getAssertion(name);
@@ -49,6 +93,13 @@ export function evaluateTask(task, done) {
     citations_got: citationsCount(done),
     pass,
     checks,
+    // Task 7 §13 metrics — real numbers only (computed, never invented).
+    citation_coverage_pct: citationCoveragePct(done),
+    unsupported_rate: unsupportedRate(done),
+    planted_catch_rate: plantedCatchRate(task, done),
+    leading_catch_rate: leadingCatchRate(task, done),
+    latency_ms: Date.now() - t0,
+    cost_usd: 0,
   };
 }
 
@@ -68,13 +119,33 @@ export function runEval({ writeReport = true } = {}) {
     results.length === FIXTURE_IDS.length && FIXTURE_IDS.every((id) => seen.has(id));
   const allPass = results.every((r) => r.pass);
 
-  const report = results.map(({ id, verdict_got, verdict_want, citations_got, pass }) => ({
-    id,
-    verdict_got,
-    verdict_want,
-    citations_got,
-    pass,
-  }));
+  const report = results.map(
+    ({
+      id,
+      verdict_got,
+      verdict_want,
+      citations_got,
+      pass,
+      citation_coverage_pct,
+      unsupported_rate,
+      planted_catch_rate,
+      leading_catch_rate,
+      latency_ms,
+      cost_usd,
+    }) => ({
+      id,
+      verdict_got,
+      verdict_want,
+      citations_got,
+      pass,
+      citation_coverage_pct,
+      unsupported_rate,
+      planted_catch_rate,
+      leading_catch_rate,
+      latency_ms,
+      cost_usd,
+    })
+  );
 
   if (writeReport) {
     fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");

@@ -9,3 +9,6 @@ dist
 .worktrees/
 *.tsbuildinfo
 eval/report.json
+.agents/mcp_config.json
+.agents/
+.playwright-mcp/

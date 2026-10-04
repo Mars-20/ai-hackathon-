@@ -37,6 +37,12 @@ export const startupSaveSchema = z.object({
   workspace_id: workspaceIdSchema.optional(),
 });
 
+// Task 7: intake two-pass — extract + ask <=3 clarifying_questions (never
+// guess). Capped at 3 so the golden path stays bounded.
+export const intakeSchema = z.object({
+  clarifying_questions: z.array(z.string().trim().min(1).max(300)).max(3).default([]),
+});
+
 export const searchQuerySchema = z.object({
   q: z.string().trim().min(2).max(200),
   type: z.enum(["all", "startups", "assumptions", "evidence"]).default("all"),

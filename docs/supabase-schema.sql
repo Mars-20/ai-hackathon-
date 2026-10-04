@@ -1,3 +1,6 @@
+-- SUPERSEDED — do not run. Canonical: packages/db/schema-unified.sql + supabase/migrations/0000+0001+0002.
+-- This file is kept for reference only and is NOT executed by CI or migrations.
+-- Apply schema via `supabase db push` using packages/db/schema-unified.sql.
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Validation Copilot — Multi-User Supabase Schema
 -- Run this in: Supabase Dashboard → SQL Editor → New Query

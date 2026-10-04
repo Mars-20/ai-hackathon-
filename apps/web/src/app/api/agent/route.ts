@@ -23,6 +23,7 @@ import {
   combineVerifierWithMemoScan,
   BUDGET,
   isBudgetExceeded,
+  responseRate,
   sampleStats,
 } from "@/lib/utils";
 import {
@@ -37,6 +38,7 @@ import {
   extractUsageCost,
   recordSpendAsync,
 } from "@/lib/cost";
+import type { CostKind } from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
 
@@ -49,6 +51,184 @@ const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-2.5-flash";
 const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-2.5-flash";
 const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "llama-3.3-70b-versatile";
+
+// ── Task 3: runtime metering + per-phase budget + prompt delimiters + router/backoff ──
+// Provider usage is accumulated per phase into caller-owned arrays (never
+// module state — Next.js serves concurrent POSTs sharing this module).
+export interface AiUsage {
+  totalTokenCount?: number;
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+}
+
+// Per-field cap for untrusted content embedded in prompts: each
+// user-controlled field is truncated individually so one huge field cannot
+// crowd out the rest of the prompt.
+const UNTRUSTED_FIELD_CHARS = 500;
+
+function truncateField(s: string, max: number = UNTRUSTED_FIELD_CHARS): string {
+  return s.length <= max ? s : s.slice(0, max - 3) + "...";
+}
+
+// Wrap user-controlled content so the model can tell instructions apart from
+// untrusted data (prompt-injection hardening — never render raw user text as
+// instructions).
+function toUntrusted(s: string): string {
+  return `<untrusted>${truncateField(s)}</untrusted>`;
+}
+
+// Re-injected model output (startup.name/one_liner/...) is untrusted too:
+// re-sanitize on every re-injection so a stored injection cannot escalate
+// downstream.
+function sanitizeStartupField(s: string | undefined | null): string {
+  return truncateField(sanitizeForPrompt(String(s ?? "")));
+}
+
+// Sum real provider metering when available; COST_TABLE fallback (inside
+// extractUsageCost) ONLY when no call returned usageMetadata. Search-tool
+// spend has no metering — its extractUsageCost(undefined, "search") fallback
+// is legitimate and preserved.
+function costFromUsage(acc: AiUsage[], fallbackKind: CostKind): number {
+  const metered = acc.filter(
+    (u) => typeof u?.totalTokenCount === "number" && (u.totalTokenCount ?? 0) > 0
+  );
+  if (metered.length > 0) {
+    return metered.reduce(
+      (sum, u) =>
+        sum +
+        extractUsageCost(
+          {
+            totalTokenCount: u.totalTokenCount,
+            promptTokenCount: u.promptTokenCount,
+            candidatesTokenCount: u.candidatesTokenCount,
+          },
+          fallbackKind
+        ),
+      0
+    );
+  }
+  return extractUsageCost(undefined, fallbackKind); // FALLBACK: no provider metering
+}
+
+// Per-phase budget gate: throws 429 with retryAfter (not a bare Error) so the
+// SSE catch below propagates { retryAfter } mid-loop instead of a bare message.
+function assertPhaseBudget(totalCost: number, toolCalls: number): void {
+  if (isBudgetExceeded(totalCost, toolCalls)) {
+    throw Object.assign(new Error("Budget exceeded"), { status: 429, retryAfter: 60 });
+  }
+}
+
+// Groq fetch with exponential backoff (3 attempts). Reads x-ratelimit-*
+// headers for observability; on a final 429/5xx throws with `retryAfter` so
+// callers propagate Retry-After instead of swallowing the signal.
+async function fetchGroqWithBackoff(
+  body: Record<string, unknown>,
+  trace: TraceEvent[],
+  skillName: string
+): Promise<{ data: any; usage?: AiUsage }> {
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  if (!groqKey) throw new Error("Groq API key not configured");
+  let lastErr: unknown = new Error(`Groq unavailable for ${skillName}`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
+    }
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model: GROQ_ROUTER_MODEL, ...body }),
+      });
+      const rlRemaining = res.headers.get("x-ratelimit-remaining");
+      const rlLimit = res.headers.get("x-ratelimit-limit");
+      if (rlRemaining !== null || rlLimit !== null) {
+        trace.push(
+          makeTrace("router", "verification", {
+            notice: "groq x-ratelimit headers",
+            skill: skillName,
+            remaining: rlRemaining,
+            limit: rlLimit,
+          })
+        );
+      }
+      if (res.status === 429 || res.status >= 500) {
+        const ra = Number(res.headers.get("retry-after"));
+        const retryAfter = Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : 60;
+        lastErr = Object.assign(new Error(`Groq ${res.status} for ${skillName}`), {
+          status: res.status,
+          retryAfter,
+        });
+        continue;
+      }
+      if (!res.ok) throw new Error(`Groq ${res.status} for ${skillName}`);
+      const data = await res.json();
+      const u = data?.usage;
+      const usage: AiUsage | undefined =
+        typeof u?.total_tokens === "number"
+          ? {
+              totalTokenCount: u.total_tokens,
+              promptTokenCount: u.prompt_tokens,
+              candidatesTokenCount: u.completion_tokens,
+            }
+          : undefined;
+      return { data, usage };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+// Dedicated Groq Router classifier (llama-3.3-70b) — runs BEFORE the Planner
+// (intake) so routing intent is decided by the fast classifier, not the
+// planner. Fail-open with a trace warning: a blip here must not hard-block
+// validation (the planner is primary); 429s still propagate retryAfter.
+async function runRouterClassifier(
+  idea: string,
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
+): Promise<{ intent: string }> {
+  const t0 = Date.now();
+  const fallback = { intent: "startup_validation" };
+  trace.push(makeTrace("router", "skill_start", { skill: "router-classifier", model: GROQ_ROUTER_MODEL }));
+  try {
+    const { data, usage } = await fetchGroqWithBackoff(
+      {
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: 'You are the Router classifier for a startup validation copilot. Reply ONLY with valid JSON: {"intent": string}.',
+          },
+          { role: "user", content: toUntrusted(idea) },
+        ],
+        temperature: 0.1,
+      },
+      trace,
+      "router-classifier"
+    );
+    if (usage?.totalTokenCount) usageAcc?.push(usage);
+    const content = data?.choices?.[0]?.message?.content;
+    const parsed = parseJsonSafely<{ intent?: string }>(String(content ?? ""), fallback);
+    const intent = parsed.intent || fallback.intent;
+    trace.push(makeTrace("router", "skill_end", { intent }, { latency_ms: Date.now() - t0 }));
+    return { intent };
+  } catch (err) {
+    const retryAfter = (err as { retryAfter?: unknown })?.retryAfter;
+    trace.push(
+      makeTrace("router", "verification", {
+        warning: "router-classifier fallback",
+        error: String(err),
+        ...(typeof retryAfter === "number" ? { retryAfter } : {}),
+      })
+    );
+    if (typeof retryAfter === "number") throw err; // propagate Retry-After
+    return fallback;
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeTrace(
@@ -92,6 +272,7 @@ async function callAIWithFallback({
   skillName,
   enableGrounding,
   groundingStatus,
+  usageAcc,
 }: {
   prompt: string;
   systemPrompt?: string;
@@ -101,10 +282,25 @@ async function callAIWithFallback({
   skillName: string;
   enableGrounding?: boolean;
   groundingStatus?: { grounded: boolean };
+  usageAcc?: AiUsage[];
 }): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   const groqKey = process.env.GROQ_API_KEY?.trim();
-  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+  // Split system/user prompts: instructions travel as systemInstruction (or
+  // the system role on Groq), never concatenated into the user content where
+  // untrusted data could blur the boundary.
+  const systemInstruction = systemPrompt?.trim() ? systemPrompt : undefined;
+  const fullPrompt = prompt;
+  const pushUsage = (r: unknown) => {
+    const um = (r as { usageMetadata?: AiUsage } | null | undefined)?.usageMetadata;
+    if (um && typeof um.totalTokenCount === "number" && um.totalTokenCount > 0) {
+      usageAcc?.push({
+        totalTokenCount: um.totalTokenCount,
+        promptTokenCount: um.promptTokenCount,
+        candidatesTokenCount: um.candidatesTokenCount,
+      });
+    }
+  };
 
   // 1. Try Gemini primary
   if (geminiKey) {
@@ -120,6 +316,7 @@ async function callAIWithFallback({
         try {
           const groundedModel = gemini.getGenerativeModel({
             model: geminiModel,
+            ...(systemInstruction ? { systemInstruction } : {}),
             tools: variant.tools as never,
             generationConfig: responseSchema
               ? {
@@ -129,6 +326,7 @@ async function callAIWithFallback({
               : { responseMimeType: "application/json" },
           });
           const groundedResult = await groundedModel.generateContent(fullPrompt);
+          pushUsage(groundedResult.response);
           const groundedText = groundedResult.response.text();
           if (groundedText && groundedText.trim().length > 0) {
             // Grounding proof: only tool-returned groundingMetadata counts.
@@ -158,6 +356,7 @@ async function callAIWithFallback({
     try {
       const model = gemini.getGenerativeModel({
         model: geminiModel,
+        ...(systemInstruction ? { systemInstruction } : {}),
         generationConfig: responseSchema
           ? {
               responseMimeType: "application/json",
@@ -166,6 +365,7 @@ async function callAIWithFallback({
           : { responseMimeType: "application/json" },
       });
       const result = await model.generateContent(fullPrompt);
+      pushUsage(result.response);
       const text = result.response.text();
       if (text && text.trim().length > 0) {
         // Non-grounded helper fallback: never count as grounded.
@@ -185,22 +385,17 @@ async function callAIWithFallback({
     }
   }
 
-  // 2. Try Groq fallback
+  // 2. Try Groq fallback (exponential backoff x3, x-ratelimit observed,
+  // Retry-After propagated via the shared helper).
   if (groqKey) {
     try {
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${groqKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: GROQ_ROUTER_MODEL,
+      const { data, usage } = await fetchGroqWithBackoff(
+        {
           response_format: { type: "json_object" },
           messages: [
             {
               role: "system",
-              content: `${systemPrompt || "You are an expert AI startup validation copilot."} You MUST reply ONLY with valid JSON.`,
+              content: `${systemInstruction || "You are an expert AI startup validation copilot."} You MUST reply ONLY with valid JSON.`,
             },
             {
               role: "user",
@@ -208,16 +403,22 @@ async function callAIWithFallback({
             },
           ],
           temperature: 0.2,
-        }),
-      });
-
-      if (groqRes.ok) {
-        const data = await groqRes.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content) return content;
-      }
+        },
+        trace,
+        skillName
+      );
+      if (usage?.totalTokenCount) usageAcc?.push(usage);
+      const content = data.choices?.[0]?.message?.content;
+      if (content) return content;
     } catch (groqErr) {
       console.warn(`[Groq Failover Error for ${skillName}]:`, groqErr);
+      const retryAfter = (groqErr as { retryAfter?: unknown })?.retryAfter;
+      if (typeof retryAfter === "number") {
+        throw Object.assign(
+          new Error("AI providers temporarily unavailable. Please retry shortly."),
+          { status: 429, retryAfter }
+        );
+      }
     }
   }
 
@@ -244,7 +445,8 @@ function isHttpUrl(u: unknown): u is string {
 async function groundedSearch(
   query: string,
   domainHint?: string,
-  trace?: TraceEvent[]
+  trace?: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<{
   results: Array<{ claim: string; url: string; published_at?: string }>;
   grounded: boolean;
@@ -273,6 +475,7 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
         skillName: "market-research",
         enableGrounding: true,
         groundingStatus,
+        usageAcc,
       });
       const parsedGrounded = parseJsonSafely<{
         results: Array<{ claim: string; url: string; published_at?: string }>;
@@ -320,6 +523,10 @@ Return a JSON object with key "results" containing an array of objects, each wit
 Only include claims you can attribute to a specific source. Return 3-6 results. Respond ONLY with valid JSON.`;
 
         const result = await model.generateContent(prompt);
+        {
+          const um = (result.response as unknown as { usageMetadata?: AiUsage })?.usageMetadata;
+          if (um && typeof um.totalTokenCount === "number" && um.totalTokenCount > 0) usageAcc?.push(um);
+        }
         const text = result.response.text();
         const parsed = parseJsonSafely<{ results: Array<{ claim: string; url: string; published_at?: string }> }>(text, { results: [] });
         const validated = (parsed.results || []).filter(
@@ -368,16 +575,12 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
 
   // Groq fallback: no browsing capability — synthesis only, NEVER emit URLs.
   // Any "url" the model returns here was not returned by a tool, so strip it.
+  // Routed via the shared backoff helper (x-ratelimit observed, Retry-After
+  // propagated); usage metered when the provider returns it.
   if (groqKey) {
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${groqKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: GROQ_ROUTER_MODEL,
+      const { data, usage } = await fetchGroqWithBackoff(
+        {
           response_format: { type: "json_object" },
           messages: [
             {
@@ -399,11 +602,12 @@ Return JSON with key "results" which is an array of 3-5 items:
 }`,
             },
           ],
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
+        },
+        trace ?? [],
+        "market-research-groq"
+      );
+      if (usage?.totalTokenCount) usageAcc?.push(usage);
+      {
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           const parsed = parseJsonSafely<{ results: Array<{ claim: string; url: string; published_at?: string }> }>(content, { results: [] });
@@ -424,11 +628,22 @@ Return JSON with key "results" which is an array of 3-5 items:
 }
 
 // ── Startup Intake (skill: startup-intake) ────────────────────────────────────
+// Task 7: two-pass — extract structured fields, then ask <=3
+// clarifying_questions for missing/ambiguous fields (never guess).
+// Returns { startup, questions }; questions are capped at 3.
+export interface IntakeResult {
+  startup: Startup;
+  questions: string[];
+}
+
+const MAX_INTAKE_QUESTIONS = 3;
+
 async function runIntakeSkill(
   idea: string,
   trace: TraceEvent[],
-  opts?: { workspace_id?: string; owner_id?: string }
-): Promise<Startup> {
+  opts?: { workspace_id?: string; owner_id?: string },
+  usageAcc?: AiUsage[]
+): Promise<IntakeResult> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:startup-intake", "skill_start", { idea }));
 
@@ -445,13 +660,17 @@ async function runIntakeSkill(
         enum: ["idea", "prototype", "live", "scaling"],
       },
       business_model: { type: SchemaType.STRING },
+      clarifying_questions: {
+        type: SchemaType.ARRAY,
+        items: { type: SchemaType.STRING },
+      },
     },
     required: ["name", "one_liner", "domain", "stage"],
   };
 
-  const prompt = `You are the startup-intake skill for a Validation Copilot. Extract structured information from this startup idea description.
+  const prompt = `Extract structured information from this startup idea description.
 
-IDEA: "${idea}"
+IDEA: ${toUntrusted(idea)}
 
 Extract:
 - name: Short product/company name (infer if not given)
@@ -461,39 +680,51 @@ Extract:
 - stage: Current stage (idea/prototype/live/scaling)
 - business_model: How it makes money (subscription, marketplace, transaction fee, etc.)
 
-NEVER guess facts not present — use reasonable inference only.`;
+Then list AT MOST 3 clarifying_questions: short questions about fields that
+are missing or ambiguous in the idea. NEVER guess facts not present — ask
+instead of inventing. If nothing is ambiguous, return an empty list.`;
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the startup-intake skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
     skillName: "startup-intake",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
-  const parsed = parseJsonSafely<Record<string, string>>(rawText, {});
+  const parsed = parseJsonSafely<Record<string, string | string[]>>(rawText, {});
   const startup: Startup = {
     id: crypto.randomUUID(),
     workspace_id: opts?.workspace_id ?? "",
     owner_id: opts?.owner_id ?? "",
-    name: parsed.name || "Untitled Startup",
-    one_liner: parsed.one_liner || idea.slice(0, 80),
-    domain: parsed.domain || "general",
-    target_customer: parsed.target_customer,
+    name: (parsed.name as string) || "Untitled Startup",
+    one_liner: (parsed.one_liner as string) || idea.slice(0, 80),
+    domain: (parsed.domain as string) || "general",
+    target_customer: parsed.target_customer as string | undefined,
     stage: (parsed.stage as Startup["stage"]) || "idea",
-    business_model: parsed.business_model,
+    business_model: parsed.business_model as string | undefined,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
-  trace.push(makeTrace("skill:startup-intake", "skill_end", { startup }, { latency_ms: latency }));
-  return startup;
+  // Cap at MAX_INTAKE_QUESTIONS, drop blanks (mirrors intakeSchema max 3).
+  const rawQuestions = Array.isArray(parsed.clarifying_questions) ? parsed.clarifying_questions : [];
+  const questions = rawQuestions
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 0)
+    .map((q) => q.trim().slice(0, 300))
+    .slice(0, MAX_INTAKE_QUESTIONS);
+
+  trace.push(makeTrace("skill:startup-intake", "skill_end", { startup, questions }, { latency_ms: latency }));
+  return { startup, questions };
 }
 
 // ── Assumption Mapping (skill: assumption-mapping) ────────────────────────────
 async function runAssumptionMappingSkill(
   startup: Startup,
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<Assumption[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:assumption-mapping", "skill_start", { startup_id: startup.id }));
@@ -526,14 +757,14 @@ async function runAssumptionMappingSkill(
     required: ["assumptions"],
   };
 
-  const prompt = `You are the assumption-mapping skill for a Validation Copilot. Map the critical assumptions for this startup.
+  const prompt = `Map the critical assumptions for this startup.
 
 STARTUP:
-- Name: ${startup.name}
-- Idea: ${startup.one_liner}
-- Domain: ${startup.domain}
-- Target customer: ${startup.target_customer || "not specified"}
-- Business model: ${startup.business_model || "not specified"}
+- Name: ${toUntrusted(sanitizeStartupField(startup.name))}
+- Idea: ${toUntrusted(sanitizeStartupField(startup.one_liner))}
+- Domain: ${toUntrusted(sanitizeStartupField(startup.domain))}
+- Target customer: ${toUntrusted(sanitizeStartupField(startup.target_customer || "not specified"))}
+- Business model: ${toUntrusted(sanitizeStartupField(startup.business_model || "not specified"))}
 
 Produce a risk-ranked list of 6-10 assumptions the startup depends on. Include ALL three categories:
 
@@ -556,9 +787,11 @@ Return assumptions sorted by risk_level: critical first, then high, medium, low.
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the assumption-mapping skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
     skillName: "assumption-mapping",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
@@ -597,16 +830,17 @@ Return assumptions sorted by risk_level: critical first, then high, medium, low.
 async function runMarketResearchSkill(
   startup: Startup,
   assumptions: Assumption[],
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<Evidence[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:market-research", "skill_start", { startup_id: startup.id }));
 
   const criticalAssumption = assumptions.find((a) => a.risk_level === "critical") ?? assumptions[0];
   const queries = [
-    `${startup.domain} market size and growth rate 2024 2025`,
-    `${startup.one_liner} competitors pricing`,
-    `${criticalAssumption?.statement?.slice(0, 60)} evidence data`,
+    `${truncateField(sanitizeStartupField(startup.domain), 100)} market size and growth rate 2024 2025`,
+    `${truncateField(sanitizeStartupField(startup.one_liner), 100)} competitors pricing`,
+    `${truncateField(criticalAssumption?.statement ?? "", 100)} evidence data`,
   ].filter(Boolean);
 
   const allResults: Evidence[] = [];
@@ -615,7 +849,7 @@ async function runMarketResearchSkill(
     trace.push(makeTrace("tool", "tool_call", { tool: "grounded_search", query }));
     const t1 = Date.now();
     try {
-      const searchResult = await groundedSearch(query, startup.domain, trace);
+      const searchResult = await groundedSearch(query, startup.domain, trace, usageAcc);
       const latency = Date.now() - t1;
 
       trace.push(
@@ -749,7 +983,8 @@ async function runLeadFinderSkill(
 async function runExperimentDesignerSkill(
   startup: Startup,
   assumptions: Assumption[],
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<Experiment> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:experiment-designer", "skill_start", { startup_id: startup.id }));
@@ -786,14 +1021,12 @@ async function runExperimentDesignerSkill(
     required: ["type", "title", "description", "success_criteria", "target_sample_size", "questions"],
   };
 
-  const prompt = `You are the experiment-designer and survey-designer skill for a Validation Copilot.
+  const prompt = `Design the CHEAPEST, FASTEST validation experiment for this critical assumption:
 
-Design the CHEAPEST, FASTEST validation experiment for this critical assumption:
-
-ASSUMPTION: "${riskiestAssumption?.statement}"
-STARTUP: ${startup.name} — ${startup.one_liner}
-DOMAIN: ${startup.domain}
-TARGET CUSTOMER: ${startup.target_customer || "not specified"}
+ASSUMPTION: ${toUntrusted(truncateField(riskiestAssumption?.statement ?? ""))}
+STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
+DOMAIN: ${toUntrusted(sanitizeStartupField(startup.domain))}
+TARGET CUSTOMER: ${toUntrusted(sanitizeStartupField(startup.target_customer || "not specified"))}
 
 RULES (non-negotiable):
 1. Never recommend building the full product as the first test
@@ -808,9 +1041,11 @@ Design 4-7 interview/survey questions. Make them open-ended and past-behavior fo
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the experiment-designer and survey-designer skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
     skillName: "experiment-designer",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
@@ -825,9 +1060,21 @@ Design 4-7 interview/survey questions. Make them open-ended and past-behavior fo
     questions?: Array<{ id: string; text: string; type: string }>;
   }>(rawText, {});
 
-  // Run leading-question validator on each question
-  const validatedQuestions = (parsed.questions || []).map((q) => {
+  // Run leading-question validator on each question — hard-reject (Task 4):
+  // !approved questions are filtered out, traced as leading_rejected,
+  // never shown to founder.
+  const validatedQuestions = (parsed.questions || []).flatMap((q) => {
     const validation = validateQuestion(q.text);
+    if (!validation.approved) {
+      trace.push(
+        makeTrace("skill:survey-designer", "verification", {
+          action: "leading_rejected",
+          question: q.text,
+          warnings: validation.warnings,
+        })
+      );
+      return [];
+    }
     trace.push(
       makeTrace("skill:survey-designer", "verification", {
         question: q.text,
@@ -839,13 +1086,15 @@ Design 4-7 interview/survey questions. Make them open-ended and past-behavior fo
     const qType = validTypes.includes(q.type as (typeof validTypes)[number])
       ? (q.type as (typeof validTypes)[number])
       : "open";
-    return {
-      id: q.id || crypto.randomUUID(),
-      text: q.text,
-      type: qType,
-      is_leading: validation.isLeading,
-      warning: validation.warnings[0],
-    };
+    return [
+      {
+        id: q.id || crypto.randomUUID(),
+        text: q.text,
+        type: qType,
+        is_leading: validation.isLeading,
+        warning: validation.warnings[0],
+      },
+    ];
   });
 
   const experiment: Experiment = {
@@ -882,7 +1131,8 @@ async function runResponseAnalyzerSkill(
   startup: Startup,
   uploadedData: string,
   experiment: Experiment,
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<Evidence[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:response-analyzer", "skill_start", { startup_id: startup.id }));
@@ -916,13 +1166,13 @@ async function runResponseAnalyzerSkill(
     required: ["evidence", "summary"],
   };
 
-  const prompt = `You are the response-analyzer skill for a Validation Copilot. Analyze this real primary evidence.
+  const prompt = `Analyze this real primary evidence.
 
-STARTUP: ${startup.name} — ${startup.one_liner}
+STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
 EXPERIMENT TYPE: ${experiment.type}
 
 RAW DATA / INTERVIEW NOTES:
-${uploadedData}
+${toUntrusted(uploadedData)}
 
 TASK: Extract evidence items from this data.
 
@@ -940,9 +1190,11 @@ Write a summary of what the data actually shows.`;
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the response-analyzer skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
     skillName: "response-analyzer",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
@@ -986,7 +1238,8 @@ async function runDecisionMemoSkill(
   assumptions: Assumption[],
   allEvidence: Evidence[],
   trace: TraceEvent[],
-  verifier?: { approved: boolean; unsupportedClaims: string[] }
+  verifier?: { approved: boolean; unsupportedClaims: string[] },
+  usageAcc?: AiUsage[]
 ): Promise<Decision> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:decision-memo", "skill_start", { startup_id: startup.id }));
@@ -1014,12 +1267,12 @@ async function runDecisionMemoSkill(
 
   const evidenceSummary = allEvidence
     .slice(0, 10)
-    .map((e) => `[${e.evidence_type}/${e.strength}] ${e.claim}`)
+    .map((e) => `[${e.evidence_type}/${e.strength}] ${toUntrusted(e.claim)}`)
     .join("\n");
 
-  const prompt = `You are the decision-memo skill for a Validation Copilot. Produce an honest decision memo.
+  const prompt = `Produce an honest decision memo.
 
-STARTUP: ${startup.name} — ${startup.one_liner}
+STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
 
 EVIDENCE (${allEvidence.length} items):
 ${evidenceSummary}
@@ -1041,9 +1294,11 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the decision-memo skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
     skillName: "decision-memo",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
@@ -1121,7 +1376,17 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
     rationale,
     evidence_ids: allEvidence.map((e) => e.id),
     sample_size: primaryEvidence.reduce((acc, e) => acc + (e.sample_size ?? 1), 0),
-    response_rate: primaryEvidence.length > 0 ? undefined : undefined,
+    // Task 7: real response_rate — engaged (above-opinion) sample over total
+    // primary sample via the deterministic responseRate() tool. No primary
+    // evidence → undefined (never a fabricated number).
+    response_rate: primaryEvidence.length > 0
+      ? responseRate(
+          primaryEvidence.reduce((acc, e) => acc + (e.sample_size ?? 1), 0),
+          primaryEvidence
+            .filter((e) => e.strength !== "opinion")
+            .reduce((acc, e) => acc + (e.sample_size ?? 1), 0)
+        ).rate
+      : undefined,
     next_experiment: verdict !== "go" ? parsed.next_experiment : undefined,
     warnings: gate.warnings,
     created_at: new Date().toISOString(),
@@ -1142,7 +1407,8 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
 async function runVerifier(
   plannerOutput: string,
   evidence: Evidence[],
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[]
 ): Promise<{ approved: boolean; unsupportedClaims: string[] }> {
   const t0 = Date.now();
   trace.push(makeTrace("verifier", "verification", { action: "checking_output" }));
@@ -1161,16 +1427,16 @@ async function runVerifier(
 
   const evidenceList = evidence
     .slice(0, 8)
-    .map((e) => `- [${e.source_type ?? "internal"}] ${e.claim} (${e.source_url ?? "no URL"})`)
+    .map((e) => `- [${e.source_type ?? "internal"}] ${toUntrusted(e.claim)} (${e.source_url ?? "no URL"})`)
     .join("\n");
 
-  const prompt = `You are the Verifier for a Validation Copilot. Your job is to check if the output claims are supported by the actual evidence retrieved.
+  const prompt = `Check if the output claims are supported by the actual evidence retrieved.
 
 ACTUAL EVIDENCE:
 ${evidenceList || "(none yet — only internal analysis)"}
 
 OUTPUT TO CHECK:
-${plannerOutput}
+${toUntrusted(plannerOutput)}
 
 For each factual claim in the output:
 1. Check if it is supported by the evidence list above
@@ -1183,10 +1449,12 @@ Return: approved=true if 0 unsupported claims, false otherwise. List any unsuppo
 
   const rawText = await callAIWithFallback({
     prompt,
+    systemPrompt: "You are the Verifier for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     geminiModel: VERIFIER_MODEL,
     trace,
     skillName: "verifier",
+    usageAcc,
   });
 
   const latency = Date.now() - t0;
@@ -1243,8 +1511,18 @@ function sanitizeForPrompt(s: string): string {
 // route must never reference COST_TABLE directly — always extractUsageCost.
 
 export async function POST(req: NextRequest) {
+  // ── Pre-flight: workspace peek (no body consumed — clone keeps req readable)
+  // Peeked first so the rate-limit key can prefer user_id, else workspace_id,
+  // else ip+route (never trust body.user_id for identity — only for bucketing).
+  let peekWorkspaceId = "";
+  try {
+    const peeked = (await req.clone().json()) as { workspace_id?: unknown };
+    if (typeof peeked.workspace_id === "string") peekWorkspaceId = peeked.workspace_id;
+  } catch {
+    peekWorkspaceId = "";
+  }
   // ── Pre-flight: distributed rate limit (fail-closed) ───────────────────
-  // Key = authenticated user when known, else ip+route (never trust body).
+  // Key = authenticated user when known, else workspace, else ip+route.
   let rateUserId = "";
   try {
     const { createServerSupabaseClient } = await import("@/lib/supabase/server");
@@ -1257,7 +1535,7 @@ export async function POST(req: NextRequest) {
   // getClientIp documents the trusted-proxy caveat (Task 9 infra follow-up);
   // the authenticated user key takes precedence wherever available.
   const rateIp = getClientIp(req.headers);
-  const rateKey = resolveRateLimitKey({ userId: rateUserId, ip: rateIp, route: "/api/agent" });
+  const rateKey = resolveRateLimitKey({ userId: rateUserId, workspaceId: peekWorkspaceId, ip: rateIp, route: "/api/agent" });
   let rate: { limited: boolean; retryAfter: number };
   try {
     rate = await checkRateLimit({ key: rateKey, limit: RATE_MAX, windowMs: RATE_WINDOW_MS });
@@ -1296,14 +1574,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Pre-flight: workspace spend budget (402) ──────────────────────────
-  // Peek workspace_id without consuming the body (clone keeps req readable).
-  let peekWorkspaceId = "";
-  try {
-    const peeked = (await req.clone().json()) as { workspace_id?: unknown };
-    if (typeof peeked.workspace_id === "string") peekWorkspaceId = peeked.workspace_id;
-  } catch {
-    peekWorkspaceId = "";
-  }
+  // peekWorkspaceId was read above (shared with the rate-limit key).
   // Budget pre-flight is MANDATORY for every caller, including anonymous:
   // unauthenticated requests are ledgered under the rate-limit key so anon
   // abuse still hits the spend cap. Fail-closed on store error (explicit 429)
@@ -1363,8 +1634,15 @@ export async function POST(req: NextRequest) {
       const idea = sanitizeForPrompt(rawIdea);
       const uploaded_data = rawData ? sanitizeForPrompt(rawData) : undefined;
 
-      // ── Phase 1: Routing ────────────────────────────────────────────────────
+      // ── Phase 1: Routing (dedicated Groq classifier BEFORE the Planner) ──
       trace.push(makeTrace("router", "tool_call", { intent: "startup_validation", idea: idea.slice(0, 100) }));
+      const routerUsage: AiUsage[] = [];
+      const routerResult = await runRouterClassifier(idea, trace, routerUsage);
+      trace.push(makeTrace("router", "tool_call", { intent: routerResult.intent }));
+      toolCalls++;
+      totalCost += costFromUsage(routerUsage, "groq_call");
+      checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
       await send({ type: "phase", phase: "intake", trace: [...trace] });
 
       // ── Phase 2: Intake ─────────────────────────────────────────────────────
@@ -1377,40 +1655,46 @@ export async function POST(req: NextRequest) {
       if (!ownerId) {
         trace.push(makeTrace("router", "verification", { warning: "unauthenticated session: persistence will be skipped" }));
       }
-      const startup = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId });
-      await send({ type: "startup", startup, trace: [...trace] });
+      const intakeUsage: AiUsage[] = [];
+      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId }, intakeUsage);
+      await send({ type: "startup", startup, questions, trace: [...trace] });
 
-      // Budget check (per-request caps; workspace ledger gated pre-flight).
-      // Cost via the lib/cost extractor (usageMetadata when available,
+      // Per-phase budget + real metering (usageMetadata when available,
       // COST_TABLE fallback — marked in lib/cost).
       toolCalls++;
-      totalCost += extractUsageCost(undefined, "gemini_call");
+      totalCost += costFromUsage(intakeUsage, "gemini_call");
       checkTimeout();
-      if (isBudgetExceeded(totalCost, toolCalls)) throw new Error("Budget exceeded");
+      assertPhaseBudget(totalCost, toolCalls);
 
       // ── Phase 3: Assumption Mapping ─────────────────────────────────────────
       await send({ type: "phase", phase: "mapping", trace: [...trace] });
-      const assumptions = await runAssumptionMappingSkill(startup, trace);
+      const mappingUsage: AiUsage[] = [];
+      const assumptions = await runAssumptionMappingSkill(startup, trace, mappingUsage);
       await send({ type: "assumptions", assumptions, trace: [...trace] });
 
       toolCalls++;
-      totalCost += extractUsageCost(undefined, "gemini_call");
+      totalCost += costFromUsage(mappingUsage, "gemini_call");
       checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
 
       // ── Phase 4: Market Research ────────────────────────────────────────────
       await send({ type: "phase", phase: "research", trace: [...trace] });
-      const secondaryEvidence = await runMarketResearchSkill(startup, assumptions, trace);
+      const researchUsage: AiUsage[] = [];
+      const secondaryEvidence = await runMarketResearchSkill(startup, assumptions, trace, researchUsage);
       toolCalls += 3; // 3 search queries
-      totalCost += extractUsageCost(undefined, "gemini_call") + 3 * extractUsageCost(undefined, "search");
+      totalCost += costFromUsage(researchUsage, "gemini_call") + 3 * extractUsageCost(undefined, "search");
       checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
       await send({ type: "evidence", evidence: secondaryEvidence, trace: [...trace] });
 
       // ── Phase 5: Experiment Design ──────────────────────────────────────────
       await send({ type: "phase", phase: "experiment", trace: [...trace] });
-      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace);
+      const experimentUsage: AiUsage[] = [];
+      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace, experimentUsage);
       toolCalls++;
-      totalCost += extractUsageCost(undefined, "gemini_call");
+      totalCost += costFromUsage(experimentUsage, "gemini_call");
       checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
       await send({ type: "experiment", experiment, trace: [...trace] });
 
       // ── Phase 5.5: Lead Finder (Apollo.io) ─────────────────────────────────
@@ -1420,6 +1704,7 @@ export async function POST(req: NextRequest) {
       toolCalls++;
       totalCost += extractUsageCost(undefined, "search");
       checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
       if (leads.length > 0) {
         await send({
           type: "leads",
@@ -1433,10 +1718,12 @@ export async function POST(req: NextRequest) {
       let primaryEvidence: Evidence[] = [];
       if (uploaded_data?.trim()) {
         await send({ type: "phase", phase: "evidence", trace: [...trace] });
-        primaryEvidence = await runResponseAnalyzerSkill(startup, uploaded_data, experiment, trace);
+        const evidenceUsage: AiUsage[] = [];
+        primaryEvidence = await runResponseAnalyzerSkill(startup, uploaded_data, experiment, trace, evidenceUsage);
         toolCalls++;
-        totalCost += extractUsageCost(undefined, "gemini_call");
+        totalCost += costFromUsage(evidenceUsage, "gemini_call");
         checkTimeout();
+        assertPhaseBudget(totalCost, toolCalls);
         await send({ type: "primary_evidence", evidence: primaryEvidence, trace: [...trace] });
       }
 
@@ -1444,23 +1731,28 @@ export async function POST(req: NextRequest) {
 
       // ── Verifier Pass ───────────────────────────────────────────────────────
       const plannerSummary = `
-Startup: ${startup.name} — ${startup.one_liner}
-Domain: ${startup.domain}
+Startup: ${sanitizeStartupField(startup.name)} — ${sanitizeStartupField(startup.one_liner)}
+Domain: ${sanitizeStartupField(startup.domain)}
 Assumptions count: ${assumptions.length}
-Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).join("; ")}
+Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)).slice(0, 3).join("; ")}
       `.trim();
 
       await send({ type: "phase", phase: "verifying", trace: [...trace] });
-      const verifierResult = await runVerifier(plannerSummary, allEvidence, trace);
+      const verifierUsage: AiUsage[] = [];
+      const verifierResult = await runVerifier(plannerSummary, allEvidence, trace, verifierUsage);
       toolCalls++;
-      totalCost += extractUsageCost(undefined, "gemini_call");
+      totalCost += costFromUsage(verifierUsage, "gemini_call");
       checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
 
       // ── Phase 7: Decision Memo ──────────────────────────────────────────────
       await send({ type: "phase", phase: "memo", trace: [...trace] });
-      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult);
+      const memoUsage: AiUsage[] = [];
+      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult, memoUsage);
       toolCalls++;
-      totalCost += extractUsageCost(undefined, "gemini_call");
+      totalCost += costFromUsage(memoUsage, "gemini_call");
+      checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
 
       // ── Persist (best-effort; never breaks streaming) ─────────────────────
       if (ownerId) {
@@ -1579,6 +1871,8 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      const errRetryAfter =
+        err instanceof Error ? (err as { retryAfter?: unknown }).retryAfter : undefined;
       // Ledger partial spend even on failure — the run consumed providers.
       try {
         await recordSpendAsync(budgetKey, totalCost);
@@ -1586,7 +1880,12 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => e.claim).slice(0, 3).j
         // best-effort only
       }
       trace.push(makeTrace("executor", "error", { error: message }));
-      await send({ type: "error", message, trace });
+      await send({
+        type: "error",
+        message,
+        ...(typeof errRetryAfter === "number" ? { retryAfter: errRetryAfter } : {}),
+        trace,
+      });
     } finally {
       await writer.close();
     }

@@ -27,7 +27,8 @@ export interface MessagePayload {
   sender_address: string;
   idempotency_key?: string;
   experiment_id?: string;
-  channel?: "email" | "whatsapp";
+  // Email-only until PDPL marketing license (WhatsApp deferred to P2).
+  channel?: "email";
 }
 
 export interface CampaignResult {
@@ -36,6 +37,12 @@ export interface CampaignResult {
   data?: unknown;
   error?: string;
 }
+
+/** Daily outbound cap per workspace (Task 5). Per-workspace scoping needs a
+ *  messages.workspace_id column (follow-up migration); until then the cap is
+ *  enforced globally per day over messages.created_at (sent_at is NULL until
+ *  dispatch, so created_at is the reliable "queued today" signal). */
+export const DAILY_SEND_CAP = 100;
 
 /** Minimal Supabase surface used here; keeps packages/tools dependency-free. */
 export interface SupabaseLike {
@@ -103,7 +110,7 @@ export async function executeCampaignAction(
         return { success: false, action, error: consentCheck.error };
       }
       const { consent_timestamp, consent_text } = consentCheck;
-      const p = payload as LeadPayload & { startup_id?: string };
+      const p = payload as unknown as LeadPayload & { startup_id?: string };
       if (!p.startup_id) {
         return { success: false, action, error: "startup_id is required for persistence" };
       }
@@ -162,7 +169,11 @@ export async function executeCampaignAction(
     }
 
     case "queue_message": {
-      // Compliance check: L3 requires explicit consent before message queuing
+      // Compliance check: L3 requires explicit consent before message queuing.
+      // NOTE (Task 5): the lead_has_consent flag is only a pre-check for the
+      // demo/in-memory path below. On the DB path consent is ALWAYS
+      // re-verified from leads (never trust the flag). L3 experiment
+      // approval-status is enforced below (Task 6) on the DB path.
       const { lead_has_consent, body_text } = payload as { lead_has_consent?: boolean; body_text?: string };
       if (!lead_has_consent) {
         return {
@@ -181,7 +192,15 @@ export async function executeCampaignAction(
           error: "Compliance Violation: Outbound copy must contain an unsubscribe/opt-out mechanism.",
         };
       }
-      const p = payload as MessagePayload & { lead_has_consent?: boolean };
+      const p = payload as unknown as MessagePayload & { lead_has_consent?: boolean };
+      // Channel lock (Task 5): email only until WhatsApp/LinkedIn license approved.
+      if (p.channel !== undefined && p.channel !== "email") {
+        return {
+          success: false,
+          action,
+          error: "Compliance Violation: channel restricted to email until license approved (Section 10).",
+        };
+      }
       // Idempotency policy: caller-supplied key wins (true retry dedup).
       // Fallback is deterministic hash(lead|channel|template|body) so a retry
       // without a caller key still dedups instead of minting a fresh UUID.
@@ -194,6 +213,7 @@ export async function executeCampaignAction(
         idempotency_key,
       };
       if (!supabase) {
+        // Demo-only path: no DB to re-verify against; gates above still apply.
         return { success: true, action, data: base };
       }
       // idempotency_key unique guard: return existing row instead of double-queue.
@@ -207,6 +227,71 @@ export async function executeCampaignAction(
       }
       if (!p.lead_id) {
         return { success: false, action, error: "lead_id is required for persistence" };
+      }
+      // DB re-verification (Task 5): never trust the lead_has_consent flag.
+      // Block when the lead row is missing, unsubscribed, or lacks PDPL consent.
+      const { data: lead, error: leadError } = await supabase
+        .from("leads")
+        .select("id, unsubscribed, consent_given, consent_timestamp, consent_text")
+        .eq("id", p.lead_id)
+        .maybeSingle();
+      if (leadError || !lead) {
+        return { success: false, action, error: "Lead not found: cannot queue without a verified lead (Section 11)." };
+      }
+      if (lead.unsubscribed === true) {
+        return { success: false, action, error: "Lead has unsubscribed: queue blocked (Section 11 opt-out)." };
+      }
+      if (lead.consent_given !== true || !lead.consent_timestamp || !lead.consent_text) {
+        return {
+          success: false,
+          action,
+          error: "Compliance Violation: consent must be re-verified from leads (Section 11 PDPL audit).",
+        };
+      }
+      // L3 approval gate (Task 6): when an experiment_id is given, the
+      // experiments row must be approved AND stamped (approved_by/at
+      // non-null). Fail closed: missing row, non-approved status, or a
+      // missing stamp blocks the queue. The API layer surfaces this as 403.
+      // No experiment_id → no L3 scope (Task 5 behaviour preserved).
+      if (p.experiment_id) {
+        const { data: experiment, error: experimentError } = await supabase
+          .from("experiments")
+          .select("id, status, approved_by, approved_at")
+          .eq("id", p.experiment_id)
+          .maybeSingle();
+        const exp = experiment as {
+          status?: unknown;
+          approved_by?: unknown;
+          approved_at?: unknown;
+        } | null;
+        if (
+          experimentError ||
+          !exp ||
+          exp.status !== "approved" ||
+          !exp.approved_by ||
+          !exp.approved_at
+        ) {
+          return {
+            success: false,
+            action,
+            error:
+              "L3 approval required (403): experiment must have status='approved' with approved_by/at before queueing (Section 10).",
+          };
+        }
+      }
+      // Daily send cap (Task 5): block the (CAP+1)-th message queued today.
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const { data: sentToday, error: capError } = await supabase
+        .from("messages")
+        .select("id")
+        .gte("created_at", dayStart.toISOString());
+      if (!capError && (sentToday ?? []).length >= DAILY_SEND_CAP) {
+        return {
+          success: false,
+          action,
+          error: `Daily send cap reached (${DAILY_SEND_CAP}/day): queue blocked until tomorrow.`,
+        };
       }
       const { data, error } = await supabase
         .from("messages")

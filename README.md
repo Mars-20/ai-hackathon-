@@ -44,12 +44,17 @@ npm install
 
 ### 2. Set up environment
 ```bash
-cp .env.example .env.local
-# Fill in: GEMINI_API_KEY, GROQ_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+cp apps/web/.env.example apps/web/.env.local
+# Fill in: GEMINI_API_KEY, GROQ_API_KEY, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Full checklist (APOLLO/UPSTASH/model overrides): see Environment Variables below + apps/web/.env.example
 ```
 
 ### 3. Set up database
-Run `packages/db/schema.sql` in your Supabase SQL Editor.
+Apply `packages/db/schema-unified.sql` (source of truth), then the migrations in
+`supabase/migrations/` in filename order `0000`–`0008` — including the `0006`
+workspace backfill and the `0008` workspace_id NOT NULL verification — via
+`supabase db push` or the Supabase SQL Editor. Full order + backfill steps:
+see `docs/runbook-validation.md` §1–§2.
 
 ### 4. Run dev server
 ```bash
@@ -65,7 +70,7 @@ Open [http://localhost:3000](http://localhost:3000)
   /web              Next.js dashboard: intake, assumption map, evidence, trace, memo
     /src/app
       page.tsx      Landing page
-      /validate     Main validation dashboard
+      /validate     Main validation dashboard (auth-required)
       /api/agent    Core agent loop (Router→Planner→Executor→Verifier)
     /src/lib
       types.ts      All TypeScript types
@@ -77,13 +82,19 @@ Open [http://localhost:3000](http://localhost:3000)
     assumption-mapping/
     survey-designer/  ← includes leading-question validator
     decision-memo/
-  /db               Supabase schema + migrations
+  /db               Supabase schema (schema-unified.sql) + migrations
+  /tools            Tool implementations (incl. Apollo-backed prospect_search)
+
+/supabase
+  /migrations       Ordered migrations 0000–0008 (0006 backfill, 0008 NOT NULL verify)
 
 /eval
   /golden-tasks     8 test cases across 6 domains (spec Section 13)
 
 /docs
-  AI_OS_Validation_Copilot_Spec_v2_0.md
+  AI_OS_Validation_Copilot_Spec_v2_3.md   ← current build reference (v2.3)
+  demo-script.md                          ← 7-beat live demo script (spec §17)
+  runbook-validation.md                   ← deploy + migration order + live gates
 ```
 
 ## Key Design Decisions
@@ -106,6 +117,11 @@ if (verdict === "go" && !allowGo) {
 - `leads` table requires explicit `consent_given=true` + timestamp + exact consent text
 - No WhatsApp outreach (P2 — needs marketing license)
 - Acceptable sources: founder-owned lists, sign-up forms with consent checkbox
+- **§11.4 prospect boundary (hard):** Apollo `prospect_search` is research-only —
+  it writes to `prospects`, never to `leads`/`messages`. Apollo sequence tools are
+  never wired in. The only sanctioned path from a prospect to a lead is manual:
+  the founder contacts the person outside the platform, gets explicit consent,
+  then converts the record with full consent fields.
 
 ## Environment Variables
 
@@ -113,12 +129,23 @@ if (verdict === "go" && !allowGo) {
 |----------|----------|---------|
 | `GEMINI_API_KEY` | ✅ P0 | Planner, Verifier, grounded search |
 | `GROQ_API_KEY` | ✅ P0 | Router/classifier |
-| `SUPABASE_URL` | ✅ P0 | Database |
-| `SUPABASE_ANON_KEY` | ✅ P0 | Client-side DB access |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ P0 | Server-side DB access |
-| `EMAIL_PROVIDER_API_KEY` | P1 only | Email outreach campaigns |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ P0 | Database (browser-safe anon access; `NEXT_PUBLIC_*` is intentionally public) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ P0 | Client-side DB access (anon key only — never the service-role key) |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ P0 | Server-side DB access — server-only, NEVER `NEXT_PUBLIC_`-prefixed |
+| `APOLLO_API_KEY` | Optional | `prospect_search` ICP counts (search/enrich only — never outreach; §11.4) |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Prod only | Shared rate-limit ledger; unset ⇒ in-memory fallback (dev/test only) |
+| `GEMINI_PLANNER_MODEL` / `GEMINI_VERIFIER_MODEL` / `GROQ_ROUTER_MODEL` | Optional | Model overrides (defaults: `gemini-2.5-flash` / `llama-3.3-70b-versatile`; re-verify IDs day-of, §6.3) |
+| `RESEND_API_KEY` | P1 only | Email outreach campaigns (provider pick: Resend; delivery wiring out-of-scope v1) |
 
 > ⚠️ Use a **paid** Gemini key for the demo. Free tier will 429 mid-demo.
+
+## Freeze Rule (Day-3 / 75%)
+
+Freeze new features at ~75% of total build time; the last quarter is evaluation,
+demo rehearsal, and the recorded fallback run only — never new capability
+(spec §16). If time runs long, cut in this order: golden-task count (never below
+6) → domain coverage (2 domains) → dashboard polish. Never cut the Verifier,
+the leading-question validator, or the evidence-strength distinction.
 
 ## Build Plan (per spec Section 16)
 
@@ -132,7 +159,8 @@ if (verdict === "go" && !allowGo) {
 
 ## References
 
-- [Spec v2.0](./AI_OS_Validation_Copilot_Spec_v2_0.md)
+- [Spec v2.3](./AI_OS_Validation_Copilot_Spec_v2_3.md) ← current build reference
+- [Demo script](./docs/demo-script.md) ← 7-beat live demo (spec §17)
 - [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
 - [Gemini grounding docs](https://ai.google.dev/gemini-api/docs/google-search)
 - [The Mom Test](https://momtestbook.com)
