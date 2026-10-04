@@ -273,13 +273,15 @@ export default async function AdminOpsPage({
       : 1;
 
   // The five ops reads are independent — one concurrent DAL round (same
-  // helpers the GET routes delegate to, so figures are identical). Gate
+  // helpers the GET routes delegate to, so figures are identical). The
+  // platform-only admins read joins the same round (workspace tier passes
+  // null so the section below can never render for them). Gate
   // failures (401 → /login) throw redirect errors that propagate uncaught;
   // data failures arrive as values and each section renders its own
   // "unavailable" state, exactly like the loader's settled pattern.
   const admin = await getCachedAdminContext();
   const tier = admin.tier;
-  const [limitsResult, auditResult, agentResult, emailResult] =
+  const [limitsResult, auditResult, agentResult, emailResult, adminsResult] =
     await Promise.all([
       runAdminQuery((deps) => queryOpsLimits(deps, "7d")),
       runAdminQuery((deps) =>
@@ -292,6 +294,9 @@ export default async function AdminOpsPage({
       ),
       runAdminQuery((deps) => queryAgentSettings(deps)),
       runAdminQuery((deps) => queryOpsEmail(deps)),
+      tier === "platform"
+        ? runAdminQuery((deps) => queryOpsAdmins(deps))
+        : Promise.resolve(null),
     ]);
 
   const severity =
@@ -327,14 +332,11 @@ export default async function AdminOpsPage({
   if (emailResult.ok === true)
     pending = asPendingInvites(emailResult.data.pending);
 
-  // Platform-admin grants (platform tier only — never fetched for the
-  // workspace tier, so the section below can never render for them).
+  // Platform-admin grants (platform tier only — adminsResult is null for
+  // the workspace tier, so the section below can never render for them).
   let platformAdmins: PlatformAdmin[] = [];
-  if (tier === "platform") {
-    const adminsResult = await runAdminQuery((deps) => queryOpsAdmins(deps));
-    if (adminsResult.ok === true)
-      platformAdmins = asPlatformAdmins(adminsResult.data.admins);
-  }
+  if (adminsResult !== null && adminsResult.ok === true)
+    platformAdmins = asPlatformAdmins(adminsResult.data.admins);
 
   const auditBase =
     `/admin/ops?` +

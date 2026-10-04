@@ -8,6 +8,7 @@
 // Errors normalize via toEnvelope()/isAdminErrorLike() — structural guards only.
 // Service-role key never leaves the server (this module is server-only).
 // ─────────────────────────────────────────────────────────────────────────────
+import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requireAdmin } from "../../../../packages/admin/requireAdmin";
 import type {

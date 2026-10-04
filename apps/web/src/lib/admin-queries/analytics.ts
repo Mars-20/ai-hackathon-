@@ -431,6 +431,7 @@ export async function queryAnalytics(
         q
           .select("user_id,joined_at")
           .gte("joined_at", window.from)
+          .lte("joined_at", window.to)
           .limit(SIGNUP_CAP),
     );
     const memberRows: unknown[] = Array.isArray(memberRowsUnknown)
