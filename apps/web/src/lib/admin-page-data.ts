@@ -19,6 +19,41 @@ export interface UsersPageData {
   pickerWorkspaces: PickerWorkspace[];
 }
 
+/**
+ * One settled backend call: redirect errors are NOT swallowed here — the
+ * caller rethrows them via rethrowRedirects so 401 → /login keeps working.
+ */
+export interface SettledFetch {
+  body: unknown;
+  error: unknown;
+}
+
+async function fetchSettled(
+  path: string,
+  query?: string,
+): Promise<SettledFetch> {
+  try {
+    return { body: await adminApiFetch(path, query), error: null };
+  } catch (error: unknown) {
+    return { body: null, error };
+  }
+}
+
+function rethrowRedirects(results: SettledFetch[]): void {
+  for (const r of results) {
+    if (isRedirectError(r.error)) throw r.error;
+  }
+}
+
+/** Same message semantics the pages had with inline try/catch. */
+export function settledErrorMessage(
+  error: unknown,
+  fallback: string,
+): string | null {
+  if (error === null) return null;
+  return error instanceof AdminApiError ? error.message : fallback;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -79,4 +114,122 @@ export async function loadUsersPageData(
       : [];
 
   return { usersBody, usersError, pickerWorkspaces };
+}
+
+export type AdminTier = "platform" | "workspace";
+
+export interface OpsPageData {
+  tier: AdminTier;
+  me: SettledFetch;
+  limits: SettledFetch;
+  audit: SettledFetch;
+  agent: SettledFetch;
+  email: SettledFetch;
+}
+
+/**
+ * The five ops reads are independent, so they fire CONCURRENTLY. Tier is
+ * derived from the /api/admin/me result (same rule the page used inline:
+ * platform string match, anything else → workspace).
+ */
+export async function loadOpsPageData(
+  auditQuery: string,
+): Promise<OpsPageData> {
+  const [me, limits, audit, agent, email] = await Promise.all([
+    fetchSettled("/api/admin/me"),
+    fetchSettled("/api/admin/ops/limits", "window=7d"),
+    fetchSettled("/api/admin/ops/audit", auditQuery),
+    fetchSettled("/api/admin/agent"),
+    fetchSettled("/api/admin/ops/email"),
+  ]);
+  rethrowRedirects([me, limits, audit, agent, email]);
+
+  let tier: AdminTier = "workspace";
+  if (isRecord(me.body) && me.body["tier"] === "platform") tier = "platform";
+  return { tier, me, limits, audit, agent, email };
+}
+
+/**
+ * Second-round fetch for the platform tier only. The admins list is never
+ * requested for the workspace tier (same guarantee as the old inline code).
+ */
+export async function loadOpsAdmins(): Promise<SettledFetch> {
+  const result = await fetchSettled("/api/admin/ops/admins");
+  rethrowRedirects([result]);
+  return result;
+}
+
+export interface ContentPageData {
+  startups: SettledFetch;
+  /** Null when no ?startup_id= focus is open. */
+  details: SettledFetch | null;
+}
+
+/**
+ * Queue list and evidence panel are independent (focus id is known before
+ * any fetch), so they fire CONCURRENTLY when a detail panel is open.
+ */
+export async function loadContentPageData(
+  startupsQuery: string,
+  focusId: string | null,
+): Promise<ContentPageData> {
+  const [startups, details] = await Promise.all([
+    fetchSettled("/api/admin/content/startups", startupsQuery),
+    focusId !== null
+      ? fetchSettled(
+          "/api/admin/content/details",
+          `startup_id=${encodeURIComponent(focusId)}`,
+        )
+      : Promise.resolve(null),
+  ]);
+  rethrowRedirects(
+    details !== null ? [startups, details] : [startups],
+  );
+  return { startups, details };
+}
+
+export interface AnalyticsPageData {
+  analytics: SettledFetch;
+  experiments: SettledFetch;
+}
+
+/** Snapshot and experiments table are independent — fired CONCURRENTLY. */
+export async function loadAnalyticsPageData(
+  window: string,
+): Promise<AnalyticsPageData> {
+  const [analytics, experiments] = await Promise.all([
+    fetchSettled(
+      "/api/admin/analytics",
+      `window=${encodeURIComponent(window)}`,
+    ),
+    fetchSettled(
+      "/api/admin/analytics/experiments",
+      "sort=name&order=asc&page=1&limit=20",
+    ),
+  ]);
+  rethrowRedirects([analytics, experiments]);
+  return { analytics, experiments };
+}
+
+export interface WorkspaceDetailPageData {
+  detail: SettledFetch;
+  siblings: SettledFetch;
+}
+
+/**
+ * Detail and sibling switcher list are independent — fired CONCURRENTLY.
+ * The siblings list stays auxiliary: its failure never fails the page.
+ */
+export async function loadWorkspaceDetailPageData(
+  id: string,
+): Promise<WorkspaceDetailPageData> {
+  const [detail, siblings] = await Promise.all([
+    fetchSettled(`/api/admin/workspaces/${encodeURIComponent(id)}`),
+    fetchSettled(
+      "/api/admin/workspaces",
+      "page=1&limit=100&sort=name&order=asc",
+    ),
+  ]);
+  rethrowRedirects([detail, siblings]);
+  return { detail, siblings };
 }

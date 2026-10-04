@@ -15,8 +15,10 @@ import {
   buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import {
+  loadContentPageData,
+  settledErrorMessage,
+} from "@/lib/admin-page-data";
 
 const CONTENT_SORT_ALLOWLIST = ["created_at", "name", "flagged"] as const;
 const CONTENT_DEFAULT_SORT = "created_at";
@@ -171,19 +173,19 @@ export default async function AdminContentPage({
       : null;
   const focusId = readSingle(raw, "startup_id");
 
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    const qs = new URLSearchParams(buildAdminTableQuery(params));
-    if (flagged !== null) qs.set("flagged", flagged);
-    if (verdict !== null) qs.set("verdict", verdict);
-    if (confidence !== null) qs.set("confidence", confidence);
-    body = await adminApiFetch("/api/admin/content/startups", qs.toString());
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError ? err.message : "Failed to load content";
-  }
+  // Queue list and evidence panel are independent — one concurrent loader
+  // round (see lib/admin-page-data.ts). Redirects rethrow inside.
+  const listQs = new URLSearchParams(buildAdminTableQuery(params));
+  if (flagged !== null) listQs.set("flagged", flagged);
+  if (verdict !== null) listQs.set("verdict", verdict);
+  if (confidence !== null) listQs.set("confidence", confidence);
+  const content = await loadContentPageData(listQs.toString(), focusId);
+
+  const body = content.startups.body;
+  let loadError = settledErrorMessage(
+    content.startups.error,
+    "Failed to load content",
+  );
 
   const data = body !== null ? narrowStartups(body) : null;
   if (data === null && loadError === null) {
@@ -191,6 +193,8 @@ export default async function AdminContentPage({
   }
 
   // Evidence-inspection panel (auxiliary — never fails the queue).
+  // Arrived in the same concurrent round as the list above.
+  const detailBody = content.details !== null ? content.details.body : null;
   let details: {
     startupName: string;
     assumptions: number;
@@ -198,54 +202,45 @@ export default async function AdminContentPage({
     decisions: { verdict: string; confidence: string; created_at: string }[];
     traces: number;
   } | null = null;
-  if (focusId !== null) {
-    try {
-      const detailBody: unknown = await adminApiFetch(
-        "/api/admin/content/details",
-        `startup_id=${encodeURIComponent(focusId)}`,
-      );
-      if (isRecord(detailBody) && isRecord(detailBody["startup"])) {
-        const startup = detailBody["startup"] as Record<string, unknown>;
-        const evidenceRows = Array.isArray(detailBody["evidence"])
-          ? (detailBody["evidence"] as unknown[]).filter(isRecord)
-          : [];
-        const decisionRows = Array.isArray(detailBody["decisions"])
-          ? (detailBody["decisions"] as unknown[]).filter(isRecord)
-          : [];
-        details = {
-          startupName:
-            typeof startup["name"] === "string"
-              ? (startup["name"] as string)
-              : focusId,
-          assumptions: Array.isArray(detailBody["assumptions"])
-            ? (detailBody["assumptions"] as unknown[]).length
-            : 0,
-          evidence: evidenceRows.slice(0, 10).map((row) => ({
-            claim:
-              typeof row["claim"] === "string" ? (row["claim"] as string) : "—",
-          })),
-          decisions: decisionRows.slice(0, 10).map((row) => ({
-            verdict:
-              typeof row["verdict"] === "string"
-                ? (row["verdict"] as string)
-                : "—",
-            confidence:
-              typeof row["confidence"] === "string"
-                ? (row["confidence"] as string)
-                : "—",
-            created_at:
-              typeof row["created_at"] === "string"
-                ? (row["created_at"] as string)
-                : "",
-          })),
-          traces: Array.isArray(detailBody["traces"])
-            ? (detailBody["traces"] as unknown[]).length
-            : 0,
-        };
-      }
-    } catch (err: unknown) {
-      if (isRedirectError(err)) throw err;
-      details = null;
+  if (detailBody !== null) {
+    if (isRecord(detailBody) && isRecord(detailBody["startup"])) {
+      const startup = detailBody["startup"] as Record<string, unknown>;
+      const evidenceRows = Array.isArray(detailBody["evidence"])
+        ? (detailBody["evidence"] as unknown[]).filter(isRecord)
+        : [];
+      const decisionRows = Array.isArray(detailBody["decisions"])
+        ? (detailBody["decisions"] as unknown[]).filter(isRecord)
+        : [];
+      details = {
+        startupName:
+          typeof startup["name"] === "string"
+            ? (startup["name"] as string)
+            : (focusId ?? ""),
+        assumptions: Array.isArray(detailBody["assumptions"])
+          ? (detailBody["assumptions"] as unknown[]).length
+          : 0,
+        evidence: evidenceRows.slice(0, 10).map((row) => ({
+          claim:
+            typeof row["claim"] === "string" ? (row["claim"] as string) : "—",
+        })),
+        decisions: decisionRows.slice(0, 10).map((row) => ({
+          verdict:
+            typeof row["verdict"] === "string"
+              ? (row["verdict"] as string)
+              : "—",
+          confidence:
+            typeof row["confidence"] === "string"
+              ? (row["confidence"] as string)
+              : "—",
+          created_at:
+            typeof row["created_at"] === "string"
+              ? (row["created_at"] as string)
+              : "",
+        })),
+        traces: Array.isArray(detailBody["traces"])
+          ? (detailBody["traces"] as unknown[]).length
+          : 0,
+      };
     }
   }
 

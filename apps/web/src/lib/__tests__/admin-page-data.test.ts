@@ -8,7 +8,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { AdminApiError } from "@/lib/admin-fetch";
-import { loadUsersPageData } from "@/lib/admin-page-data";
+import {
+  loadAnalyticsPageData,
+  loadContentPageData,
+  loadOpsAdmins,
+  loadOpsPageData,
+  loadUsersPageData,
+  loadWorkspaceDetailPageData,
+} from "@/lib/admin-page-data";
 
 vi.mock("@/lib/admin-fetch", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/admin-fetch")>();
@@ -119,5 +126,147 @@ describe("loadUsersPageData", () => {
     mockedFetch.mockRejectedValue(redirectErr);
 
     await expect(loadUsersPageData("page=1")).rejects.toBe(redirectErr);
+  });
+});
+
+function redirectError(): Error {
+  const err = new Error("NEXT_REDIRECT") as Error & { digest: string };
+  err.digest = "NEXT_REDIRECT;replace;/login;307;";
+  return err;
+}
+
+describe("loadOpsPageData", () => {
+  test("fires all five ops reads concurrently", async () => {
+    const gates = new Map<string, ReturnType<typeof deferred<unknown>>>();
+    mockedFetch.mockImplementation((path: string) => {
+      const gate = deferred<unknown>();
+      gates.set(path, gate);
+      return gate.promise;
+    });
+
+    const pending = loadOpsPageData("page=1&limit=20");
+    await tick();
+    await tick();
+
+    expect(mockedFetch).toHaveBeenCalledTimes(5);
+
+    for (const gate of gates.values()) gate.resolve({});
+    const data = await pending;
+    // {} has no tier field → workspace tier, same rule as the page.
+    expect(data.tier).toBe("workspace");
+  });
+
+  test("platform tier is derived from /api/admin/me", async () => {
+    mockedFetch.mockImplementation((path: string) => {
+      if (path === "/api/admin/me") return Promise.resolve({ tier: "platform" });
+      return Promise.resolve({});
+    });
+
+    const data = await loadOpsPageData("page=1&limit=20");
+    expect(data.tier).toBe("platform");
+    expect(mockedFetch).toHaveBeenCalledTimes(5);
+  });
+
+  test("one failing section does not fail the others; redirect rethrows", async () => {
+    mockedFetch.mockImplementation((path: string) => {
+      if (path === "/api/admin/ops/limits")
+        return Promise.reject(new AdminApiError(500, "X", "limits down"));
+      return Promise.resolve({});
+    });
+
+    const data = await loadOpsPageData("page=1&limit=20");
+    expect(data.limits.body).toBeNull();
+    expect(data.audit.body).toEqual({});
+
+    mockedFetch.mockRejectedValue(redirectError());
+    await expect(loadOpsPageData("page=1")).rejects.toThrow("NEXT_REDIRECT");
+  });
+});
+
+describe("loadOpsAdmins", () => {
+  test("fetches the platform admins list", async () => {
+    mockedFetch.mockResolvedValue({ admins: [] });
+    const settled = await loadOpsAdmins();
+    expect(settled.body).toEqual({ admins: [] });
+    expect(mockedFetch).toHaveBeenCalledWith("/api/admin/ops/admins", undefined);
+  });
+});
+
+describe("loadContentPageData", () => {
+  test("fires list and details concurrently when a focus id is open", async () => {
+    const gates = new Map<string, ReturnType<typeof deferred<unknown>>>();
+    mockedFetch.mockImplementation((path: string) => {
+      const gate = deferred<unknown>();
+      gates.set(path, gate);
+      return gate.promise;
+    });
+
+    const pending = loadContentPageData("page=1", "startup-1");
+    await tick();
+    await tick();
+
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+
+    for (const gate of gates.values()) gate.resolve({});
+    const data = await pending;
+    expect(data.startups.body).toEqual({});
+    expect(data.details?.body).toEqual({});
+  });
+
+  test("no details fetch without a focus id", async () => {
+    mockedFetch.mockResolvedValue({ startups: [] });
+
+    const data = await loadContentPageData("page=1", null);
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(data.details).toBeNull();
+  });
+});
+
+describe("loadAnalyticsPageData", () => {
+  test("fires snapshot and experiments concurrently", async () => {
+    const gates = new Map<string, ReturnType<typeof deferred<unknown>>>();
+    mockedFetch.mockImplementation((path: string) => {
+      const gate = deferred<unknown>();
+      gates.set(path, gate);
+      return gate.promise;
+    });
+
+    const pending = loadAnalyticsPageData("7d");
+    await tick();
+    await tick();
+
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+    expect(mockedFetch).toHaveBeenCalledWith(
+      "/api/admin/analytics",
+      "window=7d",
+    );
+
+    for (const gate of gates.values()) gate.resolve({});
+    const data = await pending;
+    expect(data.analytics.body).toEqual({});
+    expect(data.experiments.body).toEqual({});
+  });
+});
+
+describe("loadWorkspaceDetailPageData", () => {
+  test("fires detail and siblings concurrently", async () => {
+    const gates = new Map<string, ReturnType<typeof deferred<unknown>>>();
+    mockedFetch.mockImplementation((path: string) => {
+      const gate = deferred<unknown>();
+      gates.set(path, gate);
+      return gate.promise;
+    });
+
+    const pending = loadWorkspaceDetailPageData("ws-1");
+    await tick();
+    await tick();
+
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+    expect(mockedFetch).toHaveBeenCalledWith("/api/admin/workspaces/ws-1", undefined);
+
+    for (const gate of gates.values()) gate.resolve({});
+    const data = await pending;
+    expect(data.detail.body).toEqual({});
+    expect(data.siblings.body).toEqual({});
   });
 });

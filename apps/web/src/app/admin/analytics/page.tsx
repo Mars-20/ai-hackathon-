@@ -13,8 +13,10 @@ import Link from "next/link";
 import AnalyticsAutoRefresh from "@/components/admin/AnalyticsAutoRefresh";
 import KpiCard from "@/components/admin/KpiCard";
 import ReportGenerator from "@/components/admin/ReportGenerator";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import {
+  loadAnalyticsPageData,
+  settledErrorMessage,
+} from "@/lib/admin-page-data";
 
 const WINDOWS = ["7d", "30d", "90d"] as const;
 
@@ -234,18 +236,15 @@ export default async function AdminAnalyticsPage({
     ? windowStr
     : "7d";
 
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    body = await adminApiFetch(
-      "/api/admin/analytics",
-      `window=${encodeURIComponent(window)}`,
-    );
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError ? err.message : "Failed to load analytics";
-  }
+  // Snapshot and experiments table are independent — one concurrent
+  // loader round (see lib/admin-page-data.ts). Redirects rethrow inside.
+  const analyticsData = await loadAnalyticsPageData(window);
+
+  const body = analyticsData.analytics.body;
+  let loadError = settledErrorMessage(
+    analyticsData.analytics.error,
+    "Failed to load analytics",
+  );
 
   const data = body !== null ? narrowAnalytics(body) : null;
   if (data === null && loadError === null) {
@@ -255,19 +254,13 @@ export default async function AdminAnalyticsPage({
   // Experiments table (auxiliary — never fails the analytics snapshot).
   let experiments: ExperimentView[] = [];
   let experimentsTotal = 0;
-  try {
-    const expBody: unknown = await adminApiFetch(
-      "/api/admin/analytics/experiments",
-      "sort=name&order=asc&page=1&limit=20",
-    );
-    const narrowed = expBody !== null ? narrowExperiments(expBody) : null;
-    if (narrowed !== null) {
-      experiments = narrowed.experiments;
-      experimentsTotal = narrowed.total;
-    }
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    experiments = [];
+  const narrowed =
+    analyticsData.experiments.body !== null
+      ? narrowExperiments(analyticsData.experiments.body)
+      : null;
+  if (narrowed !== null) {
+    experiments = narrowed.experiments;
+    experimentsTotal = narrowed.total;
   }
 
   const totalRuns = (data?.trends ?? []).reduce((sum, t) => sum + t.runs, 0);

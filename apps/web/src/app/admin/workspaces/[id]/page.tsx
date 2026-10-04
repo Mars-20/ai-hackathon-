@@ -9,8 +9,10 @@
 import Link from "next/link";
 import KpiCard from "@/components/admin/KpiCard";
 import WorkspaceSwitcher from "@/components/admin/WorkspaceSwitcher";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import {
+  loadWorkspaceDetailPageData,
+  settledErrorMessage,
+} from "@/lib/admin-page-data";
 
 interface MemberRow {
   user_id: string;
@@ -95,17 +97,15 @@ export default async function AdminWorkspaceDetailPage({
 }) {
   const { id } = await params;
 
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    body = await adminApiFetch(
-      `/api/admin/workspaces/${encodeURIComponent(id)}`,
-    );
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError ? err.message : "Failed to load workspace";
-  }
+  // Detail and sibling switcher list are independent — one concurrent
+  // loader round (see lib/admin-page-data.ts). Redirects rethrow inside.
+  const wsData = await loadWorkspaceDetailPageData(id);
+
+  const body = wsData.detail.body;
+  let loadError = settledErrorMessage(
+    wsData.detail.error,
+    "Failed to load workspace",
+  );
 
   const detail = body !== null ? narrowDetail(body) : null;
   if (detail === null && loadError === null) {
@@ -113,25 +113,16 @@ export default async function AdminWorkspaceDetailPage({
   }
 
   // Sibling options for the switcher (auxiliary — never fails the page).
-  let siblings: { id: string; name: string; slug: string }[] = [];
-  try {
-    const listBody: unknown = await adminApiFetch(
-      "/api/admin/workspaces",
-      "page=1&limit=100&sort=name&order=asc",
-    );
-    if (isRecord(listBody) && Array.isArray(listBody["workspaces"])) {
-      for (const item of listBody["workspaces"] as unknown[]) {
-        if (!isRecord(item) || typeof item["id"] !== "string") continue;
-        siblings.push({
-          id: item["id"] as string,
-          name: typeof item["name"] === "string" ? (item["name"] as string) : "",
-          slug: typeof item["slug"] === "string" ? (item["slug"] as string) : "",
-        });
-      }
+  const siblings: { id: string; name: string; slug: string }[] = [];
+  if (isRecord(wsData.siblings.body) && Array.isArray(wsData.siblings.body["workspaces"])) {
+    for (const item of wsData.siblings.body["workspaces"] as unknown[]) {
+      if (!isRecord(item) || typeof item["id"] !== "string") continue;
+      siblings.push({
+        id: item["id"] as string,
+        name: typeof item["name"] === "string" ? (item["name"] as string) : "",
+        slug: typeof item["slug"] === "string" ? (item["slug"] as string) : "",
+      });
     }
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    siblings = [];
   }
 
   if (loadError !== null || detail === null) {

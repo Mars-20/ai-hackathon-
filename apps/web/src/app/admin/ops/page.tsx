@@ -20,8 +20,11 @@ import EmailResendButton from "@/components/admin/EmailResendButton";
 import PlatformAdminGrantForm from "@/components/admin/PlatformAdminGrantForm";
 import PlatformAdminRevokeButton from "@/components/admin/PlatformAdminRevokeButton";
 import KpiCard from "@/components/admin/KpiCard";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import {
+  loadOpsAdmins,
+  loadOpsPageData,
+  settledErrorMessage,
+} from "@/lib/admin-page-data";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -264,96 +267,58 @@ export default async function AdminOpsPage({
       ? Number.parseInt(auditPageRaw, 10)
       : 1;
 
-  let tier: "platform" | "workspace" = "workspace";
-  try {
-    const meBody: unknown = await adminApiFetch("/api/admin/me");
-    if (isRecord(meBody) && meBody["tier"] === "platform") tier = "platform";
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    tier = "workspace";
-  }
+  // The five ops reads are independent — one concurrent loader round
+  // (see lib/admin-page-data.ts). Redirects (401 → /login) rethrow inside.
+  const auditQs = new URLSearchParams();
+  auditQs.set("page", String(auditPage));
+  auditQs.set("limit", "20");
+  if (actorFilter !== null) auditQs.set("actor", actorFilter);
+  if (actionFilter !== null) auditQs.set("action", actionFilter);
+  const ops = await loadOpsPageData(auditQs.toString());
+  const tier = ops.tier;
 
-  let severity: OpsSeverity | null = null;
-  try {
-    const sevBody: unknown = await adminApiFetch(
-      "/api/admin/ops/limits",
-      "window=7d",
-    );
-    severity = sevBody !== null ? narrowSeverity(sevBody) : null;
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    severity = null;
-  }
+  const severity =
+    ops.limits.body !== null ? narrowSeverity(ops.limits.body) : null;
 
   let entries: AuditEntry[] = [];
   let auditTotal = 0;
   let auditPages = 0;
-  let auditError: string | null = null;
-  try {
-    const auditQs = new URLSearchParams();
-    auditQs.set("page", String(auditPage));
-    auditQs.set("limit", "20");
-    if (actorFilter !== null) auditQs.set("actor", actorFilter);
-    if (actionFilter !== null) auditQs.set("action", actionFilter);
-    const auditBody: unknown = await adminApiFetch(
-      "/api/admin/ops/audit",
-      auditQs.toString(),
-    );
-    if (isRecord(auditBody)) {
-      entries = asAuditEntries(auditBody["entries"]);
-      auditTotal = asNumber(auditBody["total"]);
-      auditPages = asNumber(auditBody["pages"]);
-    }
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    auditError =
-      err instanceof AdminApiError ? err.message : "Failed to load audit log";
+  const auditError = settledErrorMessage(
+    ops.audit.error,
+    "Failed to load audit log",
+  );
+  if (isRecord(ops.audit.body)) {
+    entries = asAuditEntries(ops.audit.body["entries"]);
+    auditTotal = asNumber(ops.audit.body["total"]);
+    auditPages = asNumber(ops.audit.body["pages"]);
   }
 
-  let settings: { key: string; value: string; updated_at: string | null }[] =
+  const settings: { key: string; value: string; updated_at: string | null }[] =
     [];
-  try {
-    const settingsBody: unknown = await adminApiFetch("/api/admin/agent");
-    if (isRecord(settingsBody) && isRecord(settingsBody["settings"])) {
-      for (const [key, entry] of Object.entries(settingsBody["settings"])) {
-        if (!isRecord(entry)) continue;
-        const updated = entry["updated_at"];
-        settings.push({
-          key,
-          value: JSON.stringify(entry["value"] ?? null),
-          updated_at: typeof updated === "string" ? updated : null,
-        });
-      }
-      settings.sort((a, b) => a.key.localeCompare(b.key));
+  if (isRecord(ops.agent.body) && isRecord(ops.agent.body["settings"])) {
+    for (const [key, entry] of Object.entries(ops.agent.body["settings"])) {
+      if (!isRecord(entry)) continue;
+      const updated = entry["updated_at"];
+      settings.push({
+        key,
+        value: JSON.stringify(entry["value"] ?? null),
+        updated_at: typeof updated === "string" ? updated : null,
+      });
     }
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    settings = [];
+    settings.sort((a, b) => a.key.localeCompare(b.key));
   }
 
   let pending: PendingInvite[] = [];
-  try {
-    const emailBody: unknown = await adminApiFetch("/api/admin/ops/email");
-    if (isRecord(emailBody)) pending = asPendingInvites(emailBody["pending"]);
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    pending = [];
-  }
+  if (isRecord(ops.email.body))
+    pending = asPendingInvites(ops.email.body["pending"]);
 
   // Platform-admin grants (platform tier only — never fetched for the
   // workspace tier, so the section below can never render for them).
   let platformAdmins: PlatformAdmin[] = [];
   if (tier === "platform") {
-    try {
-      const adminsBody: unknown = await adminApiFetch(
-        "/api/admin/ops/admins",
-      );
-      if (isRecord(adminsBody))
-        platformAdmins = asPlatformAdmins(adminsBody["admins"]);
-    } catch (err: unknown) {
-      if (isRedirectError(err)) throw err;
-      platformAdmins = [];
-    }
+    const adminsSettled = await loadOpsAdmins();
+    if (isRecord(adminsSettled.body))
+      platformAdmins = asPlatformAdmins(adminsSettled.body["admins"]);
   }
 
   const auditBase =
