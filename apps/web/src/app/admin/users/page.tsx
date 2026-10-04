@@ -19,8 +19,7 @@ import {
   buildAdminTableQuery,
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
-import { adminApiFetch, AdminApiError } from "@/lib/admin-fetch";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { loadUsersPageData } from "@/lib/admin-page-data";
 
 const USERS_SORT_ALLOWLIST = ["email", "created_at"] as const;
 const USERS_DEFAULT_SORT = "created_at";
@@ -124,47 +123,18 @@ export default async function AdminUsersPage({
     USERS_DEFAULT_SORT,
   );
 
-  let body: unknown = null;
-  let loadError: string | null = null;
-  try {
-    body = await adminApiFetch(
-      "/api/admin/users",
-      buildAdminTableQuery(params),
-    );
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    loadError =
-      err instanceof AdminApiError ? err.message : "Failed to load users";
-  }
+  // Both backend calls (/api/admin/users + workspace picker options) fire
+  // concurrently inside loadUsersPageData — they are independent, and each
+  // hop carries a full requireAdmin gate, so sequential awaits multiply
+  // latency. Next.js redirect errors (401 → /login) propagate uncaught.
+  const loaded = await loadUsersPageData(buildAdminTableQuery(params));
+  const body: unknown | null = loaded.usersBody;
+  let loadError: string | null = loaded.usersError;
+  const pickerWorkspaces = loaded.pickerWorkspaces;
 
   const data = body !== null ? narrowUsers(body) : null;
   if (data === null && loadError === null) {
     loadError = "Unexpected users response shape";
-  }
-
-  // Workspace picker options for the per-row role editor (Task 6
-  // follow-up: no raw workspace-ID textbox). Auxiliary fetch — a failure
-  // here degrades to the textbox fallback inside UserActions instead of
-  // failing the page; 401 redirects are still rethrown.
-  let pickerWorkspaces: { id: string; name: string; slug: string }[] = [];
-  try {
-    const wsBody: unknown = await adminApiFetch(
-      "/api/admin/workspaces",
-      "page=1&limit=100&sort=name&order=asc",
-    );
-    if (isRecord(wsBody) && Array.isArray(wsBody["workspaces"])) {
-      for (const item of wsBody["workspaces"] as unknown[]) {
-        if (!isRecord(item) || typeof item["id"] !== "string") continue;
-        pickerWorkspaces.push({
-          id: item["id"] as string,
-          name: typeof item["name"] === "string" ? (item["name"] as string) : "",
-          slug: typeof item["slug"] === "string" ? (item["slug"] as string) : "",
-        });
-      }
-    }
-  } catch (err: unknown) {
-    if (isRedirectError(err)) throw err;
-    pickerWorkspaces = [];
   }
 
   const rows: AdminTableRow[] =
