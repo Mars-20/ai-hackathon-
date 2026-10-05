@@ -45,6 +45,7 @@ import type { ApolloLead } from "@/lib/apollo";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
 import { getGeminiKeys, getGroqKeys, isQuotaError } from "@/lib/provider-keys";
+import { matchClaimsToSources, searchExa } from "@/lib/exa-search";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -555,11 +556,66 @@ async function groundedSearch(
 ): Promise<{
   results: Array<{ claim: string; url: string; published_at?: string }>;
   grounded: boolean;
-  provider: "gemini" | "gemini-ungrounded" | "groq" | "none";
+  provider: "exa" | "gemini" | "gemini-ungrounded" | "groq" | "none";
   grounded_error?: string;
 }> {
   const geminiKeys = getGeminiKeys();
   const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  // Exa-first (DIY grounding): the free Search API returns tool-grounded
+  // URLs + highlights, then our own LLM chain turns them into attributed
+  // claims. The allowlist gate (matchClaimsToSources) is the
+  // anti-hallucination proof — only URLs the Exa tool returned may carry
+  // source_type web_search downstream. Fail-soft: empty search or zero
+  // matched claims falls through to the Gemini → Groq chain below.
+  const exaSources = await searchExa(query);
+  if (exaSources.length > 0) {
+    try {
+      const sourceList = exaSources
+        .slice(0, 8)
+        .map(
+          (s, i) =>
+            `[${i + 1}] ${s.title} — ${s.url}${s.publishedDate ? ` (${s.publishedDate})` : ""}${
+              s.highlights.length > 0 ? `\n${s.highlights.slice(0, 2).join("\n")}` : ""
+            }`
+        )
+        .join("\n\n");
+      const exaText = await callAIWithFallback({
+        prompt: `Using ONLY the web search sources below about: "${query}"${domainHint ? ` in the context of ${domainHint}` : ""}.
+
+SOURCES:
+${sourceList}
+
+Return a JSON object with key "results" containing an array of 3-6 objects, each with:
+- "claim": a specific factual claim stated by the sources (1-2 sentences max)
+- "url": the EXACT URL of the source it came from, copied verbatim from the list above
+- "published_at": the source date in parentheses if shown, else null
+
+Rules: every claim MUST come from the sources; every url MUST be copied exactly from the list — never invent, shorten, or guess a URL. If a source gives no usable fact, skip it. Respond ONLY with valid JSON.`,
+        trace: trace ?? [],
+        skillName: "market-research",
+        usageAcc,
+      });
+      const parsedExa = parseJsonSafely<{
+        results: Array<{ claim: string; url: string; published_at?: string }>;
+      }>(exaText, { results: [] });
+      const matched = matchClaimsToSources(parsedExa.results ?? [], exaSources);
+      if (matched.length > 0) {
+        const publishedByUrl = new Map(exaSources.map((s) => [s.url, s.publishedDate]));
+        return {
+          results: matched.map((m) => ({
+            claim: m.claim,
+            url: m.url,
+            published_at: m.published_at ?? publishedByUrl.get(m.url) ?? undefined,
+          })),
+          grounded: true,
+          provider: "exa",
+        };
+      }
+    } catch {
+      // Fall through to the Gemini → Groq chain below.
+    }
+  }
 
   // Try Gemini Google Search Grounding first via the shared helper with
   // grounding opted in (spec §6.1 google_search tool attempt). Wrapped in
@@ -1005,7 +1061,7 @@ async function runMarketResearchSkill(
             warning: "ungrounded",
             query,
             provider: searchResult.provider,
-            notice: "Gemini grounding unavailable; Groq synthesis has no browsing — URLs stripped, strength capped at opinion.",
+            notice: "Web grounding unavailable (Exa + Gemini); synthesis has no browsing — URLs stripped, strength capped at opinion.",
           })
         );
       }
@@ -1062,11 +1118,15 @@ async function runMarketResearchSkill(
   return allResults;
 }
 
-// ── Lead Finder (skill: lead-finder, powered by Apollo.io) ──────────────────
+// ── Lead Finder (skill: lead-finder, powered by Apollo.io REST) ─────────────
+// NOTE: .agents/mcp_config.json (apollo-io MCP) is IDE-only for the coding
+// agent — the Next.js runtime uses direct REST via APOLLO_API_KEY
+// (apps/web/.env.local + Vercel env). Returns full result so the caller can
+// always emit an SSE leads event (even empty) instead of silent skip.
 async function runLeadFinderSkill(
   startup: Startup,
   trace: TraceEvent[]
-): Promise<ApolloLead[]> {
+): Promise<{ leads: ApolloLead[]; error?: string; provider: string; total: number }> {
   const t0 = Date.now();
   trace.push(
     makeTrace("skill:lead-finder", "tool_call", {
@@ -1092,7 +1152,7 @@ async function runLeadFinderSkill(
         provider: result.provider,
       })
     );
-    return [];
+    return { leads: [], error: result.error, provider: result.provider, total: result.total };
   }
 
   trace.push(
@@ -1108,7 +1168,7 @@ async function runLeadFinderSkill(
     )
   );
 
-  return result.leads;
+  return { leads: result.leads, provider: result.provider, total: result.total };
 }
 
 // ── Experiment Designer (skill: experiment-designer + survey-designer) ─────────
@@ -1845,22 +1905,26 @@ export async function POST(req: NextRequest) {
       assertPhaseBudget(totalCost, toolCalls);
       await send({ type: "experiment", experiment, trace: [...trace] });
 
-      // ── Phase 5.5: Lead Finder (Apollo.io) ─────────────────────────────────
+      // ── Phase 5.5: Lead Finder (Apollo.io REST) ────────────────────────────
       // Find real people matching target_customer to interview for validation.
+      // Always emit a leads event (even empty) so the UI never silently skips
+      // this phase — empty means "no matches / key misconfigured", visible in
+      // trace + UI instead of a perceived freeze after experiment.
       await send({ type: "phase", phase: "leads", trace: [...trace] });
-      const leads = await runLeadFinderSkill(startup, trace);
+      const leadResult = await runLeadFinderSkill(startup, trace);
+      const leads = leadResult.leads;
       toolCalls++;
       totalCost += extractUsageCost(undefined, "search");
       checkTimeout();
       assertPhaseBudget(totalCost, toolCalls);
-      if (leads.length > 0) {
-        await send({
-          type: "leads",
-          leads,
-          message: `Found ${leads.length} potential interviewees matching "${startup.target_customer || startup.domain}" — reach out to validate your assumptions with real people.`,
-          trace: [...trace],
-        });
-      }
+      await send({
+        type: "leads",
+        leads,
+        message: leads.length > 0
+          ? `Found ${leads.length} potential interviewees matching "${startup.target_customer || startup.domain}" — reach out to validate your assumptions with real people.`
+          : (leadResult.error ?? "No matching interviewees found for this target customer."),
+        trace: [...trace],
+      });
 
       // ── Phase 6: Primary Evidence (if uploaded) ─────────────────────────────
       let primaryEvidence: Evidence[] = [];
