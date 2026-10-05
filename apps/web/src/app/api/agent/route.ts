@@ -45,14 +45,16 @@ import type { ApolloLead } from "@/lib/apollo";
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
 // Verify against provider docs on the day you deploy — names change fast.
-// gemini-3.5-flash = current Flash with google_search grounding + JSON mode
-// (2.5-flash was restricted to legacy users then retired — 404 for new keys).
-// llama-3.1-8b-instant = current cheap Groq production classifier with JSON
-// mode (llama-3.3-70b-versatile was retired 2026-08-16 — 404).
+// gemini-3.5-flash-lite = cheapest Gemini with JSON mode (grounding support
+// varies — the helper below falls back to ungrounded automatically).
+// openai/gpt-oss-120b = cheapest working Groq classifier on this account
+// (proven 200 in our own Groq logs; all llama-* IDs 404 — retired/removed).
+// Env overrides (GEMINI_PLANNER_MODEL / GEMINI_VERIFIER_MODEL /
+// GROQ_ROUTER_MODEL) win without a code change.
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
-const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash";
-const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash";
-const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "llama-3.1-8b-instant";
+const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash-lite";
+const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash-lite";
+const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "openai/gpt-oss-120b";
 
 // ── Task 3: runtime metering + per-phase budget + prompt delimiters + router/backoff ──
 // Provider usage is accumulated per phase into caller-owned arrays (never
@@ -177,7 +179,12 @@ async function fetchGroqWithBackoff(
         });
         continue;
       }
-      if (!res.ok) throw new Error(`Groq ${res.status} for ${skillName}`);
+      // Quota guard: permanent 4xx (400/401/403/404 — bad key or dead
+      // model) fail fast with the status attached; only 429/5xx retry.
+      if (!res.ok)
+        throw Object.assign(new Error(`Groq ${res.status} for ${skillName}`), {
+          status: res.status,
+        });
       const data = await res.json();
       const u = data?.usage;
       const usage: AiUsage | undefined =
@@ -196,7 +203,7 @@ async function fetchGroqWithBackoff(
   throw lastErr;
 }
 
-// Dedicated Groq Router classifier (llama-3.1-8b-instant) — runs BEFORE the Planner
+// Dedicated Groq Router classifier (openai/gpt-oss-120b) — runs BEFORE the Planner
 // (intake) so routing intent is decided by the fast classifier, not the
 // planner. Fail-open with a trace warning: a blip here must not hard-block
 // validation (the planner is primary); 429s still propagate retryAfter.
@@ -220,6 +227,8 @@ async function runRouterClassifier(
           { role: "user", content: toUntrusted(idea) },
         ],
         temperature: 0.1,
+        // Quota guard: a classifier needs ~dozens of tokens, not thousands.
+        max_tokens: 300,
       },
       trace,
       "router-classifier"

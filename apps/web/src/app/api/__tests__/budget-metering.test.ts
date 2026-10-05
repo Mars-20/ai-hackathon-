@@ -49,9 +49,14 @@ describe("task 3 wiring (static)", () => {
 
   test("dedicated Groq router classifier with backoff reads x-ratelimit headers", () => {
     expect(routeSrc).toMatch(/runRouterClassifier/);
-    expect(routeSrc).toMatch(/llama-3\.1-8b-instant/);
+    expect(routeSrc).toMatch(/openai\/gpt-oss-120b/);
     expect(routeSrc).toMatch(/x-ratelimit/i);
     expect(routeSrc).toMatch(/backoff/i);
+  });
+
+  test("quota guards: router caps output tokens, permanent 4xx fail fast", () => {
+    expect(routeSrc).toMatch(/max_tokens:\s*300/);
+    expect(routeSrc).toMatch(/fail fast/);
   });
 
   test("rate-limit key prefers user_id, else workspace_id, else ip+route", () => {
