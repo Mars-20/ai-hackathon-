@@ -370,7 +370,7 @@ export default function LandingPage() {
             <Link
               href="/dashboard"
               className="btn-glow text-white font-bold px-8 py-4 rounded-xl text-base inline-flex items-center gap-2"
-              id="cta-validate-btn"
+              id="cta-dashboard-btn"
             >
               <Brain className="w-5 h-5" />
               Start Validation

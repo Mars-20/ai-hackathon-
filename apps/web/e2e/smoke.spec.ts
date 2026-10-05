@@ -9,7 +9,7 @@ test("homepage renders a headline", async ({ page }) => {
   await expect(page.locator("h1").first()).toBeVisible();
 });
 
-for (const path of ["/validate", "/dashboard"]) {
+for (const path of ["/validate", "/dashboard", "/history"]) {
   test(`protected route ${path} redirects to login`, async ({ page }) => {
     await page.goto(path);
     // Middleware redirects unauthenticated users to /login?next=<path>
@@ -31,7 +31,7 @@ test("login page shows the email auth form", async ({ page }) => {
 for (const [name, selector] of [
   ["navbar Launch App", 'nav a:has-text("Launch App")'],
   ["hero dashboard link", 'a:has-text("open the full dashboard")'],
-  ["bottom Start Validation CTA", "#cta-validate-btn"],
+  ["bottom Start Validation CTA", "#cta-dashboard-btn"],
 ] as const) {
   test(`landing ${name} points to /dashboard`, async ({ page }) => {
     await page.goto("/");
