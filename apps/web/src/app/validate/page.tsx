@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createSseParser } from "@/lib/sse-client";
+import { describeResearchCoverage } from "@/lib/research-label";
 import type {
   Startup,
   Assumption,
@@ -1023,7 +1024,7 @@ function ValidateDashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <Search className="w-4 h-4 text-brand-400" />
                     <h3 className="font-bold text-slate-200 text-sm">
-                      Market Research — {secondaryEvidence.length} grounded claims
+                      {describeResearchCoverage(secondaryEvidence)}
                     </h3>
                     <div className="flex items-center gap-1 text-xs text-slate-500 ml-auto">
                       <Info className="w-3 h-3" />
