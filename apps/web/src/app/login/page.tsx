@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
-import { Brain, ArrowRight, Mail, Lock, User, Eye, EyeOff, Github, Chrome } from "lucide-react";
+import { Brain, ArrowRight, Mail, Lock, User, Eye, EyeOff, Chrome } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -81,7 +81,7 @@ function AuthForm() {
     }
   };
 
-  const handleOAuth = async (provider: "google" | "github") => {
+  const handleOAuth = async (provider: "google") => {
     setIsLoading(true);
     setError(null);
     const { error } = await supabase.auth.signInWithOAuth({
@@ -141,25 +141,16 @@ function AuthForm() {
             ))}
           </div>
 
-          {/* OAuth buttons */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          {/* OAuth — Google only (GitHub unsupported/removed) */}
+          <div className="mb-6">
             <button
               onClick={() => handleOAuth("google")}
               disabled={isLoading}
-              className="glass glass-hover rounded-xl py-2.5 flex items-center justify-center gap-2 text-sm font-medium text-slate-300 transition-all border border-white/5"
+              className="w-full glass glass-hover rounded-xl py-2.5 flex items-center justify-center gap-2 text-sm font-medium text-slate-300 transition-all border border-white/5"
               id="oauth-google-btn"
             >
               <Chrome className="w-4 h-4" />
-              Google
-            </button>
-            <button
-              onClick={() => handleOAuth("github")}
-              disabled={isLoading}
-              className="glass glass-hover rounded-xl py-2.5 flex items-center justify-center gap-2 text-sm font-medium text-slate-300 transition-all border border-white/5"
-              id="oauth-github-btn"
-            >
-              <Github className="w-4 h-4" />
-              GitHub
+              Continue with Google
             </button>
           </div>
 
