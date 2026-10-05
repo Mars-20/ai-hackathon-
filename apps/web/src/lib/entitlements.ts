@@ -114,26 +114,95 @@ export function resolveInviteGate(
 
 const IPV4_PATTERN = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 const IPV4_MAPPED_PREFIX = "::ffff:";
+const IPV4_KEPT_OCTETS = 3;
+const IPV6_KEPT_GROUPS = 4;
+const IPV6_TOTAL_GROUPS = 8;
+
+/**
+ * Expand an IPv6 address into its 8 normalized hextet groups
+ * (lowercase, zero-padded to 4 chars) so compressed (`::`) and full forms
+ * truncate identically. Returns null when the input is not parseable as
+ * pure IPv6 (embedded IPv4, zone ids, bad groups) — the caller then
+ * returns the input as-is.
+ */
+function expandIpv6Groups(ip: string): string[] | null {
+  if (ip.includes(".") || ip.includes("%")) {
+    return null;
+  }
+  const normalize = (g: string): string | null =>
+    /^[0-9a-fA-F]{1,4}$/.test(g) ? g.toLowerCase().padStart(4, "0") : null;
+  if (ip.includes("::")) {
+    if (ip.indexOf("::") !== ip.lastIndexOf("::")) {
+      return null;
+    }
+    const parts = ip.split("::");
+    if (parts.length !== 2) {
+      return null;
+    }
+    const [headRaw, tailRaw] = parts;
+    const head = headRaw === "" ? [] : headRaw.split(":");
+    const tail = tailRaw === "" ? [] : tailRaw.split(":");
+    const normalizedHead: string[] = [];
+    for (const g of head) {
+      const n = normalize(g);
+      if (n === null) {
+        return null;
+      }
+      normalizedHead.push(n);
+    }
+    const normalizedTail: string[] = [];
+    for (const g of tail) {
+      const n = normalize(g);
+      if (n === null) {
+        return null;
+      }
+      normalizedTail.push(n);
+    }
+    const missing = IPV6_TOTAL_GROUPS - normalizedHead.length - normalizedTail.length;
+    if (missing < 1) {
+      return null;
+    }
+    return [...normalizedHead, ...Array<string>(missing).fill("0000"), ...normalizedTail];
+  }
+  const parts = ip.split(":");
+  if (parts.length !== IPV6_TOTAL_GROUPS) {
+    return null;
+  }
+  const normalized: string[] = [];
+  for (const g of parts) {
+    const n = normalize(g);
+    if (n === null) {
+      return null;
+    }
+    normalized.push(n);
+  }
+  return normalized;
+}
 
 /**
  * Truncate an IP address for privacy-preserving storage.
  *
  * Plain IPv4 (or IPv4-mapped IPv6 `::ffff:a.b.c.d`) → first 3 octets
- * (/24). Any other IPv6 value → first 4 hextets (/48). Anything else is
- * returned as-is.
+ * (/24). Any other IPv6 value → first 4 hextets (/48), expanding
+ * compressed `::` first so compressed and full forms group identically.
+ * Anything else is returned as-is.
  */
 export function truncateIp(ip: string): string {
   const mapped = ip.toLowerCase().startsWith(IPV4_MAPPED_PREFIX)
     ? ip.slice(IPV4_MAPPED_PREFIX.length)
     : null;
   if (mapped !== null) {
-    return IPV4_PATTERN.test(mapped) ? mapped.split(".").slice(0, 3).join(".") : ip;
+    return IPV4_PATTERN.test(mapped) ? mapped.split(".").slice(0, IPV4_KEPT_OCTETS).join(".") : ip;
   }
   if (IPV4_PATTERN.test(ip)) {
-    return ip.split(".").slice(0, 3).join(".");
+    return ip.split(".").slice(0, IPV4_KEPT_OCTETS).join(".");
   }
   if (ip.includes(":")) {
-    return ip.split(":").slice(0, 4).join(":");
+    const groups = expandIpv6Groups(ip);
+    if (groups === null) {
+      return ip;
+    }
+    return groups.slice(0, IPV6_KEPT_GROUPS).join(":");
   }
   return ip;
 }
