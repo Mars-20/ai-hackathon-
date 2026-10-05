@@ -41,6 +41,7 @@ import {
 import type { CostKind } from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
+import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -1674,12 +1675,28 @@ export async function POST(req: NextRequest) {
       const supabase = await createServerSupabaseClient();
       const { data: { user } } = await supabase.auth.getUser();
       const ownerId = user?.id || "";
-      const workspaceId = body.workspace_id || "";
+      // Effective workspace: prod enforces workspace_id NOT NULL (migration
+      // 0008), so a missing/unmembered workspace must resolve to the caller's
+      // personal workspace (created on demand) — never NULL, which the DB
+      // rejects and which silently drops the whole persistence below.
+      const requestedWorkspaceId =
+        typeof body.workspace_id === "string" ? body.workspace_id : "";
+      const workspaceId = ownerId
+        ? await resolveEffectiveWorkspaceId(supabase, ownerId, requestedWorkspaceId)
+        : "";
       if (!ownerId) {
         trace.push(makeTrace("router", "verification", { warning: "unauthenticated session: persistence will be skipped" }));
+      } else if (!workspaceId) {
+        trace.push(
+          makeTrace("router", "verification", {
+            warning: requestedWorkspaceId
+              ? "workspace not member: persistence will be skipped"
+              : "workspace resolution failed: persistence will be skipped",
+          })
+        );
       }
       const intakeUsage: AiUsage[] = [];
-      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId, owner_id: ownerId }, intakeUsage);
+      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId ?? undefined, owner_id: ownerId }, intakeUsage);
       await send({ type: "startup", startup, questions, trace: [...trace] });
 
       // Per-phase budget + real metering (usageMetadata when available,
@@ -1778,7 +1795,9 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
       assertPhaseBudget(totalCost, toolCalls);
 
       // ── Persist (best-effort; never breaks streaming) ─────────────────────
-      if (ownerId) {
+      // workspaceId is guaranteed non-empty here (resolved above); the empty
+      // case skips explicitly so no NULL write ever reaches the DB.
+      if (ownerId && workspaceId) {
         try {
           // Workspace membership gate: if workspaceId provided, caller must be a member.
           // On fail push a persist-warning trace but still continue to done.
