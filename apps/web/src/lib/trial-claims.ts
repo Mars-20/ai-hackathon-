@@ -17,8 +17,19 @@ const DEFAULT_IP_WINDOW_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
 
 function parseEnvNumber(raw: string | undefined, fallback: number): number {
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  const trimmed = (raw ?? "").trim();
+  if (trimmed === "") {
+    return fallback;
+  }
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolvePositiveInt(explicit: number | undefined, rawEnv: string | undefined, fallback: number): number {
+  if (explicit !== undefined) {
+    return Number.isInteger(explicit) && explicit > 0 ? explicit : fallback;
+  }
+  return parseEnvNumber(rawEnv, fallback);
 }
 
 function extractDomain(email: string): string {
@@ -58,8 +69,8 @@ export async function evaluateTrialStart(input: {
     };
   }
 
-  const max = input.maxPerIp ?? parseEnvNumber(process.env.TRIAL_MAX_PER_IP, DEFAULT_MAX_PER_IP);
-  const window = input.windowDays ?? parseEnvNumber(process.env.TRIAL_IP_WINDOW_DAYS, DEFAULT_IP_WINDOW_DAYS);
+  const max = resolvePositiveInt(input.maxPerIp, process.env.TRIAL_MAX_PER_IP, DEFAULT_MAX_PER_IP);
+  const window = resolvePositiveInt(input.windowDays, process.env.TRIAL_IP_WINDOW_DAYS, DEFAULT_IP_WINDOW_DAYS);
   const sinceIso = new Date(Date.now() - window * MS_PER_DAY).toISOString();
   const recent = await input.db.countRecentClaims(ipTrunc, sinceIso);
   if (recent >= max) {

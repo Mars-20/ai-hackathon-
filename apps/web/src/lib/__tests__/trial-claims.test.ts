@@ -3,8 +3,11 @@ import {
   evaluateTrialStart,
   type ClaimsDb,
 } from "@/lib/trial-claims";
+import { hashFingerprint } from "@/lib/entitlements";
 
 const FP = { ua: "ua-1", screen: "1920x1080", tz: "Asia/Riyadh", lang: "ar" };
+const EXPECTED_FP = hashFingerprint(FP);
+const MS_PER_DAY = 86_400_000;
 
 function makeDb(count: number, fpFound: boolean): ClaimsDb & {
   countCalls: Array<{ ipTrunc: string; sinceIso: string }>;
@@ -21,7 +24,6 @@ function makeDb(count: number, fpFound: boolean): ClaimsDb & {
     },
     async findConsumedByFp(fpHash: string, userId: string): Promise<boolean> {
       db.fpCalls.push({ fpHash, userId });
-      void userId;
       return fpFound;
     },
     async insertClaim(): Promise<void> {
@@ -63,9 +65,19 @@ describe("evaluateTrialStart", () => {
       fpSignals: FP,
       db,
     });
-    expect(res.allowed).toBe(false);
-    expect(res.code).toBe("TRIAL_NOT_ALLOWED");
-    expect(res.reason).toBe("فعّل بريدك أولًا");
+    expect(res).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "فعّل بريدك أولًا",
+      claim: {
+        ip_trunc: "1.2.3",
+        fp_hash: EXPECTED_FP,
+        email_domain: "example.com",
+        is_temp_mail: false,
+        suspected_duplicate: false,
+      },
+    });
+    expect(res.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(db.countCalls).toHaveLength(0);
     expect(db.fpCalls).toHaveLength(0);
   });
@@ -80,40 +92,79 @@ describe("evaluateTrialStart", () => {
       fpSignals: FP,
       db,
     });
-    expect(res.allowed).toBe(false);
-    expect(res.code).toBe("TRIAL_NOT_ALLOWED");
-    expect(res.claim.is_temp_mail).toBe(true);
-    expect(res.claim.email_domain).toBe("mailinator.com");
+    expect(res).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "البريد المؤقت غير مسموح به للتجربة",
+      claim: {
+        ip_trunc: "1.2.3",
+        fp_hash: EXPECTED_FP,
+        email_domain: "mailinator.com",
+        is_temp_mail: true,
+        suspected_duplicate: false,
+      },
+    });
+    expect(res.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    // Deliberate design choice: temp-mail is a pre-DB gate that returns before
+    // any abuse lookup, so the fp lookup is intentionally skipped (no
+    // consumption history is needed once the domain alone decides the deny).
     expect(db.countCalls).toHaveLength(0);
+    expect(db.fpCalls).toHaveLength(0);
   });
 
   test("3rd claim same IP allowed, 4th blocked", async () => {
+    const dbThird = makeDb(2, false);
     const third = await evaluateTrialStart({
       userId: "u-3",
       email: "clean@example.com",
       emailConfirmedAt: "2026-01-01T00:00:00.000Z",
       ip: "9.9.9.9",
       fpSignals: FP,
-      db: makeDb(2, false),
+      db: dbThird,
       maxPerIp: 3,
       windowDays: 30,
     });
-    expect(third.allowed).toBe(true);
-    expect(third.code).toBe("OK");
+    expect(third).toEqual({
+      allowed: true,
+      code: "OK",
+      claim: {
+        ip_trunc: "9.9.9",
+        fp_hash: EXPECTED_FP,
+        email_domain: "example.com",
+        is_temp_mail: false,
+        suspected_duplicate: false,
+      },
+    });
+    expect(third.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(dbThird.countCalls).toHaveLength(1);
+    expect(dbThird.fpCalls).toHaveLength(1);
 
+    const dbFourth = makeDb(3, false);
     const fourth = await evaluateTrialStart({
       userId: "u-4",
       email: "clean@example.com",
       emailConfirmedAt: "2026-01-01T00:00:00.000Z",
       ip: "9.9.9.9",
       fpSignals: FP,
-      db: makeDb(3, false),
+      db: dbFourth,
       maxPerIp: 3,
       windowDays: 30,
     });
-    expect(fourth.allowed).toBe(false);
-    expect(fourth.code).toBe("TRIAL_NOT_ALLOWED");
-    expect(fourth.reason).toBe("الحد الأقصى للتجارب من هذه الشبكة");
+    expect(fourth).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "الحد الأقصى للتجارب من هذه الشبكة",
+      claim: {
+        ip_trunc: "9.9.9",
+        fp_hash: EXPECTED_FP,
+        email_domain: "example.com",
+        is_temp_mail: false,
+        suspected_duplicate: false,
+      },
+    });
+    expect(fourth.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(dbFourth.countCalls).toHaveLength(1);
+    expect(dbFourth.fpCalls).toHaveLength(0);
   });
 
   test("duplicate fingerprint allowed but flagged", async () => {
@@ -126,71 +177,322 @@ describe("evaluateTrialStart", () => {
       fpSignals: FP,
       db,
     });
-    expect(res.allowed).toBe(true);
-    expect(res.code).toBe("OK");
-    expect(res.claim.suspected_duplicate).toBe(true);
-    expect(res.claim.is_temp_mail).toBe(false);
+    expect(res).toEqual({
+      allowed: true,
+      code: "OK",
+      claim: {
+        ip_trunc: "5.6.7",
+        fp_hash: EXPECTED_FP,
+        email_domain: "example.com",
+        is_temp_mail: false,
+        suspected_duplicate: true,
+      },
+    });
+    expect(res.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(db.countCalls).toHaveLength(1);
+    expect(db.fpCalls).toHaveLength(1);
   });
 
   test("clean user allowed unflagged", async () => {
+    const db = makeDb(0, false);
     const res = await evaluateTrialStart({
       userId: "u-clean",
       email: "Clean@Example.COM",
       emailConfirmedAt: "2026-01-01T00:00:00.000Z",
       ip: "1.2.3.4",
       fpSignals: FP,
-      db: makeDb(0, false),
+      db,
     });
     expect(res).toEqual({
       allowed: true,
       code: "OK",
       claim: {
         ip_trunc: "1.2.3",
-        fp_hash: res.claim.fp_hash,
+        fp_hash: EXPECTED_FP,
         email_domain: "example.com",
         is_temp_mail: false,
         suspected_duplicate: false,
       },
     });
     expect(res.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(db.countCalls).toHaveLength(1);
+    expect(db.fpCalls).toHaveLength(1);
   });
 
-  test("junk TRIAL_MAX_PER_IP env falls back to 3", async () => {
-    process.env.TRIAL_MAX_PER_IP = "abc";
-    const atCap = await evaluateTrialStart({
-      userId: "u-j1",
-      email: "clean@example.com",
-      emailConfirmedAt: "2026-01-01T00:00:00.000Z",
-      ip: "7.7.7.7",
-      fpSignals: FP,
-      db: makeDb(3, false),
-    });
-    expect(atCap.allowed).toBe(false);
-    expect(atCap.code).toBe("TRIAL_NOT_ALLOWED");
+  test.each(["", "  ", "0", "-1", "-5", "abc", "NaN"])(
+    "TRIAL_MAX_PER_IP=%j fails open to default 3",
+    async (raw) => {
+      process.env.TRIAL_MAX_PER_IP = raw;
 
-    const belowCap = await evaluateTrialStart({
-      userId: "u-j2",
+      const dbBelow = makeDb(2, false);
+      const belowCap = await evaluateTrialStart({
+        userId: "u-j-below",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db: dbBelow,
+      });
+      expect(belowCap).toEqual({
+        allowed: true,
+        code: "OK",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+      expect(dbBelow.countCalls).toHaveLength(1);
+      expect(dbBelow.fpCalls).toHaveLength(1);
+
+      const dbAt = makeDb(3, false);
+      const atCap = await evaluateTrialStart({
+        userId: "u-j-at",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db: dbAt,
+      });
+      expect(atCap).toEqual({
+        allowed: false,
+        code: "TRIAL_NOT_ALLOWED",
+        reason: "الحد الأقصى للتجارب من هذه الشبكة",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+      expect(dbAt.countCalls).toHaveLength(1);
+      expect(dbAt.fpCalls).toHaveLength(0);
+    },
+  );
+
+  test.each(["", "  ", "0", "-1", "-5", "abc", "NaN"])(
+    "TRIAL_IP_WINDOW_DAYS=%j fails open to default 30d window",
+    async (raw) => {
+      process.env.TRIAL_IP_WINDOW_DAYS = raw;
+      const before = Date.now();
+      const db = makeDb(0, false);
+      const res = await evaluateTrialStart({
+        userId: "u-w",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db,
+      });
+      expect(res).toEqual({
+        allowed: true,
+        code: "OK",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+      expect(db.countCalls).toHaveLength(1);
+      expect(db.fpCalls).toHaveLength(1);
+      const expectedSince = before - 30 * MS_PER_DAY;
+      const actualSince = Date.parse(db.countCalls[0].sinceIso);
+      expect(Math.abs(actualSince - expectedSince)).toBeLessThan(60_000);
+    },
+  );
+
+  test.each([0, -1, -5, Number.NaN])(
+    "explicit maxPerIp=%j falls back to default 3",
+    async (maxPerIp) => {
+      const dbBelow = makeDb(2, false);
+      const belowCap = await evaluateTrialStart({
+        userId: "u-e-below",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db: dbBelow,
+        maxPerIp,
+      });
+      expect(belowCap).toEqual({
+        allowed: true,
+        code: "OK",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+
+      const dbAt = makeDb(3, false);
+      const atCap = await evaluateTrialStart({
+        userId: "u-e-at",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db: dbAt,
+        maxPerIp,
+      });
+      expect(atCap).toEqual({
+        allowed: false,
+        code: "TRIAL_NOT_ALLOWED",
+        reason: "الحد الأقصى للتجارب من هذه الشبكة",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+    },
+  );
+
+  test.each([0, -5, Number.NaN])(
+    "explicit windowDays=%j falls back to default 30d window",
+    async (windowDays) => {
+      const before = Date.now();
+      const db = makeDb(0, false);
+      const res = await evaluateTrialStart({
+        userId: "u-ew",
+        email: "clean@example.com",
+        emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+        ip: "7.7.7.7",
+        fpSignals: FP,
+        db,
+        windowDays,
+      });
+      expect(res).toEqual({
+        allowed: true,
+        code: "OK",
+        claim: {
+          ip_trunc: "7.7.7",
+          fp_hash: EXPECTED_FP,
+          email_domain: "example.com",
+          is_temp_mail: false,
+          suspected_duplicate: false,
+        },
+      });
+      expect(db.countCalls).toHaveLength(1);
+      const expectedSince = before - 30 * MS_PER_DAY;
+      const actualSince = Date.parse(db.countCalls[0].sinceIso);
+      expect(Math.abs(actualSince - expectedSince)).toBeLessThan(60_000);
+    },
+  );
+
+  test("precedence: unverified beats temp-mail (zero DB calls)", async () => {
+    const db = makeDb(99, true);
+    const res = await evaluateTrialStart({
+      userId: "u-prec-1",
+      email: "user@mailinator.com",
+      emailConfirmedAt: null,
+      ip: "1.2.3.4",
+      fpSignals: FP,
+      db,
+    });
+    expect(res).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "فعّل بريدك أولًا",
+      claim: {
+        ip_trunc: "1.2.3",
+        fp_hash: EXPECTED_FP,
+        email_domain: "mailinator.com",
+        is_temp_mail: true,
+        suspected_duplicate: false,
+      },
+    });
+    expect(db.countCalls).toHaveLength(0);
+    expect(db.fpCalls).toHaveLength(0);
+  });
+
+  test("precedence: temp-mail beats IP cap (zero DB calls)", async () => {
+    const db = makeDb(99, true);
+    const res = await evaluateTrialStart({
+      userId: "u-prec-2",
+      email: "user@mailinator.com",
+      emailConfirmedAt: "2026-01-01T00:00:00.000Z",
+      ip: "9.9.9.9",
+      fpSignals: FP,
+      db,
+      maxPerIp: 3,
+      windowDays: 30,
+    });
+    expect(res).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "البريد المؤقت غير مسموح به للتجربة",
+      claim: {
+        ip_trunc: "9.9.9",
+        fp_hash: EXPECTED_FP,
+        email_domain: "mailinator.com",
+        is_temp_mail: true,
+        suspected_duplicate: false,
+      },
+    });
+    expect(db.countCalls).toHaveLength(0);
+    expect(db.fpCalls).toHaveLength(0);
+  });
+
+  test("precedence: IP cap beats fp-duplicate (deny, fp lookup skipped)", async () => {
+    const db = makeDb(3, true);
+    const res = await evaluateTrialStart({
+      userId: "u-prec-3",
       email: "clean@example.com",
       emailConfirmedAt: "2026-01-01T00:00:00.000Z",
-      ip: "7.7.7.7",
+      ip: "9.9.9.9",
       fpSignals: FP,
-      db: makeDb(2, false),
+      db,
+      maxPerIp: 3,
+      windowDays: 30,
     });
-    expect(belowCap.allowed).toBe(true);
-    expect(belowCap.code).toBe("OK");
+    expect(res).toEqual({
+      allowed: false,
+      code: "TRIAL_NOT_ALLOWED",
+      reason: "الحد الأقصى للتجارب من هذه الشبكة",
+      claim: {
+        ip_trunc: "9.9.9",
+        fp_hash: EXPECTED_FP,
+        email_domain: "example.com",
+        is_temp_mail: false,
+        suspected_duplicate: false,
+      },
+    });
+    expect(db.countCalls).toHaveLength(1);
+    expect(db.fpCalls).toHaveLength(0);
   });
 
   test("missing @ never throws and never matches blocklist", async () => {
+    const db = makeDb(0, false);
     const res = await evaluateTrialStart({
       userId: "u-noat",
       email: "not-an-email",
       emailConfirmedAt: "2026-01-01T00:00:00.000Z",
       ip: "1.2.3.4",
       fpSignals: FP,
-      db: makeDb(0, false),
+      db,
     });
-    expect(res.allowed).toBe(true);
-    expect(res.claim.email_domain).toBe("");
-    expect(res.claim.is_temp_mail).toBe(false);
+    expect(res).toEqual({
+      allowed: true,
+      code: "OK",
+      claim: {
+        ip_trunc: "1.2.3",
+        fp_hash: EXPECTED_FP,
+        email_domain: "",
+        is_temp_mail: false,
+        suspected_duplicate: false,
+      },
+    });
+    expect(res.claim.fp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(db.countCalls).toHaveLength(1);
+    expect(db.fpCalls).toHaveLength(1);
   });
 });
