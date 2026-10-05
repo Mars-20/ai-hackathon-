@@ -49,7 +49,7 @@ describe("task 3 wiring (static)", () => {
 
   test("dedicated Groq router classifier with backoff reads x-ratelimit headers", () => {
     expect(routeSrc).toMatch(/runRouterClassifier/);
-    expect(routeSrc).toMatch(/llama-3\.3-70b/);
+    expect(routeSrc).toMatch(/llama-3\.1-8b-instant/);
     expect(routeSrc).toMatch(/x-ratelimit/i);
     expect(routeSrc).toMatch(/backoff/i);
   });

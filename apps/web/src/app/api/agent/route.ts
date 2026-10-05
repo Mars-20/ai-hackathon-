@@ -45,12 +45,14 @@ import type { ApolloLead } from "@/lib/apollo";
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
 // Verify against provider docs on the day you deploy — names change fast.
-// Gemini 2.5 Flash = current stable with google_search grounding + JSON mode.
-// Groq llama-3.3-70b-versatile = current stable router/classifier.
+// gemini-3.5-flash = current Flash with google_search grounding + JSON mode
+// (2.5-flash was restricted to legacy users then retired — 404 for new keys).
+// llama-3.1-8b-instant = current cheap Groq production classifier with JSON
+// mode (llama-3.3-70b-versatile was retired 2026-08-16 — 404).
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
-const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-2.5-flash";
-const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-2.5-flash";
-const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "llama-3.3-70b-versatile";
+const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash";
+const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash";
+const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "llama-3.1-8b-instant";
 
 // ── Task 3: runtime metering + per-phase budget + prompt delimiters + router/backoff ──
 // Provider usage is accumulated per phase into caller-owned arrays (never
@@ -194,7 +196,7 @@ async function fetchGroqWithBackoff(
   throw lastErr;
 }
 
-// Dedicated Groq Router classifier (llama-3.3-70b) — runs BEFORE the Planner
+// Dedicated Groq Router classifier (llama-3.1-8b-instant) — runs BEFORE the Planner
 // (intake) so routing intent is decided by the fast classifier, not the
 // planner. Fail-open with a trace warning: a blip here must not hard-block
 // validation (the planner is primary); 429s still propagate retryAfter.
