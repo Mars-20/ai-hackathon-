@@ -320,7 +320,7 @@ async function callAIWithFallback({
   trace: TraceEvent[];
   skillName: string;
   enableGrounding?: boolean;
-  groundingStatus?: { grounded: boolean };
+  groundingStatus?: { grounded: boolean; error?: string };
   usageAcc?: AiUsage[];
 }): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
@@ -383,9 +383,14 @@ async function callAIWithFallback({
           }
           return groundedText;
         }
-      } catch {
-        // Fall through to the non-grounded call below.
+    } catch (err) {
+      // Record the exact API failure so the trace can report WHY grounding
+      // did not fire; the plain call below remains the safe fallback.
+      if (groundingStatus) {
+        groundingStatus.error =
+          err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300);
       }
+    }
     }
     try {
       const model = gemini.getGenerativeModel({
@@ -489,6 +494,7 @@ async function groundedSearch(
   results: Array<{ claim: string; url: string; published_at?: string }>;
   grounded: boolean;
   provider: "gemini" | "gemini-ungrounded" | "groq" | "none";
+  grounded_error?: string;
 }> {
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   const groqKey = process.env.GROQ_API_KEY?.trim();
@@ -497,9 +503,12 @@ async function groundedSearch(
   // grounding opted in (spec §6.1 google_search tool attempt). Wrapped in
   // try/catch with fallback to the direct tool variants below.
   if (geminiKey) {
+    // groundingStatus defaults to ungrounded; only true groundingMetadata flips it.
+    // groundingStatus.error carries the helper's grounded-attempt failure, if any.
+    // Declared here so both the helper attempt and the direct variants below can report.
+    const groundingStatus: { grounded: boolean; error?: string } = { grounded: false };
     try {
-      // groundingStatus defaults to ungrounded; only true groundingMetadata flips it.
-      const groundingStatus = { grounded: false };
+      // Helper attempt: only true groundingMetadata flips groundingStatus.
       const groundedText = await callAIWithFallback({
         prompt: `Search for factual, current information about: "${query}"${domainHint ? ` in the context of ${domainHint}` : ""}.
 
@@ -534,7 +543,12 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
           url: "",
           published_at: r.published_at,
         }));
-        return { results: stripped, grounded: false, provider: "gemini-ungrounded" };
+        return {
+          results: stripped,
+          grounded: false,
+          provider: "gemini-ungrounded",
+          grounded_error: groundingStatus.error,
+        };
       }
     } catch {
       // Fall through to the direct grounding tool variants below.
@@ -543,6 +557,7 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
     // yields no validated URLs). SDK-typed googleSearchRetrieval shape —
     // the compiler enforces the Tool union, no casts.
     const groundingToolVariants: Array<Tool[]> = [[{ googleSearchRetrieval: {} }]];
+    let directError: string | undefined;
     for (const tools of groundingToolVariants) {
       try {
         const model = gemini.getGenerativeModel({
@@ -604,11 +619,20 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
             url: "",
             published_at: r.published_at,
           }));
-          return { results: stripped, grounded: false, provider: "gemini-ungrounded" };
+          return {
+            results: stripped,
+            grounded: false,
+            provider: "gemini-ungrounded",
+            grounded_error: directError ?? groundingStatus.error,
+          };
         }
         continue;
       } catch (err) {
         console.warn("[Grounded Search Gemini Failover]:", err);
+        if (directError === undefined) {
+          const msg = err instanceof Error ? err.message : String(err);
+          directError = msg.slice(0, 300);
+        }
         continue;
       }
     }
@@ -903,6 +927,7 @@ async function runMarketResearchSkill(
             results: searchResult.results,
             grounded: searchResult.grounded,
             provider: searchResult.provider,
+            grounded_error: searchResult.grounded_error,
           },
           { latency_ms: latency }
         )

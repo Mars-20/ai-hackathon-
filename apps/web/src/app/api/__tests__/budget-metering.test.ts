@@ -65,6 +65,18 @@ describe("task 3 wiring (static)", () => {
   });
 });
 
+describe("grounding failure observability (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("helper records the grounded-attempt error instead of swallowing it", () => {
+    expect(routeSrc).toMatch(/groundingStatus\.error\s*=/);
+  });
+
+  test("tool_result payload surfaces grounded_error for diagnosis", () => {
+    expect(routeSrc).toMatch(/grounded_error/);
+  });
+});
+
 describe("grounding tool shape (static)", () => {
   const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
 
