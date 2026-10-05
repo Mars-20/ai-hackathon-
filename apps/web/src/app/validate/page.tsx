@@ -30,6 +30,7 @@ import {
   Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { createSseParser } from "@/lib/sse-client";
 import type {
   Startup,
   Assumption,
@@ -597,71 +598,103 @@ function ValidateDashboard() {
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
+      // Buffered SSE parsing (lib/sse-client): a `done` event straddling
+      // two TCP chunks used to die in JSON.parse and freeze the UI with no
+      // verdict and no error. Frames are reassembled before parsing, and
+      // the terminal guard below surfaces streams that die mid-run.
+      const sse = createSseParser();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value);
-        const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+        const events = sse.push(decoder.decode(value, { stream: true }));
 
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line.slice(6));
+        for (const event of events) {
+          const data = event as unknown as {
+            type: string;
+            phase?: SessionPhase;
+            trace?: TraceEvent[];
+            startup?: Startup;
+            questions?: unknown;
+            assumptions?: Assumption[];
+            evidence?: Evidence[];
+            experiment?: Experiment;
+            decision?: Decision;
+            stats?: {
+              tool_calls?: number;
+              evidence_count?: number;
+              verifier_approved?: boolean;
+              unsupported_claims?: number;
+            };
+            message?: unknown;
+          };
 
-            switch (data.type) {
+          switch (data.type) {
               case "phase":
-                setPhase(data.phase);
+                if (data.phase) setPhase(data.phase);
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "startup":
-                setStartup(data.startup);
+                setStartup(data.startup ?? null);
                 if (Array.isArray(data.questions)) setQuestions(data.questions.slice(0, 3));
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "assumptions":
-                setAssumptions(data.assumptions);
+                if (data.assumptions) setAssumptions(data.assumptions);
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "evidence":
               case "primary_evidence":
-                setEvidence((prev) => {
-                  const newIds = new Set(data.evidence.map((e: Evidence) => e.id));
-                  const filtered = prev.filter((e) => !newIds.has(e.id));
-                  return [...filtered, ...data.evidence];
-                });
+                if (data.evidence) {
+                  const incoming = data.evidence;
+                  setEvidence((prev) => {
+                    const newIds = new Set(incoming.map((e) => e.id));
+                    const filtered = prev.filter((e) => !newIds.has(e.id));
+                    return [...filtered, ...incoming];
+                  });
+                }
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "experiment":
-                setExperiment(data.experiment);
+                setExperiment(data.experiment ?? null);
                 if (data.trace) setTrace([...data.trace]);
                 break;
               case "done":
-                setStartup(data.startup);
-                setAssumptions(data.assumptions);
-                setEvidence(data.evidence);
-                setExperiment(data.experiment);
-                setDecision(data.decision);
-                setTrace(data.trace);
+                setStartup(data.startup ?? null);
+                if (data.assumptions) setAssumptions(data.assumptions);
+                if (data.evidence) setEvidence(data.evidence);
+                setExperiment(data.experiment ?? null);
+                setDecision(data.decision ?? null);
+                if (data.trace) setTrace(data.trace);
                 setStats(data.stats || {});
                 setPhase("done");
-                void persistStartupSnapshot({
-                  startup: data.startup,
-                  assumptions: data.assumptions ?? [],
-                  evidence: data.evidence ?? [],
-                  experiment: data.experiment ?? null,
-                  decision: data.decision ?? null,
-                });
+                if (data.startup) {
+                  const snapshotStartup = data.startup;
+                  void persistStartupSnapshot({
+                    startup: snapshotStartup,
+                    assumptions: data.assumptions ?? [],
+                    evidence: data.evidence ?? [],
+                    experiment: data.experiment ?? null,
+                    decision: data.decision ?? null,
+                  });
+                }
                 break;
               case "error":
-                setError(data.message);
+                setError(typeof data.message === "string" ? data.message : "Agent run failed");
                 setPhase("error");
                 if (data.trace) setTrace([...data.trace]);
                 break;
             }
-          } catch {}
+          }
         }
-      }
+        // Terminal guard: the stream ended with no `done`/`error` (platform
+        // kill, dropped connection, lost frames). Never freeze silently —
+        // surface it so the user can retry instead of staring at a dead UI.
+        if (!sse.hasTerminalEvent()) {
+          setError("The stream ended before a verdict arrived (connection lost or server timeout). Please try again.");
+          setPhase("error");
+        }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setError(String(err));
