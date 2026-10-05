@@ -30,6 +30,14 @@ export function getGroqKeys(env: Record<string, string | undefined> = process.en
   return single ? [single] : [];
 }
 
+/** Ordered Apollo API keys: APOLLO_API_KEYS (comma-separated) wins, else the legacy single APOLLO_API_KEY. */
+export function getApolloKeys(env: Record<string, string | undefined> = process.env): string[] {
+  const multi = parseKeyList(env.APOLLO_API_KEYS);
+  if (multi.length > 0) return multi;
+  const single = (env.APOLLO_API_KEY ?? "").trim();
+  return single ? [single] : [];
+}
+
 /** True when the error is a quota/rate-limit rejection worth rotating keys for. */
 export function isQuotaError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);

@@ -57,17 +57,22 @@ function industryFromDomain(domain: string): string | null {
   return null;
 }
 
+import { getApolloKeys } from "./provider-keys";
+
 // ── Main search function ───────────────────────────────────────────────────────
+// Multi-key pool (APOLLO_API_KEYS, else legacy APOLLO_API_KEY): rotates to the
+// next key on 429 rate-limit only. 401/403 are permanent (bad key or plan
+// denial) and fail fast without burning the rest of the pool.
 export async function searchLeads(params: {
   targetCustomer: string;
   domain: string;
   keywords?: string;
   limit?: number;
 }): Promise<ApolloSearchResult> {
-  const apiKey = process.env.APOLLO_API_KEY;
+  const apiKeys = getApolloKeys();
   const limit = Math.min(params.limit ?? 10, 20);
 
-  if (!apiKey) {
+  if (apiKeys.length === 0) {
     return { leads: [], total: 0, provider: "mock", error: "APOLLO_API_KEY not configured" };
   }
 
@@ -84,26 +89,32 @@ export async function searchLeads(params: {
     if (industry)          body.q_organization_keyword_tags = [industry];
     if (params.keywords)   body.q_keywords = params.keywords;
 
-    const res = await fetch("https://api.apollo.io/v1/mixed_people/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        "X-Api-Key": apiKey,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    });
+    for (let i = 0; i < apiKeys.length; i++) {
+      const apiKey = apiKeys[i];
+      const res = await fetch("https://api.apollo.io/v1/mixed_people/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+          "X-Api-Key": apiKey,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      return {
-        leads: [],
-        total: 0,
-        provider: "apollo",
-        error: "Apollo API error " + res.status + ": " + errText.slice(0, 200),
-      };
-    }
+      // 429 rotates only while another key remains; the last key's 429
+      // falls into the error return below (quota exhausted on every key).
+      if (res.status === 429 && i < apiKeys.length - 1) continue;
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        return {
+          leads: [],
+          total: 0,
+          provider: "apollo",
+          error: "Apollo API error " + res.status + ": " + errText.slice(0, 200),
+        };
+      }
 
     type ApolloPersonRaw = {
       id?: string;
@@ -141,6 +152,10 @@ export async function searchLeads(params: {
       total: data.pagination?.total_entries ?? leads.length,
       provider: "apollo",
     };
+    }
+    // Unreachable: the pool is non-empty (guarded above) and every iteration
+    // returns. Present only to satisfy the compiler's exhaustiveness check.
+    return { leads: [], total: 0, provider: "apollo", error: "Apollo search failed: no keys attempted" };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { leads: [], total: 0, provider: "apollo", error: "Apollo search failed: " + msg };

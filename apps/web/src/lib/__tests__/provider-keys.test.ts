@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { getGeminiKeys, getGroqKeys, isQuotaError } from "../provider-keys";
+import { getApolloKeys, getGeminiKeys, getGroqKeys, isQuotaError } from "../provider-keys";
 
 describe("getGeminiKeys", () => {
   test("parses comma-separated GEMINI_API_KEYS, trimming whitespace and empties", () => {
@@ -66,5 +66,19 @@ describe("isQuotaError", () => {
 
   test("503 capacity does NOT rotate (fail fast to Groq)", () => {
     expect(isQuotaError(new Error("[503] high demand"))).toBe(false);
+  });
+});
+
+describe("getApolloKeys", () => {
+  test("parses comma-separated APOLLO_API_KEYS, trimming whitespace and empties", () => {
+    expect(getApolloKeys({ APOLLO_API_KEYS: " a1 ,,a2 " })).toEqual(["a1", "a2"]);
+  });
+
+  test("falls back to the legacy single APOLLO_API_KEY", () => {
+    expect(getApolloKeys({ APOLLO_API_KEY: " solo " })).toEqual(["solo"]);
+  });
+
+  test("returns empty when nothing is configured", () => {
+    expect(getApolloKeys({})).toEqual([]);
   });
 });
