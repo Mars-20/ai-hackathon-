@@ -55,6 +55,10 @@ import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash-lite";
 const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash-lite";
+// Grounded search rides the free tier: Gemini 3.x grounding is paid-only,
+// while gemini-2.5-flash-lite carries 500 free grounded RPD on the same key
+// (Google pricing docs). Planner/verifier stay on cheap 3.5-flash-lite.
+const GROUNDING_MODEL = process.env.GEMINI_GROUNDING_MODEL ?? "gemini-2.5-flash-lite";
 const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "openai/gpt-oss-120b";
 
 // ── Task 3: runtime metering + per-phase budget + prompt delimiters + router/backoff ──
@@ -498,6 +502,7 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
         trace: trace ?? [],
         skillName: "market-research",
         enableGrounding: true,
+        geminiModel: GROUNDING_MODEL,
         groundingStatus,
         usageAcc,
       });
@@ -533,7 +538,7 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
     for (const tools of groundingToolVariants) {
       try {
         const model = gemini.getGenerativeModel({
-          model: PLANNER_MODEL,
+          model: GROUNDING_MODEL,
           tools: tools as never,
         });
 

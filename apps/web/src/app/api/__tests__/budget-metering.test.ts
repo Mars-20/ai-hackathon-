@@ -64,3 +64,29 @@ describe("task 3 wiring (static)", () => {
     expect(routeSrc).toMatch(/workspaceId/);
   });
 });
+
+describe("grounding model (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("dedicated grounding model with free-tier grounding, env-overridable", () => {
+    // Gemini 3.5 grounding is paid-only; gemini-2.5-flash-lite carries 500
+    // free grounded RPD on the same key (Google pricing docs). Grounded call
+    // sites must resolve to GROUNDING_MODEL, never the planner default.
+    expect(routeSrc).toMatch(/GEMINI_GROUNDING_MODEL/);
+    expect(routeSrc).toMatch(/gemini-2\.5-flash-lite/);
+  });
+
+  test("groundedSearch helper passes the grounding model to the shared caller", () => {
+    expect(routeSrc).toMatch(/enableGrounding:\s*true,[\s\S]*?geminiModel:\s*GROUNDING_MODEL/);
+  });
+
+  test("direct grounding tool variants use GROUNDING_MODEL, never PLANNER_MODEL", () => {
+    const start = routeSrc.indexOf("Direct grounding tool variants");
+    const end = routeSrc.indexOf("Groq fallback: no browsing capability");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = routeSrc.slice(start, end);
+    expect(block).toMatch(/model:\s*GROUNDING_MODEL/);
+    expect(block).not.toMatch(/model:\s*PLANNER_MODEL/);
+  });
+});
