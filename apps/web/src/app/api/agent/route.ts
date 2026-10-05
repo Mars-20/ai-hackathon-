@@ -57,10 +57,15 @@ import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash-lite";
 const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash-lite";
-// Grounded search rides the free tier: Gemini 3.x grounding is paid-only,
-// while gemini-2.5-flash-lite carries 500 free grounded RPD on the same key
-// (Google pricing docs). Planner/verifier stay on cheap 3.5-flash-lite.
-const GROUNDING_MODEL = process.env.GEMINI_GROUNDING_MODEL ?? "gemini-2.5-flash-lite";
+// Grounded search rides gemini-3.5-flash-lite: Google's recommended model for
+// new projects, with Search grounding support (verified in the Gemini docs
+// capability table). 2026-10-05: gemini-2.5-flash-lite 404s with "no longer
+// available to new users" on fresh keys (prod grounded_error proof), so the
+// 2.5 line is unusable here. Note: Search grounding needs the paid tier
+// (5,000 free searches/mo shared across Gemini 3.x); on a free-tier key the
+// grounded attempt fails and the helper falls back to ungrounded synthesis.
+// Planner/verifier share the same cheap 3.5-flash-lite default.
+const GROUNDING_MODEL = process.env.GEMINI_GROUNDING_MODEL ?? "gemini-3.5-flash-lite";
 // Per-request upstream timeouts (RC1 fix): one hung provider call must fail
 // fast into the Gemini→Groq→error failover chain instead of eating the 90s
 // run budget. Gemini grounded search is agentic (can legitimately run ~30s),
