@@ -421,16 +421,20 @@ export default async function AdminAnalyticsPage({
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Showing {experiments.length} of {experimentsTotal} ·{" "}
-        <a
-          href="/api/admin/analytics/experiments?format=csv&sort=name&order=asc"
-          download
-          className="text-brand-400 hover:text-brand-300"
-        >
-          Download full CSV
-        </a>
+        {experimentsTotal === 0 ? (
+          <span className="text-slate-600">No data to export yet</span>
+        ) : (
+          <a
+            href="/api/admin/analytics/experiments?format=csv&sort=name&order=asc"
+            download
+            className="text-brand-400 hover:text-brand-300"
+          >
+            Download full CSV
+          </a>
+        )}
       </p>
 
-      <ReportGenerator />
+      <ReportGenerator total={experimentsTotal} />
     </div>
   );
 }

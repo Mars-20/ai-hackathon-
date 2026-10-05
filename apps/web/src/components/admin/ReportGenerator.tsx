@@ -12,7 +12,7 @@ import { useState } from "react";
 const SORTS = ["name", "status", "sample_size"] as const;
 const ORDERS = ["asc", "desc"] as const;
 
-export default function ReportGenerator() {
+export default function ReportGenerator({ total }: { total?: number }) {
   const [sort, setSort] =
     useState<(typeof SORTS)[number]>("name");
   const [order, setOrder] =
@@ -21,6 +21,9 @@ export default function ReportGenerator() {
   const csvUrl =
     `/api/admin/analytics/experiments?format=csv` +
     `&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`;
+  // Empty export guard: a headers-only CSV looks like a broken download,
+  // so offer no download until at least one experiment exists.
+  const empty = total === 0;
 
   return (
     <div className="glass rounded-2xl p-5 border border-white/5">
@@ -64,13 +67,23 @@ export default function ReportGenerator() {
             ))}
           </select>
         </label>
-        <a
-          href={csvUrl}
-          download
-          className="inline-flex items-center justify-center text-sm px-4 py-2 rounded-xl bg-brand-500/20 text-brand-300 border border-brand-500/30 hover:bg-brand-500/30 transition-colors"
-        >
-          Download CSV
-        </a>
+        {empty ? (
+          <span
+            aria-disabled="true"
+            title="No experiments yet — nothing to export"
+            className="inline-flex items-center justify-center text-sm px-4 py-2 rounded-xl bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed"
+          >
+            Download CSV
+          </span>
+        ) : (
+          <a
+            href={csvUrl}
+            download
+            className="inline-flex items-center justify-center text-sm px-4 py-2 rounded-xl bg-brand-500/20 text-brand-300 border border-brand-500/30 hover:bg-brand-500/30 transition-colors"
+          >
+            Download CSV
+          </a>
+        )}
       </div>
     </div>
   );
