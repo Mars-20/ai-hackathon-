@@ -53,6 +53,13 @@ jobs:
     defaults:
       run:
         working-directory: apps/web
+    # Smoke tests run against a real server: middleware + API routes construct
+    # Supabase clients at request time and throw on missing env (500s). CI has
+    # no .env.local, so inject obviously-fake values: logged-out behavior
+    # (redirects to /login?next=, 401s) is identical with or without real keys.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci_dummy_anon_key_not_a_secret
     steps:
       - uses: actions/checkout@v4
 
@@ -79,9 +86,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+: the harness shells out to `node --experimental-strip-types`
+      # (eval/harness/assertions.mjs) to import apps/web/src/lib/utils.ts.
+      # That flag exists only on 22.6+ — node 20 fails every bridge call.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Golden-task eval (8/8)
         working-directory: ${{ github.workspace }}
