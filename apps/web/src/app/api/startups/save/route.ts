@@ -165,8 +165,9 @@ export async function POST(request: NextRequest) {
     }
   } else {
     if (existingStartup.is_frozen) {
+      const frozenCode = entitlementStatus === "paused" ? "ACCOUNT_PAUSED" : "TRIAL_CONSUMED";
       return NextResponse.json(
-        { error: "هذا المشروع مجمّد — اشترك للمتابعة", code: "FROZEN", plans_url: "/plans" },
+        { error: "هذا المشروع مجمّد — اشترك للمتابعة", code: frozenCode, plans_url: "/plans" },
         { status: 402 },
       );
     }
