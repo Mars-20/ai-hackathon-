@@ -152,9 +152,14 @@ function RunsChart({ trends }: { trends: TrendPoint[] }) {
         const y = height - pad - h;
         return (
           <g key={t.day}>
-            <title>
+            {/* NOTE: <desc>, not <title>. React 19 treats <title> as a
+                hoistable head resource even inside <svg>, so SSR streams
+                it as an empty element while Flight keeps the text — a
+                guaranteed hydration mismatch (React error #418). <desc>
+                carries the same accessible description with no hoisting. */}
+            <desc>
               {t.day}: {t.runs} runs, ${t.cost.toFixed(2)}
-            </title>
+            </desc>
             <rect
               x={x}
               y={y}
