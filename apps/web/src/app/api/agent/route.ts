@@ -5,6 +5,7 @@
 
 import { NextRequest } from "next/server";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import type { Tool } from "@google/generative-ai";
 import type {
   AgentInput,
   Assumption,
@@ -342,57 +343,48 @@ async function callAIWithFallback({
 
   // 1. Try Gemini primary
   if (geminiKey) {
-    // Grounding attempt (spec §6.1 + §12): google_search tool when requested.
-    // SDK variants differ (snake_case per docs vs camelCase in @google/generative-ai);
-    // wrapped in try/catch with fallback to non-grounded call below.
+    // Grounding attempt (spec §6.1 + §12): googleSearchRetrieval tool when
+    // requested. This is the ONLY shape the installed SDK (@google/
+    // generative-ai v0.24 `Tool` union) defines — the old google_search /
+    // googleSearch keys were silently ignored, so grounding never fired.
+    // No generationConfig here: search grounding is not combined with JSON
+    // response mode; the prompt constrains JSON and parseJsonSafely
+    // extracts it. Failure falls through to the non-grounded call below.
     if (enableGrounding) {
-      const groundingVariants: Array<{ tools: unknown }> = [
-        { tools: [{ google_search: {} }] },
-        { tools: [{ googleSearch: {} }] },
-      ];
-      for (const variant of groundingVariants) {
-        try {
-          const groundedModel = gemini.getGenerativeModel({
-            model: geminiModel,
-            ...(systemInstruction ? { systemInstruction } : {}),
-            tools: variant.tools as never,
-            generationConfig: responseSchema
-              ? {
-                  responseMimeType: "application/json",
-                  responseSchema: responseSchema as never,
-                }
-              : { responseMimeType: "application/json" },
-          });
-          const groundedResult = await withTimeout(
-            groundedModel.generateContent(fullPrompt),
-            GEMINI_CALL_TIMEOUT_MS,
-            `gemini:grounded:${skillName}`
-          );
-          pushUsage(groundedResult.response);
-          const groundedText = groundedResult.response.text();
-          if (groundedText && groundedText.trim().length > 0) {
-            // Grounding proof: only tool-returned groundingMetadata counts.
-            // Text with URLs but no groundingMetadata is ungrounded (fallback path).
-            if (groundingStatus) {
-              const rAny = groundedResult.response as unknown as {
-                candidates?: Array<{
-                  groundingMetadata?: { webSearchQueries?: unknown[]; groundingSupports?: unknown[] };
-                }>;
+      try {
+        const groundedModel = gemini.getGenerativeModel({
+          model: geminiModel,
+          ...(systemInstruction ? { systemInstruction } : {}),
+          tools: [{ googleSearchRetrieval: {} }],
+        });
+        const groundedResult = await withTimeout(
+          groundedModel.generateContent(fullPrompt),
+          GEMINI_CALL_TIMEOUT_MS,
+          `gemini:grounded:${skillName}`
+        );
+        pushUsage(groundedResult.response);
+        const groundedText = groundedResult.response.text();
+        if (groundedText && groundedText.trim().length > 0) {
+          // Grounding proof: only tool-returned groundingMetadata counts.
+          // Text with URLs but no groundingMetadata is ungrounded (fallback path).
+          if (groundingStatus) {
+            const rAny = groundedResult.response as unknown as {
+              candidates?: Array<{
                 groundingMetadata?: { webSearchQueries?: unknown[]; groundingSupports?: unknown[] };
-              };
-              const gm =
-                rAny?.candidates?.[0]?.groundingMetadata ?? rAny?.groundingMetadata;
-              groundingStatus.grounded = !!(
-                (gm?.webSearchQueries?.length || 0) > 0 ||
-                (gm?.groundingSupports?.length || 0) > 0
-              );
-            }
-            return groundedText;
+              }>;
+              groundingMetadata?: { webSearchQueries?: unknown[]; groundingSupports?: unknown[] };
+            };
+            const gm =
+              rAny?.candidates?.[0]?.groundingMetadata ?? rAny?.groundingMetadata;
+            groundingStatus.grounded = !!(
+              (gm?.webSearchQueries?.length || 0) > 0 ||
+              (gm?.groundingSupports?.length || 0) > 0
+            );
           }
-          break;
-        } catch {
-          continue;
+          return groundedText;
         }
+      } catch {
+        // Fall through to the non-grounded call below.
       }
     }
     try {
@@ -547,17 +539,15 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
     } catch {
       // Fall through to the direct grounding tool variants below.
     }
-    // Direct grounding tool variants (fallback when the helper's
-    // grounded call yields no validated URLs).
-    // Try snake_case google_search (per spec §6.1 docs) first, then camelCase
-    // googleSearch (current @google/generative-ai SDK shape); each wrapped in
-    // try/catch with fallback so an unsupported key never breaks the call.
-    const groundingToolVariants: Array<unknown> = [[{ google_search: {} }], [{ googleSearch: {} }]];
+    // Direct grounding attempt (fallback when the helper's grounded call
+    // yields no validated URLs). SDK-typed googleSearchRetrieval shape —
+    // the compiler enforces the Tool union, no casts.
+    const groundingToolVariants: Array<Tool[]> = [[{ googleSearchRetrieval: {} }]];
     for (const tools of groundingToolVariants) {
       try {
         const model = gemini.getGenerativeModel({
           model: GROUNDING_MODEL,
-          tools: tools as never,
+          tools,
         });
 
         const prompt = `Search for factual, current information about: "${query}"${domainHint ? ` in the context of ${domainHint}` : ""}.

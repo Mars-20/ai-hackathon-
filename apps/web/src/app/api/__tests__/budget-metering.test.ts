@@ -65,6 +65,33 @@ describe("task 3 wiring (static)", () => {
   });
 });
 
+describe("grounding tool shape (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("grounding uses the SDK-typed googleSearchRetrieval tool", () => {
+    // RC (prod 2026-10-05): google_search/googleSearch keys are not in the
+    // installed SDK's Tool union — the API ignored them and grounding never
+    // fired (permanent gemini-ungrounded, URLs stripped).
+    expect(routeSrc).toMatch(/googleSearchRetrieval/);
+    expect(routeSrc).not.toMatch(/google_search:\s*\{\}/);
+    expect(routeSrc).not.toMatch(/[^a-zA-Z]googleSearch:\s*\{\}/);
+  });
+
+  test("no as-never casts hide tool shapes from the compiler", () => {
+    expect(routeSrc).not.toMatch(/tools as never/);
+  });
+
+  test("grounded helper attempt omits JSON response config", () => {
+    // Search grounding is not combined with responseMimeType JSON mode;
+    // the prompt constrains JSON and parseJsonSafely extracts it.
+    const start = routeSrc.indexOf("Grounding attempt (spec");
+    const end = routeSrc.indexOf("groundedModel.generateContent");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(routeSrc.slice(start, end)).not.toMatch(/responseMimeType/);
+  });
+});
+
 describe("per-request upstream timeouts (static)", () => {
   const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
 
@@ -97,7 +124,7 @@ describe("grounding model (static)", () => {
   });
 
   test("direct grounding tool variants use GROUNDING_MODEL, never PLANNER_MODEL", () => {
-    const start = routeSrc.indexOf("Direct grounding tool variants");
+    const start = routeSrc.indexOf("groundingToolVariants");
     const end = routeSrc.indexOf("Groq fallback: no browsing capability");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
