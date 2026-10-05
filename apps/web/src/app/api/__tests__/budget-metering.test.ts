@@ -120,6 +120,23 @@ describe("per-request upstream timeouts (static)", () => {
   });
 });
 
+describe("gemini key rotation (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("generateContent calls route through a quota-rotation executor", () => {
+    // 429/quota must try the next key; every other error fails fast.
+    expect(routeSrc).toMatch(/withGeminiKeyRotation/);
+    expect(routeSrc).toMatch(/isQuotaError/);
+    expect(routeSrc).toMatch(/getGeminiKeys/);
+  });
+
+  test("no direct module-client generateContent bypasses rotation", () => {
+    // The legacy single module-level client must be gone; all Gemini
+    // traffic goes through per-key clients inside the executor.
+    expect(routeSrc).not.toMatch(/const gemini = new GoogleGenerativeAI/);
+  });
+});
+
 describe("grounding model (static)", () => {
   const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
 

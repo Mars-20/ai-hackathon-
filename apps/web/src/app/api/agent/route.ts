@@ -44,6 +44,7 @@ import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
+import { getGeminiKeys, isQuotaError } from "@/lib/gemini-keys";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -54,7 +55,9 @@ import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
 // (proven 200 in our own Groq logs; all llama-* IDs 404 — retired/removed).
 // Env overrides (GEMINI_PLANNER_MODEL / GEMINI_VERIFIER_MODEL /
 // GROQ_ROUTER_MODEL) win without a code change.
-const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+// Quota resilience: GEMINI_API_KEYS (comma-separated) registers a key pool;
+// the executor below rotates to the next key on 429/quota errors. A single
+// GEMINI_API_KEY keeps working exactly as before (pool of one).
 const PLANNER_MODEL = process.env.GEMINI_PLANNER_MODEL ?? "gemini-3.5-flash-lite";
 const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash-lite";
 // Grounded search rides gemini-3.5-flash-lite: Google's recommended model for
@@ -306,6 +309,34 @@ function parseJsonSafely<T>(text: string, defaultValue: T): T {
   }
 }
 
+// ── Gemini executor with multi-key rotation on quota errors ─────────────────
+// Runs `run` against per-key clients in order. Quota/429 errors advance to
+// the next key (each key carries its own quota); every other error throws
+// immediately so 404s/400s/503s keep today's fail-fast-to-Groq behavior.
+// Single-key setups behave exactly as before (one attempt, same error path).
+// The politeness pause between keys is bounded (≤8s) so rotation cannot eat
+// the 90s run budget; per-attempt withTimeout still bounds each call.
+async function withGeminiKeyRotation<T>(
+  run: (client: GoogleGenerativeAI) => Promise<T>,
+  skillName: string
+): Promise<T> {
+  const keys = getGeminiKeys();
+  let lastErr: unknown = new Error("No Gemini keys configured");
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      return await run(new GoogleGenerativeAI(keys[i]));
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaError(err) || i === keys.length - 1) throw err;
+      console.warn(
+        `[Gemini key rotation for ${skillName}]: key ${i + 1}/${keys.length} hit quota, trying next`
+      );
+      await new Promise((r) => setTimeout(r, Math.min(2000 * (i + 1), 8000)));
+    }
+  }
+  throw lastErr;
+}
+
 // ── Multi-Provider AI Engine with Seamless Fallback (Section 6.3) ─────────────
 async function callAIWithFallback({
   prompt,
@@ -328,7 +359,7 @@ async function callAIWithFallback({
   groundingStatus?: { grounded: boolean; error?: string };
   usageAcc?: AiUsage[];
 }): Promise<string> {
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const geminiKeys = getGeminiKeys();
   const groqKey = process.env.GROQ_API_KEY?.trim();
   // Split system/user prompts: instructions travel as systemInstruction (or
   // the system role on Groq), never concatenated into the user content where
@@ -347,7 +378,7 @@ async function callAIWithFallback({
   };
 
   // 1. Try Gemini primary
-  if (geminiKey) {
+  if (geminiKeys.length > 0) {
     // Grounding attempt (spec §6.1 + §12): googleSearchRetrieval tool when
     // requested. This is the ONLY shape the installed SDK (@google/
     // generative-ai v0.24 `Tool` union) defines — the old google_search /
@@ -357,15 +388,20 @@ async function callAIWithFallback({
     // extracts it. Failure falls through to the non-grounded call below.
     if (enableGrounding) {
       try {
-        const groundedModel = gemini.getGenerativeModel({
-          model: geminiModel,
-          ...(systemInstruction ? { systemInstruction } : {}),
-          tools: [{ googleSearchRetrieval: {} }],
-        });
-        const groundedResult = await withTimeout(
-          groundedModel.generateContent(fullPrompt),
-          GEMINI_CALL_TIMEOUT_MS,
-          `gemini:grounded:${skillName}`
+        const groundedResult = await withGeminiKeyRotation(
+          (client) => {
+            const groundedModel = client.getGenerativeModel({
+              model: geminiModel,
+              ...(systemInstruction ? { systemInstruction } : {}),
+              tools: [{ googleSearchRetrieval: {} }],
+            });
+            return withTimeout(
+              groundedModel.generateContent(fullPrompt),
+              GEMINI_CALL_TIMEOUT_MS,
+              `gemini:grounded:${skillName}`
+            );
+          },
+          skillName
         );
         pushUsage(groundedResult.response);
         const groundedText = groundedResult.response.text();
@@ -398,20 +434,28 @@ async function callAIWithFallback({
     }
     }
     try {
-      const model = gemini.getGenerativeModel({
-        model: geminiModel,
-        ...(systemInstruction ? { systemInstruction } : {}),
-        generationConfig: responseSchema
-          ? {
-              responseMimeType: "application/json",
-              responseSchema: responseSchema as never,
-            }
-          : { responseMimeType: "application/json" },
-      });
-      const result = await withTimeout(
-        model.generateContent(fullPrompt),
-        GEMINI_CALL_TIMEOUT_MS,
-        `gemini:${skillName}`
+      // Model construction AND the network call both live inside the
+      // closure: construction is local (never throws quota), so rotation
+      // must wrap generateContent where 429s actually surface.
+      const result = await withGeminiKeyRotation(
+        (client) => {
+          const model = client.getGenerativeModel({
+            model: geminiModel,
+            ...(systemInstruction ? { systemInstruction } : {}),
+            generationConfig: responseSchema
+              ? {
+                  responseMimeType: "application/json",
+                  responseSchema: responseSchema as never,
+                }
+              : { responseMimeType: "application/json" },
+          });
+          return withTimeout(
+            model.generateContent(fullPrompt),
+            GEMINI_CALL_TIMEOUT_MS,
+            `gemini:${skillName}`
+          );
+        },
+        skillName
       );
       pushUsage(result.response);
       const text = result.response.text();
@@ -501,13 +545,13 @@ async function groundedSearch(
   provider: "gemini" | "gemini-ungrounded" | "groq" | "none";
   grounded_error?: string;
 }> {
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const geminiKeys = getGeminiKeys();
   const groqKey = process.env.GROQ_API_KEY?.trim();
 
   // Try Gemini Google Search Grounding first via the shared helper with
   // grounding opted in (spec §6.1 google_search tool attempt). Wrapped in
   // try/catch with fallback to the direct tool variants below.
-  if (geminiKey) {
+  if (geminiKeys.length > 0) {
     // groundingStatus defaults to ungrounded; only true groundingMetadata flips it.
     // groundingStatus.error carries the helper's grounded-attempt failure, if any.
     // Declared here so both the helper attempt and the direct variants below can report.
@@ -565,11 +609,6 @@ Only include claims you can attribute to a specific source. Return 3-6 results. 
     let directError: string | undefined;
     for (const tools of groundingToolVariants) {
       try {
-        const model = gemini.getGenerativeModel({
-          model: GROUNDING_MODEL,
-          tools,
-        });
-
         const prompt = `Search for factual, current information about: "${query}"${domainHint ? ` in the context of ${domainHint}` : ""}.
 
 Return a JSON object with key "results" containing an array of objects, each with:
@@ -579,10 +618,19 @@ Return a JSON object with key "results" containing an array of objects, each wit
 
 Only include claims you can attribute to a specific source. Return 3-6 results. Respond ONLY with valid JSON.`;
 
-        const result = await withTimeout(
-          model.generateContent(prompt),
-          GEMINI_CALL_TIMEOUT_MS,
-          "gemini:grounded-direct:market-research"
+        const result = await withGeminiKeyRotation(
+          (client) => {
+            const model = client.getGenerativeModel({
+              model: GROUNDING_MODEL,
+              tools,
+            });
+            return withTimeout(
+              model.generateContent(prompt),
+              GEMINI_CALL_TIMEOUT_MS,
+              "gemini:grounded-direct:market-research"
+            );
+          },
+          "market-research"
         );
         {
           const um = (result.response as unknown as { usageMetadata?: AiUsage })?.usageMetadata;
