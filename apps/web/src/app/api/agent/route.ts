@@ -47,6 +47,10 @@ import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
 import { getGeminiKeys, getGroqKeys, isQuotaError } from "@/lib/provider-keys";
 import { matchClaimsToSources, searchExa } from "@/lib/exa-search";
+import { resolveAgentGate } from "@/lib/entitlements";
+import type { EntitlementStatus } from "@/lib/entitlements";
+import { evaluateTrialStart } from "@/lib/trial-claims";
+import type { ClaimsDb } from "@/lib/trial-claims";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -1749,22 +1753,40 @@ export async function POST(req: NextRequest) {
   // Peeked first so the rate-limit key can prefer user_id, else workspace_id,
   // else ip+route (never trust body.user_id for identity — only for bucketing).
   let peekWorkspaceId = "";
+  let peekFp = { ua: "", screen: "", tz: "", lang: "" };
   try {
-    const peeked = (await req.clone().json()) as { workspace_id?: unknown };
+    const peeked = (await req.clone().json()) as { workspace_id?: unknown; fp?: unknown };
     if (typeof peeked.workspace_id === "string") peekWorkspaceId = peeked.workspace_id;
+    // Optional device fingerprint for trial-abuse detection. Shape-validated
+    // per field; missing/malformed → defaults (hashed, NEVER blocks).
+    if (peeked.fp && typeof peeked.fp === "object" && !Array.isArray(peeked.fp)) {
+      const rawFp = peeked.fp as Record<string, unknown>;
+      peekFp = {
+        ua: typeof rawFp.ua === "string" ? rawFp.ua : "",
+        screen: typeof rawFp.screen === "string" ? rawFp.screen : "",
+        tz: typeof rawFp.tz === "string" ? rawFp.tz : "",
+        lang: typeof rawFp.lang === "string" ? rawFp.lang : "",
+      };
+    }
   } catch {
     peekWorkspaceId = "";
   }
   // ── Pre-flight: distributed rate limit (fail-closed) ───────────────────
   // Key = authenticated user when known, else workspace, else ip+route.
   let rateUserId = "";
+  let rateUserEmail = "";
+  let rateUserEmailConfirmedAt: string | null = null;
   try {
     const { createServerSupabaseClient } = await import("@/lib/supabase/server");
     const supabase = await createServerSupabaseClient();
     const { data } = await supabase.auth.getUser();
     rateUserId = data.user?.id ?? "";
+    rateUserEmail = data.user?.email ?? "";
+    rateUserEmailConfirmedAt = data.user?.email_confirmed_at ?? null;
   } catch {
     rateUserId = "";
+    rateUserEmail = "";
+    rateUserEmailConfirmedAt = null;
   }
   // getClientIp documents the trusted-proxy caveat (Task 9 infra follow-up);
   // the authenticated user key takes precedence wherever available.
@@ -1835,6 +1857,149 @@ export async function POST(req: NextRequest) {
         headers: { "Content-Type": "application/json", "Retry-After": "60" },
       }
     );
+  }
+
+  // ── Pre-flight: trial/paywall entitlement gate (402) ───────────────────
+  // Runs BEFORE the SSE stream: every denial returns JSON, never SSE.
+  if (!rateUserId) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized", code: "UNAUTHENTICATED" }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  // trial_claims + user_entitlements are service-role only (no RLS read
+  // policies), so all gate reads go through the service-role client.
+  const { createServiceRoleClient: createGateAdmin } = await import("@/lib/supabase/server");
+  let gateAdmin: ReturnType<typeof createGateAdmin>;
+  let entitlementStatus = "legacy";
+  try {
+    gateAdmin = createGateAdmin();
+    const { data: entitlement, error: entitlementError } = await gateAdmin
+      .from("user_entitlements")
+      .select("status, plan")
+      .eq("user_id", rateUserId)
+      .maybeSingle();
+    if (entitlementError) throw entitlementError;
+    if (!entitlement) {
+      // Pre-migration user — cannot happen post-0010, defensive only.
+      console.warn("[agent] missing user_entitlements row, treating as legacy", { user_id: rateUserId });
+      entitlementStatus = "legacy";
+    } else {
+      entitlementStatus = typeof entitlement.status === "string" ? entitlement.status : "legacy";
+    }
+  } catch {
+    // Fail-closed: unreadable entitlement → reject, never bypass the paywall.
+    return new Response(
+      JSON.stringify({ error: "Entitlement check unavailable. Try again shortly.", retryAfter: 60 }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "60" },
+      }
+    );
+  }
+  const agentGate = resolveAgentGate(entitlementStatus as EntitlementStatus);
+  if (!agentGate.allowed) {
+    const gateMessages: Record<string, string> = {
+      TRIAL_CONSUMED: "انتهت تجربتك المجانية — اشترك لمواصلة العمل",
+      SUBSCRIPTION_REQUIRED: "هذا الإجراء يتطلب اشتراكًا",
+      ACCOUNT_PAUSED: "حسابك موقوف مؤقتًا — راجع الإدارة",
+    };
+    return new Response(
+      JSON.stringify({
+        error: gateMessages[agentGate.code] ?? gateMessages.SUBSCRIPTION_REQUIRED,
+        code: agentGate.code,
+        plans_url: "/plans",
+      }),
+      { status: 402, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  if (entitlementStatus === "trial_active") {
+    const claimsDb: ClaimsDb = {
+      countRecentClaims: async (ipTrunc: string, sinceIso: string) => {
+        const { count, error } = await gateAdmin
+          .from("trial_claims")
+          .select("user_id", { count: "exact", head: true })
+          .eq("ip_trunc", ipTrunc)
+          .gte("created_at", sinceIso);
+        if (error) throw error;
+        return count ?? 0;
+      },
+      findConsumedByFp: async (fpHash: string, excludeUserId: string) => {
+        // fp already claimed a CONSUMED trial: same fingerprint on another
+        // user's row whose entitlement is trial_consumed.
+        const { data: rows, error } = await gateAdmin
+          .from("trial_claims")
+          .select("user_id")
+          .eq("fp_hash", fpHash)
+          .neq("user_id", excludeUserId)
+          .limit(25);
+        if (error) throw error;
+        if (!rows || rows.length === 0) return false;
+        const ids = rows.map((r) => r.user_id);
+        const { data: consumed, error: consumedError } = await gateAdmin
+          .from("user_entitlements")
+          .select("user_id")
+          .in("user_id", ids)
+          .eq("status", "trial_consumed")
+          .limit(1);
+        if (consumedError) throw consumedError;
+        return (consumed?.length ?? 0) > 0;
+      },
+      insertClaim: async (row) => {
+        const { error } = await gateAdmin.from("trial_claims").insert({
+          user_id: row.user_id,
+          ip_trunc: row.ip_trunc,
+          fp_hash: row.fp_hash,
+          email_domain: row.email_domain,
+          is_temp_mail: row.is_temp_mail,
+          suspected_duplicate: row.suspected_duplicate,
+        });
+        if (error) throw error;
+      },
+    };
+    let trialEval;
+    try {
+      trialEval = await evaluateTrialStart({
+        userId: rateUserId,
+        email: rateUserEmail,
+        emailConfirmedAt: rateUserEmailConfirmedAt,
+        ip: rateIp,
+        fpSignals: peekFp,
+        db: claimsDb,
+      });
+    } catch {
+      // Fail-closed: unreadable abuse ledger → reject, never bypass.
+      return new Response(
+        JSON.stringify({ error: "Trial eligibility check unavailable. Try again shortly.", retryAfter: 60 }),
+        {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "60" },
+        }
+      );
+    }
+    if (!trialEval.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: trialEval.reason ?? "Trial not allowed",
+          code: trialEval.code,
+          plans_url: "/plans",
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    try {
+      await claimsDb.insertClaim({
+        user_id: rateUserId,
+        ip_trunc: trialEval.claim.ip_trunc,
+        fp_hash: trialEval.claim.fp_hash,
+        email_domain: trialEval.claim.email_domain,
+        is_temp_mail: trialEval.claim.is_temp_mail,
+        suspected_duplicate: trialEval.claim.suspected_duplicate,
+      });
+    } catch (claimErr) {
+      // Ledger failure must not block a legit trial — warn and continue.
+      console.warn("[agent] trial_claims insert failed, continuing", claimErr);
+    }
   }
 
   const encoder = new TextEncoder();
@@ -2074,6 +2239,27 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
             sample_size: decision.sample_size ?? null,
             next_experiment: decision.next_experiment ?? null,
           });
+          // ── Trial consumption (best-effort; run already delivered value) ──
+          // Service-role client: RLS denies user-client writes here. Awaited.
+          // 'already_consumed' → trace notice (generous edge, memo stands).
+          // Error → persist_warning trace — NEVER fail the stream for this.
+          if (ownerId) {
+            try {
+              const { createServiceRoleClient } = await import("@/lib/supabase/server");
+              const consumeAdmin = createServiceRoleClient();
+              const { data: consumeResult, error: consumeError } = await consumeAdmin.rpc(
+                "consume_trial",
+                { p_user_id: ownerId, p_startup_id: startup.id }
+              );
+              if (consumeError) throw consumeError;
+              if (consumeResult === "already_consumed") {
+                trace.push(makeTrace("executor", "tool_result", { trial: "already_consumed" }));
+              }
+            } catch (consumeErr) {
+              const msg = consumeErr instanceof Error ? consumeErr.message : String(consumeErr);
+              trace.push(makeTrace("executor", "error", { persist_warning: `consume_trial failed: ${msg}` }));
+            }
+          }
           try {
             await supabase.from("experiments").insert({
               id: experiment.id, startup_id: startup.id, workspace_id: workspaceId || null,
