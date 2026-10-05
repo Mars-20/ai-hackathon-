@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -51,6 +51,22 @@ export default function DashboardPage() {
   // Trial paywall (Task 7): consumed/paused accounts get this modal (NOT a
   // redirect) when they click "New validation".
   const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const paywallCloseRef = useRef<HTMLButtonElement>(null);
+
+  // Trial paywall (Task 7 R1): dialog semantics — autofocus close on open,
+  // ESC-to-close, return focus to the trigger on close.
+  useEffect(() => {
+    if (!showPaywallModal) return;
+    paywallCloseRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPaywallModal(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.getElementById("new-startup-btn")?.focus();
+    };
+  }, [showPaywallModal]);
 
 
 
@@ -556,8 +572,8 @@ export default function DashboardPage() {
       {/* ── TRIAL PAYWALL MODAL (Task 7) ─────────────────────────────────── */}
       {showPaywallModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
-          <div dir="rtl" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
-            <h3 className="font-bold text-slate-200 text-lg mb-2">انتهت تجربتك المجانية</h3>
+          <div dir="rtl" role="dialog" aria-modal="true" aria-labelledby="paywall-modal-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
+            <h3 id="paywall-modal-title" className="font-bold text-slate-200 text-lg mb-2">انتهت تجربتك المجانية</h3>
             <p className="text-slate-400 text-sm mb-6">
               استخدمت مشروعك التجريبي المجاني — جميع مشاريعك ونتائجك محفوظة ويمكنك الاطلاع عليها في أي وقت. اشترك لبدء مشروع جديد.
             </p>
@@ -570,6 +586,7 @@ export default function DashboardPage() {
                 عرض خطط الاشتراك
               </Link>
               <button
+                ref={paywallCloseRef}
                 onClick={() => setShowPaywallModal(false)}
                 aria-label="إغلاق النافذة"
                 className="flex-1 glass py-3 rounded-xl text-sm text-slate-400 hover:text-slate-200 transition-all"

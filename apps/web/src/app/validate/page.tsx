@@ -560,14 +560,20 @@ function ValidateDashboard() {
 
   // Trial paywall (Task 7): entitlement is fetched FRESH on each navigation
   // (no cross-navigation caching). Consumed/paused accounts — or a loaded
-  // startup whose id is frozen — lock the run composer. Fail-open: when the
-  // endpoint is unreachable the composer stays usable.
+  // startup whose id is frozen — lock the run composer. Fail-open for reads:
+  // on fetch failure reset to unfrozen (banner hidden, run enabled); the
+  // SERVER remains the enforcement authority on submit.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/entitlements/me", { cache: "no-store" });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          if (!cancelled) setPaywallFrozen(false);
+          console.warn("[paywall] entitlement fetch failed:", res.status);
+          return;
+        }
         const ent = (await res.json()) as {
           status?: string;
           frozen_startup_ids?: string[];
@@ -585,8 +591,11 @@ function ValidateDashboard() {
         } else {
           setPaywallFrozen(false);
         }
-      } catch {
-        /* fail-open — composer stays usable */
+      } catch (err) {
+        // Fail-open for reads: clear any stale frozen lock; the SERVER still
+        // enforces on submit.
+        if (!cancelled) setPaywallFrozen(false);
+        console.warn("[paywall] entitlement fetch error:", err);
       }
     })();
     return () => {
