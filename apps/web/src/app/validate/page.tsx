@@ -504,6 +504,9 @@ function ValidateDashboard() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Trial paywall (Task 7): locks the run composer when the loaded startup
+  // is frozen or the account is consumed/paused. Reads stay untouched.
+  const [paywallFrozen, setPaywallFrozen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"results" | "trace">("results");
   const [stats, setStats] = useState<{
@@ -554,6 +557,42 @@ function ValidateDashboard() {
       cancelled = true;
     };
   }, [startupIdParam]);
+
+  // Trial paywall (Task 7): entitlement is fetched FRESH on each navigation
+  // (no cross-navigation caching). Consumed/paused accounts — or a loaded
+  // startup whose id is frozen — lock the run composer. Fail-open: when the
+  // endpoint is unreachable the composer stays usable.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/entitlements/me", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const ent = (await res.json()) as {
+          status?: string;
+          frozen_startup_ids?: string[];
+        };
+        if (cancelled) return;
+        const loadedId = startup?.id ?? (startupIdParam || null);
+        if (ent.status === "trial_consumed" || ent.status === "paused") {
+          setPaywallFrozen(true);
+        } else if (
+          loadedId &&
+          Array.isArray(ent.frozen_startup_ids) &&
+          ent.frozen_startup_ids.includes(loadedId)
+        ) {
+          setPaywallFrozen(true);
+        } else {
+          setPaywallFrozen(false);
+        }
+      } catch {
+        /* fail-open — composer stays usable */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [startup?.id, startupIdParam]);
 
   const persistStartupSnapshot = useCallback(
     async (snapshot: {
@@ -856,9 +895,25 @@ function ValidateDashboard() {
             </p>
           </div>
 
+          {/* Trial paywall (Task 7): frozen banner — reads untouched, run locked. */}
+          {paywallFrozen && (
+            <div dir="rtl" className="glass rounded-xl p-4 border border-brand-500/30">
+              <p className="text-sm text-slate-200 mb-3">
+                انتهت تجربتك المجانية — مشروعك محفوظ كاملًا
+              </p>
+              <Link
+                href="/plans"
+                id="paywall-cta"
+                className="btn-glow text-white text-sm font-bold px-4 py-2 rounded-xl inline-flex items-center justify-center w-full"
+              >
+                عرض خطط الاشتراك
+              </Link>
+            </div>
+          )}
+
           <button
             onClick={isLoading ? handleStop : runAgent}
-            disabled={!idea.trim() && !isLoading}
+            disabled={(!idea.trim() && !isLoading) || (paywallFrozen && !isLoading)}
             id="run-agent-btn"
             className={cn(
               "w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all",
