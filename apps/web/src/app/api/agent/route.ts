@@ -41,6 +41,7 @@ import {
 } from "@/lib/cost";
 import type { CostKind } from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
+import { searchSnovLeads } from "@/lib/snov";
 import type { ApolloLead } from "@/lib/apollo";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
@@ -1118,7 +1119,7 @@ async function runMarketResearchSkill(
   return allResults;
 }
 
-// ── Lead Finder (skill: lead-finder, powered by Apollo.io REST) ─────────────
+// ── Lead Finder (skill: lead-finder, Apollo.io REST with Snov.io fallback) ───
 // NOTE: .agents/mcp_config.json (apollo-io MCP) is IDE-only for the coding
 // agent — the Next.js runtime uses direct REST via APOLLO_API_KEY
 // (apps/web/.env.local + Vercel env). Returns full result so the caller can
@@ -1142,6 +1143,47 @@ async function runLeadFinderSkill(
     keywords: startup.name,
     limit: 10,
   });
+
+  // Snov.io fallback: Apollo Free plans are denied at 403 API_INACCESSIBLE.
+  // Snov Database Search is free; only capped email reveals cost credits.
+  if (result.error) {
+    trace.push(
+      makeTrace("skill:lead-finder", "error", {
+        error: result.error,
+        provider: result.provider,
+        fallback: "snov",
+      })
+    );
+    const snov = await searchSnovLeads({
+      targetCustomer: startup.target_customer || startup.domain,
+      domain: startup.domain,
+      limit: 10,
+    });
+    if (!snov.error && snov.leads.length > 0) {
+      const latency = Date.now() - t0;
+      trace.push(
+        makeTrace(
+          "skill:lead-finder",
+          "tool_result",
+          {
+            leads_found: snov.leads.length,
+            total_available: snov.total,
+            provider: snov.provider,
+            fallback_from: result.provider,
+          },
+          { latency_ms: latency }
+        )
+      );
+      return { leads: snov.leads, provider: snov.provider, total: snov.total };
+    }
+    trace.push(
+      makeTrace("skill:lead-finder", "error", {
+        error: snov.error ?? "Snov fallback returned no leads",
+        provider: snov.provider,
+      })
+    );
+    return { leads: [], error: snov.error ?? result.error, provider: snov.provider, total: snov.total };
+  }
 
   const latency = Date.now() - t0;
 
