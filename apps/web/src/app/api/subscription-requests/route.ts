@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ── GET: list own requests ──────────────────────────────────────────────────
-export async function GET(_request?: NextRequest) {
+export async function GET() {
   const supabase = await createServerSupabaseClient();
 
   const {

@@ -242,7 +242,7 @@ describe("POST /api/subscription-requests (Task 6)", () => {
 describe("GET /api/subscription-requests (Task 6)", () => {
   test("401 anon", async () => {
     mockClients({ user: null });
-    const res = await subreqGET(new NextRequest("http://x/api/subscription-requests"));
+    const res = await subreqGET();
     expect(res.status).toBe(401);
   });
 
@@ -256,7 +256,7 @@ describe("GET /api/subscription-requests (Task 6)", () => {
         },
       },
     });
-    const res = await subreqGET(new NextRequest("http://x/api/subscription-requests"));
+    const res = await subreqGET();
     expect(res.status).toBe(200);
     const body = (await res.json()) as { requests: unknown[] };
     expect(body.requests).toHaveLength(1);
@@ -266,7 +266,7 @@ describe("GET /api/subscription-requests (Task 6)", () => {
 describe("GET /api/entitlements/me (Task 6)", () => {
   test("401 anon", async () => {
     mockClients({ user: null });
-    const res = await entitlementsGET(new NextRequest("http://x/api/entitlements/me"));
+    const res = await entitlementsGET();
     expect(res.status).toBe(401);
   });
 
@@ -284,7 +284,7 @@ describe("GET /api/entitlements/me (Task 6)", () => {
         },
       },
     });
-    const res = await entitlementsGET(new NextRequest("http://x/api/entitlements/me"));
+    const res = await entitlementsGET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: "trial_consumed",
@@ -302,7 +302,7 @@ describe("GET /api/entitlements/me (Task 6)", () => {
         startups: { data: [], error: null },
       },
     });
-    const res = await entitlementsGET(new NextRequest("http://x/api/entitlements/me"));
+    const res = await entitlementsGET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: "legacy",
