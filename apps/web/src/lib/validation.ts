@@ -66,6 +66,24 @@ export const isoDateStringSchema = z
   .optional()
   .default("");
 
+// Task 6: subscription request + device-fingerprint signals (additive).
+// subscriptionRequestSchema is consumed by POST /api/subscription-requests;
+// fpSignalsSchema carries Task 4 trial-abuse signals (never blocks, additive).
+export const subscriptionRequestSchema = z.object({
+  plan: z.enum(["pro", "team"]),
+  full_name: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(6).max(32),
+  company: z.string().trim().max(160).optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+export const fpSignalsSchema = z.object({
+  ua: z.string().max(500).default(""),
+  screen: z.string().max(100).default(""),
+  tz: z.string().max(100).default(""),
+  lang: z.string().max(50).default(""),
+});
+
 export const historyQuerySchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   verdicts: z.array(historyVerdictSchema).optional().default([]),
