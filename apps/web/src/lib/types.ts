@@ -243,6 +243,7 @@ export type SessionPhase =
   | "mapping"
   | "research"
   | "experiment"
+  | "leads"
   | "evidence"
   | "verifying"
   | "memo"

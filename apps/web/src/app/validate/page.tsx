@@ -59,6 +59,7 @@ function PhaseIndicator({ phase }: { phase: SessionPhase }) {
     { id: "mapping", label: "Mapping", icon: <Target className="w-3.5 h-3.5" /> },
     { id: "research", label: "Research", icon: <Search className="w-3.5 h-3.5" /> },
     { id: "experiment", label: "Experiment", icon: <FlaskConical className="w-3.5 h-3.5" /> },
+    { id: "leads", label: "Leads", icon: <Users className="w-3.5 h-3.5" /> },
     { id: "evidence", label: "Evidence", icon: <Users className="w-3.5 h-3.5" /> },
     { id: "verifying", label: "Verifying", icon: <Shield className="w-3.5 h-3.5" /> },
     { id: "memo", label: "Decision", icon: <LineChart className="w-3.5 h-3.5" /> },
@@ -373,6 +374,47 @@ function ExperimentPanel({ exp }: { exp: Experiment }) {
   );
 }
 
+function LeadsPanel({ leads, message }: { leads: import("@/lib/apollo").ApolloLead[]; message?: string | null }) {
+  if (leads.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      {message && (
+        <p className="text-xs text-slate-400 p-3 glass rounded-xl border-l-2 border-green-500/50">
+          {message}
+        </p>
+      )}
+      <div className="grid sm:grid-cols-2 gap-2">
+        {leads.map((lead) => (
+          <div key={lead.id} className="glass rounded-xl p-4 border border-white/5">
+            <div className="font-bold text-slate-200 text-sm mb-0.5">{lead.name}</div>
+            <div className="text-xs text-slate-400 mb-1">
+              {lead.title}{lead.company ? ` · ${lead.company}` : ""}
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+              {lead.email && <span>✉️ {lead.email}</span>}
+              {lead.linkedin_url && (
+                <a href={lead.linkedin_url} target="_blank" rel="noopener noreferrer" className="cite-link">
+                  <ExternalLink className="w-3 h-3" />
+                  LinkedIn
+                </a>
+              )}
+              {[lead.city, lead.country].filter(Boolean).join(", ") && (
+                <span>📍 {[lead.city, lead.country].filter(Boolean).join(", ")}</span>
+              )}
+            </div>
+            {lead.headline && (
+              <p className="text-xs text-slate-500 mt-2 line-clamp-2">{lead.headline}</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-slate-500">
+        Research-only shortlist for your own manual outreach — Apollo data is third-party and never auto-contacted.
+      </p>
+    </div>
+  );
+}
+
 function DecisionMemoPanel({ decision }: { decision: Decision }) {
   const verdictColor = getVerdictColor(decision.verdict);
   const verdictEmoji: Record<string, string> = {
@@ -456,6 +498,8 @@ function ValidateDashboard() {
   const [assumptions, setAssumptions] = useState<Assumption[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [experiment, setExperiment] = useState<Experiment | null>(null);
+  const [leads, setLeads] = useState<import("@/lib/apollo").ApolloLead[]>([]);
+  const [leadsMessage, setLeadsMessage] = useState<string | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -485,6 +529,8 @@ function ValidateDashboard() {
         setAssumptions(s.assumptions ?? []);
         setEvidence(s.evidence ?? []);
         setExperiment(s.experiments?.[0] ?? s.experiment ?? null);
+        setLeads([]);
+        setLeadsMessage(null);
         setDecision(s.decisions?.[0] ?? s.decision ?? null);
         setPhase("done");
       } catch {
@@ -543,6 +589,8 @@ function ValidateDashboard() {
     setAssumptions([]);
     setEvidence([]);
     setExperiment(null);
+    setLeads([]);
+    setLeadsMessage(null);
     setDecision(null);
     setTrace([]);
     setPhase("intake");
@@ -621,6 +669,7 @@ function ValidateDashboard() {
             assumptions?: Assumption[];
             evidence?: Evidence[];
             experiment?: Experiment;
+            leads?: import("@/lib/apollo").ApolloLead[];
             decision?: Decision;
             stats?: {
               tool_calls?: number;
@@ -661,11 +710,18 @@ function ValidateDashboard() {
                 setExperiment(data.experiment ?? null);
                 if (data.trace) setTrace([...data.trace]);
                 break;
+              case "leads":
+                if (Array.isArray(data.leads)) setLeads(data.leads);
+                if (typeof data.message === "string") setLeadsMessage(data.message);
+                if (data.trace) setTrace([...data.trace]);
+                break;
               case "done":
                 setStartup(data.startup ?? null);
                 if (data.assumptions) setAssumptions(data.assumptions);
                 if (data.evidence) setEvidence(data.evidence);
                 setExperiment(data.experiment ?? null);
+                if (Array.isArray(data.leads)) setLeads(data.leads);
+                if (typeof data.message === "string") setLeadsMessage(data.message);
                 setDecision(data.decision ?? null);
                 if (data.trace) setTrace(data.trace);
                 setStats(data.stats || {});
@@ -1052,6 +1108,32 @@ function ValidateDashboard() {
                     <h3 className="font-bold text-slate-200 text-sm">Validation Experiment</h3>
                   </div>
                   <ExperimentPanel exp={experiment} />
+                </section>
+              )}
+
+              {/* Leads — Apollo shortlist for manual outreach */}
+              {(leads.length > 0 || leadsMessage || phase === "leads") && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="w-4 h-4 text-green-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">
+                      Potential Interviewees {leads.length > 0 && `— ${leads.length} found`}
+                    </h3>
+                    {phase === "leads" && leads.length === 0 && !leadsMessage && (
+                      <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin" />
+                    )}
+                  </div>
+                  {leads.length > 0 ? (
+                    <LeadsPanel leads={leads} message={leadsMessage} />
+                  ) : leadsMessage ? (
+                    <p className="text-xs text-slate-400 p-3 glass rounded-xl border-l-2 border-yellow-500/50">
+                      {leadsMessage}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500 p-3 glass rounded-xl">
+                      Searching Apollo for people matching your target customer…
+                    </p>
+                  )}
                 </section>
               )}
 

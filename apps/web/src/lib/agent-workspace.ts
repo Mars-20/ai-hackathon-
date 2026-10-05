@@ -28,6 +28,10 @@ export async function resolveEffectiveWorkspaceId(
   requestedId: string
 ): Promise<string | null> {
   // 1. Explicit request: honor only with membership (never trust the body).
+  // Fail-closed on mismatch (null, no writes) — saving to a different
+  // workspace than requested would leak data across tenants. Stale
+  // localStorage ids are healed by dashboard sync (active_workspace_id is
+  // rewritten on load/switch), so mismatch means deleted/removed workspace.
   if (requestedId) {
     const { data: membership } = await supabase
       .from("workspace_members")
@@ -65,11 +69,16 @@ export async function resolveEffectiveWorkspaceId(
     .single();
   const created = workspace as { id?: string } | null;
   if (!created?.id) return null;
-  await supabase.from("workspace_members").insert({
+  const { error: memberError } = await supabase.from("workspace_members").insert({
     workspace_id: created.id,
     user_id: userId,
     role: "owner",
     joined_at: new Date().toISOString(),
   });
+  // RLS bootstrap deadlock (members_insert requires owner/admin role, but the
+  // first member has no role yet) surfaces here as memberError. Return the id
+  // only when membership landed; otherwise null so the caller skips
+  // persistence with an explicit warning instead of writing orphan rows.
+  if (memberError) return null;
   return created.id;
 }

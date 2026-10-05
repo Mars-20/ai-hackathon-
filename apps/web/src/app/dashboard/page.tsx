@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Brain, Plus, LogOut, Settings, Users, ChevronDown,
+  Brain, Plus, LogOut, Users, ChevronDown,
   ArrowRight, FlaskConical, Target, CheckCircle2, Clock,
   TrendingUp, Zap, Crown, User as UserIcon, History, ShieldCheck,
 } from "lucide-react";
@@ -86,7 +86,16 @@ export default function DashboardPage() {
       return { ...ws, role: r.role as MemberRole };
     });
 
-    const activeWorkspace = workspaces[0] || null;
+    // Honor the previously-selected workspace across reloads (validate +
+    // history scope persistence to this id). Fall back to first membership.
+    let activeWorkspace = workspaces[0] || null;
+    try {
+      const stored = localStorage.getItem("active_workspace_id");
+      if (stored) {
+        const match = workspaces.find((w) => w.id === stored);
+        if (match) activeWorkspace = match;
+      }
+    } catch { /* private mode — fall back to first */ }
 
     // Fetch members of active workspace
     let members: DashboardData["members"] = [];
@@ -108,6 +117,12 @@ export default function DashboardPage() {
     }
 
     setData({ user, workspaces, activeWorkspace, members, startups });
+    // Sync for /validate: the agent scopes persistence to this workspace.
+    // Without this, validate sends no workspace_id and runs land in a
+    // different (or personal-fallback) workspace — history looks empty.
+    try {
+      if (activeWorkspace) localStorage.setItem("active_workspace_id", activeWorkspace.id);
+    } catch {}
     setIsLoading(false);
   }, [supabase, router]);
 
@@ -118,6 +133,7 @@ export default function DashboardPage() {
 
   async function switchWorkspace(ws: WorkspaceWithRole) {
     setShowWorkspaceSwitcher(false);
+    try { localStorage.setItem("active_workspace_id", ws.id); } catch {}
     setData(prev => ({ ...prev, activeWorkspace: ws }));
     // Re-load members/startups for the new workspace
     const [{ data: memberData }, { data: startupData }] = await Promise.all([
@@ -163,9 +179,14 @@ export default function DashboardPage() {
       name, slug, owner_id: data.user.id, plan: "free",
     }).select().single();
     if (!error && ws) {
-      await supabase.from("workspace_members").insert({
+      const { error: memberError } = await supabase.from("workspace_members").insert({
         workspace_id: ws.id, user_id: data.user.id, role: "owner", joined_at: new Date().toISOString(),
       });
+      if (memberError) {
+        alert("Workspace created but membership failed — please refresh. If this persists, run migration 0009_workspace_bootstrap.sql in Supabase.");
+        return;
+      }
+      try { localStorage.setItem("active_workspace_id", (ws as { id: string }).id); } catch {}
       loadDashboard();
     }
   }
@@ -404,7 +425,6 @@ export default function DashboardPage() {
               <div className="glass rounded-2xl p-4 space-y-2">
                 <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">Quick Actions</p>
                 {[
-                  { label: "Workspace Settings", icon: <Settings className="w-3.5 h-3.5" />, href: "#" },
                   { label: "Invite Members", icon: <Users className="w-3.5 h-3.5" />, action: () => setShowInviteModal(true), disabled: !canInvite },
                   { label: "Validation History", icon: <History className="w-3.5 h-3.5" />, href: "/history" },
                   { label: "All Experiments", icon: <FlaskConical className="w-3.5 h-3.5" />, href: "/validate" },
