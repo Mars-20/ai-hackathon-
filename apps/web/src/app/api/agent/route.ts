@@ -42,6 +42,7 @@ import type { CostKind } from "@/lib/cost";
 import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
+import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -59,6 +60,13 @@ const VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.5-flash-li
 // while gemini-2.5-flash-lite carries 500 free grounded RPD on the same key
 // (Google pricing docs). Planner/verifier stay on cheap 3.5-flash-lite.
 const GROUNDING_MODEL = process.env.GEMINI_GROUNDING_MODEL ?? "gemini-2.5-flash-lite";
+// Per-request upstream timeouts (RC1 fix): one hung provider call must fail
+// fast into the Gemini→Groq→error failover chain instead of eating the 90s
+// run budget. Gemini grounded search is agentic (can legitimately run ~30s),
+// so it gets the roomier budget; Groq classifier/synthesis stays tight.
+// Env-overridable without a code change (same convention as the models).
+const GEMINI_CALL_TIMEOUT_MS = resolveTimeoutMs(process.env.GEMINI_CALL_TIMEOUT_MS, 45_000);
+const GROQ_CALL_TIMEOUT_MS = resolveTimeoutMs(process.env.GROQ_CALL_TIMEOUT_MS, 30_000);
 const GROQ_ROUTER_MODEL = process.env.GROQ_ROUTER_MODEL ?? "openai/gpt-oss-120b";
 
 // ── Task 3: runtime metering + per-phase budget + prompt delimiters + router/backoff ──
@@ -162,6 +170,8 @@ async function fetchGroqWithBackoff(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ model: GROQ_ROUTER_MODEL, ...body }),
+        // Per-attempt bound: a hung Groq socket must not wedge the run.
+        signal: AbortSignal.timeout(GROQ_CALL_TIMEOUT_MS),
       });
       const rlRemaining = res.headers.get("x-ratelimit-remaining");
       const rlLimit = res.headers.get("x-ratelimit-limit");
@@ -353,7 +363,11 @@ async function callAIWithFallback({
                 }
               : { responseMimeType: "application/json" },
           });
-          const groundedResult = await groundedModel.generateContent(fullPrompt);
+          const groundedResult = await withTimeout(
+            groundedModel.generateContent(fullPrompt),
+            GEMINI_CALL_TIMEOUT_MS,
+            `gemini:grounded:${skillName}`
+          );
           pushUsage(groundedResult.response);
           const groundedText = groundedResult.response.text();
           if (groundedText && groundedText.trim().length > 0) {
@@ -392,7 +406,11 @@ async function callAIWithFallback({
             }
           : { responseMimeType: "application/json" },
       });
-      const result = await model.generateContent(fullPrompt);
+      const result = await withTimeout(
+        model.generateContent(fullPrompt),
+        GEMINI_CALL_TIMEOUT_MS,
+        `gemini:${skillName}`
+      );
       pushUsage(result.response);
       const text = result.response.text();
       if (text && text.trim().length > 0) {
@@ -551,7 +569,11 @@ Return a JSON object with key "results" containing an array of objects, each wit
 
 Only include claims you can attribute to a specific source. Return 3-6 results. Respond ONLY with valid JSON.`;
 
-        const result = await model.generateContent(prompt);
+        const result = await withTimeout(
+          model.generateContent(prompt),
+          GEMINI_CALL_TIMEOUT_MS,
+          "gemini:grounded-direct:market-research"
+        );
         {
           const um = (result.response as unknown as { usageMetadata?: AiUsage })?.usageMetadata;
           if (um && typeof um.totalTokenCount === "number" && um.totalTokenCount > 0) usageAcc?.push(um);

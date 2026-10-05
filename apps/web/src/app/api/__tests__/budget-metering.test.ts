@@ -65,6 +65,22 @@ describe("task 3 wiring (static)", () => {
   });
 });
 
+describe("per-request upstream timeouts (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("every Gemini generateContent call is bounded by withTimeout", () => {
+    // RC1: unbounded generateContent hung 209s and ate the 90s run budget.
+    const sites = routeSrc.match(/\.generateContent\(/g) ?? [];
+    expect(sites.length).toBeGreaterThan(0);
+    const bounded = routeSrc.match(/withTimeout\([^;]*?\.generateContent\(/g) ?? [];
+    expect(bounded.length).toBe(sites.length);
+  });
+
+  test("Groq fetch carries a per-attempt AbortSignal timeout", () => {
+    expect(routeSrc).toMatch(/AbortSignal\.timeout\(/);
+  });
+});
+
 describe("grounding model (static)", () => {
   const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
 
