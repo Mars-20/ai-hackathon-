@@ -131,7 +131,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-500 hidden sm:block">AI-OS Hackathon v2.0</span>
             <Link
-              href="/validate"
+              href="/dashboard"
               className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
             >
               Launch App <ArrowRight className="w-3.5 h-3.5" />
@@ -185,7 +185,7 @@ export default function LandingPage() {
             </div>
             <p className="text-xs text-slate-500 mt-2">
               Or{" "}
-              <Link href="/validate" className="text-brand-400 hover:underline">
+              <Link href="/dashboard" className="text-brand-400 hover:underline">
                 open the full dashboard
               </Link>{" "}
               to see an example analysis
@@ -368,7 +368,7 @@ export default function LandingPage() {
               bias-free validation experiment — in minutes, not weeks.
             </p>
             <Link
-              href="/validate"
+              href="/dashboard"
               className="btn-glow text-white font-bold px-8 py-4 rounded-xl text-base inline-flex items-center gap-2"
               id="cta-validate-btn"
             >

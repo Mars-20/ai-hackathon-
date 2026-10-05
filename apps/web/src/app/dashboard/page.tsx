@@ -285,6 +285,17 @@ export default function DashboardPage() {
               </Link>
             )}
 
+            {/* History entry */}
+            <Link
+              href="/history"
+              className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
+              id="history-link"
+              title="History"
+            >
+              <History className="w-3.5 h-3.5 text-brand-400" />
+              History
+            </Link>
+
             {/* User avatar / sign out */}
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-xs font-bold overflow-hidden">

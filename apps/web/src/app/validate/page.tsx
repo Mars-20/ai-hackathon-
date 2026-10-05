@@ -16,6 +16,7 @@ import {
   FileText,
   FlaskConical,
   Globe,
+  History,
   Info,
   Layers,
   LineChart,
@@ -776,7 +777,7 @@ function ValidateDashboard() {
       {/* ── Top bar ── */}
       <header className="glass border-b border-white/5 sticky top-0 z-40">
         <div className="container-app h-14 flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
+          <Link href="/dashboard" className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
             <ArrowLeft className="w-4 h-4" />
             <Brain className="w-5 h-5 text-brand-400" />
             <span className="font-bold text-sm">
@@ -793,6 +794,15 @@ function ValidateDashboard() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/history"
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200 glass transition-colors"
+              id="validate-history-link"
+              title="History"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">History</span>
+            </Link>
             {stats.verifier_approved !== undefined && (
               <div className={cn(
                 "flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg",
