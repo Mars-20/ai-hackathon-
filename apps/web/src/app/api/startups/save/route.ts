@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { resolveSaveGate, type EntitlementStatus } from "@/lib/entitlements";
 import { startupSaveSchema } from "@/lib/validation";
 
 function normId(v: unknown): string | undefined {
@@ -16,6 +17,13 @@ function normId(v: unknown): string | undefined {
   const t = v.trim();
   return t ? t : undefined;
 }
+
+// Trial-paywall denial messages (402). Frozen rows carry their own message.
+const SAVE_GATE_MESSAGES: Record<string, string> = {
+  TRIAL_CONSUMED: "انتهت تجربتك المجانية — اشترك لفتح مشاريع جديدة",
+  SUBSCRIPTION_REQUIRED: "هذا الإجراء يتطلب اشتراكًا",
+  ACCOUNT_PAUSED: "حسابك موقوف مؤقتًا — راجع الإدارة",
+};
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -25,6 +33,29 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Trial-paywall entitlement fetch (service-role: user_entitlements has no
+  // user-RLS read path). Missing row (pre-migration user — cannot happen
+  // post-0010, defensive only) → legacy. Unreadable → fail closed (429).
+  // The gate itself is evaluated below, after the hijack guards.
+  const service = createServiceRoleClient();
+  let entitlementStatus: EntitlementStatus | null = "legacy";
+  try {
+    const { data: entitlement, error: entitlementError } = await service
+      .from("user_entitlements")
+      .select("status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (entitlementError) throw entitlementError;
+    if (!entitlement) {
+      console.warn("[save] missing user_entitlements row, treating as legacy", { user_id: user.id });
+    } else {
+      const rawStatus = (entitlement as { status?: unknown }).status;
+      entitlementStatus = typeof rawStatus === "string" ? (rawStatus as EntitlementStatus) : "legacy";
+    }
+  } catch {
+    return NextResponse.json({ error: "Entitlement check unavailable. Try again shortly." }, { status: 429 });
   }
 
   let body: { startup?: Record<string, unknown> };
@@ -72,14 +103,17 @@ export async function POST(request: NextRequest) {
   // relies on owner_id === auth user. When a client-supplied id targets an
   // existing row, verify the caller owns it or is a member of its workspace
   // so one user cannot hijack another's startup via guessed UUID.
+  // (Trial paywall: the fetched row is reused below — isNew = !existing,
+  // and the update path enforces is_frozen. Hijack guards unchanged.)
+  let existingStartup: { owner_id: string; workspace_id: string | null; is_frozen: boolean } | null = null;
   if (clientSuppliedId) {
     const { data: existing } = await supabase
       .from("startups")
-      .select("id, owner_id, workspace_id")
+      .select("id, owner_id, workspace_id, is_frozen")
       .eq("id", rawId)
       .maybeSingle();
     if (existing) {
-      const typed = existing as { owner_id: string; workspace_id: string | null };
+      const typed = existing as { owner_id: string; workspace_id: string | null; is_frozen: boolean };
       if (typed.owner_id !== user.id) {
         if (!typed.workspace_id) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -94,6 +128,58 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
       }
+      existingStartup = typed;
+    }
+  }
+
+  // Trial-paywall gate (402). Creation of a second startup consumes the
+  // trial (consume_trial runs BEFORE the upsert; result ignored except a
+  // warn — the second snapshot is blocked anyway). Updates to own rows are
+  // denied when the row is frozen or the status is consumed/paused.
+  if (!existingStartup) {
+    const { count } = await supabase
+      .from("startups")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", user.id);
+    const saveGate = resolveSaveGate(entitlementStatus, true, count ?? 0);
+    if (!saveGate.allowed) {
+      if (saveGate.consumeTrial) {
+        try {
+          const { error: consumeError } = await service.rpc("consume_trial", {
+            p_user_id: user.id,
+            p_startup_id: rawId,
+          });
+          if (consumeError) console.warn("[save] consume_trial failed", { user_id: user.id });
+        } catch {
+          console.warn("[save] consume_trial failed", { user_id: user.id });
+        }
+      }
+      return NextResponse.json(
+        {
+          error: SAVE_GATE_MESSAGES[saveGate.code] ?? SAVE_GATE_MESSAGES.SUBSCRIPTION_REQUIRED,
+          code: saveGate.code,
+          plans_url: "/plans",
+        },
+        { status: 402 },
+      );
+    }
+  } else {
+    if (existingStartup.is_frozen) {
+      return NextResponse.json(
+        { error: "هذا المشروع مجمّد — اشترك للمتابعة", code: "FROZEN", plans_url: "/plans" },
+        { status: 402 },
+      );
+    }
+    const saveGate = resolveSaveGate(entitlementStatus, false, 0);
+    if (!saveGate.allowed) {
+      return NextResponse.json(
+        {
+          error: SAVE_GATE_MESSAGES[saveGate.code] ?? SAVE_GATE_MESSAGES.SUBSCRIPTION_REQUIRED,
+          code: saveGate.code,
+          plans_url: "/plans",
+        },
+        { status: 402 },
+      );
     }
   }
 
