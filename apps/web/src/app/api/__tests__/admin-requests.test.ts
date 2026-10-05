@@ -57,8 +57,9 @@ function mockClients(opts: {
   single?: Record<string, Canned>;
   rpc?: Canned;
   rpcCalls?: RpcCall[];
+  serviceFromCalls?: string[];
 }) {
-  const { user, list = {}, single = {}, rpcCalls = [] } = opts;
+  const { user, list = {}, single = {}, rpcCalls = [], serviceFromCalls = [] } = opts;
   const rpcPayload: Canned = opts.rpc ?? { data: null, error: null };
 
   const makeBuilder = (table: string) => {
@@ -98,7 +99,10 @@ function mockClients(opts: {
   mockedServiceClient.mockReturnValue({
     auth: { getUser: async () => ({ data: { user } }) },
     rpc: rpcFn,
-    from: (table: string) => makeBuilder(table),
+    from: (table: string) => {
+      serviceFromCalls.push(table);
+      return makeBuilder(table);
+    },
   } as unknown as ReturnType<typeof createServiceRoleClient>);
 }
 
@@ -144,12 +148,20 @@ beforeEach(() => {
 
 describe("POST /api/admin/requests (Task 8)", () => {
   test("403 non-owner (verbatim FORBIDDEN envelope)", async () => {
-    mockClients({ user: { id: USER_ID, email: "user@example.com" } });
+    const rpcCalls: RpcCall[] = [];
+    const serviceFromCalls: string[] = [];
+    mockClients({
+      user: { id: USER_ID, email: "user@example.com" },
+      rpcCalls,
+      serviceFromCalls,
+    });
     const res = await adminRequestsPOST(
       postReq({ request_id: REQ_ID, action: "approve" }),
     );
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "محظور", code: "FORBIDDEN" });
+    expect(rpcCalls).toHaveLength(0);
+    expect(serviceFromCalls).toHaveLength(0);
   });
 
   test("400 bad action", async () => {
@@ -311,10 +323,18 @@ describe("POST /api/admin/requests (Task 8)", () => {
 
 describe("GET /api/admin/requests (Task 8)", () => {
   test("403 non-owner (verbatim FORBIDDEN envelope, never rows)", async () => {
-    mockClients({ user: { id: USER_ID, email: "user@example.com" } });
+    const rpcCalls: RpcCall[] = [];
+    const serviceFromCalls: string[] = [];
+    mockClients({
+      user: { id: USER_ID, email: "user@example.com" },
+      rpcCalls,
+      serviceFromCalls,
+    });
     const res = await adminRequestsGET(getReq());
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "محظور", code: "FORBIDDEN" });
+    expect(rpcCalls).toHaveLength(0);
+    expect(serviceFromCalls).toHaveLength(0);
   });
 
   test("200 owner sees pending queue with entitlement context", async () => {
