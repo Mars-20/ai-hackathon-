@@ -120,6 +120,22 @@ describe("per-request upstream timeouts (static)", () => {
   });
 });
 
+describe("groq key rotation (static)", () => {
+  const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
+
+  test("groq attempts cycle through the key pool", () => {
+    // 429 on one key must retry with the next key; single-key setups keep
+    // today's identical behavior (same key, same backoffs).
+    expect(routeSrc).toMatch(/getGroqKeys/);
+    expect(routeSrc).toMatch(/groqKeys\[attempt % groqKeys\.length\]/);
+  });
+
+  test("groq 401 (dead key in pool) rotates instead of failing the run", () => {
+    // 400/403/404 still fail fast — only a dead KEY is worth rotating past.
+    expect(routeSrc).toMatch(/res\.status === 401/);
+  });
+});
+
 describe("gemini key rotation (static)", () => {
   const routeSrc = readFileSync(join(__dirname, "..", "agent", "route.ts"), "utf8");
 

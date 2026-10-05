@@ -1,25 +1,49 @@
 import { describe, expect, test } from "vitest";
 
-import { getGeminiKeys, isQuotaError } from "../gemini-keys";
+import { getGeminiKeys, getGroqKeys, isQuotaError } from "../provider-keys";
 
 describe("getGeminiKeys", () => {
   test("parses comma-separated GEMINI_API_KEYS, trimming whitespace and empties", () => {
-    const keys = getGeminiKeys({ GEMINI_API_KEYS: "  key-a ,,key-b,  key-c " });
-    expect(keys).toEqual(["key-a", "key-b", "key-c"]);
+    expect(getGeminiKeys({ GEMINI_API_KEYS: "  key-a ,,key-b,  key-c " })).toEqual([
+      "key-a",
+      "key-b",
+      "key-c",
+    ]);
   });
 
   test("falls back to the legacy single GEMINI_API_KEY", () => {
-    const keys = getGeminiKeys({ GEMINI_API_KEY: " solo " });
-    expect(keys).toEqual(["solo"]);
+    expect(getGeminiKeys({ GEMINI_API_KEY: " solo " })).toEqual(["solo"]);
   });
 
   test("multi-key list wins over the single key", () => {
-    const keys = getGeminiKeys({ GEMINI_API_KEYS: "a,b", GEMINI_API_KEY: "solo" });
-    expect(keys).toEqual(["a", "b"]);
+    expect(
+      getGeminiKeys({ GEMINI_API_KEYS: "a,b", GEMINI_API_KEY: "solo" })
+    ).toEqual(["a", "b"]);
   });
 
   test("returns empty when nothing is configured", () => {
     expect(getGeminiKeys({})).toEqual([]);
+  });
+});
+
+describe("getGroqKeys", () => {
+  test("parses comma-separated GROQ_API_KEYS, trimming whitespace and empties", () => {
+    expect(getGroqKeys({ GROQ_API_KEYS: " g1 ,,g2 , g3 " })).toEqual(["g1", "g2", "g3"]);
+  });
+
+  test("falls back to the legacy single GROQ_API_KEY", () => {
+    expect(getGroqKeys({ GROQ_API_KEY: " solo " })).toEqual(["solo"]);
+  });
+
+  test("multi-key list wins over the single key", () => {
+    expect(getGroqKeys({ GROQ_API_KEYS: "a,b", GROQ_API_KEY: "solo" })).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  test("returns empty when nothing is configured", () => {
+    expect(getGroqKeys({})).toEqual([]);
   });
 });
 

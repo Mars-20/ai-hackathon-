@@ -44,7 +44,7 @@ import { searchLeads } from "@/lib/apollo";
 import type { ApolloLead } from "@/lib/apollo";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import { withTimeout, resolveTimeoutMs } from "@/lib/timeout";
-import { getGeminiKeys, isQuotaError } from "@/lib/gemini-keys";
+import { getGeminiKeys, getGroqKeys, isQuotaError } from "@/lib/provider-keys";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -156,18 +156,23 @@ function assertPhaseBudget(totalCost: number, toolCalls: number): void {
   }
 }
 
-// Groq fetch with exponential backoff (3 attempts). Reads x-ratelimit-*
-// headers for observability; on a final 429/5xx throws with `retryAfter` so
-// callers propagate Retry-After instead of swallowing the signal.
+// Groq fetch with exponential backoff (3 attempts) + multi-key rotation.
+// Reads x-ratelimit-* headers for observability; on a final 429/5xx throws
+// with `retryAfter` so callers propagate Retry-After instead of swallowing
+// the signal. Each attempt cycles the key pool (GROQ_API_KEYS,
+// comma-separated, else the legacy single GROQ_API_KEY): a 429/5xx/401 on one
+// key retries with the NEXT key, so one exhausted or dead key never sinks the
+// run while siblings have quota. Single-key setups behave exactly as before.
 async function fetchGroqWithBackoff(
   body: Record<string, unknown>,
   trace: TraceEvent[],
   skillName: string
 ): Promise<{ data: GroqChatCompletion; usage?: AiUsage }> {
-  const groqKey = process.env.GROQ_API_KEY?.trim();
-  if (!groqKey) throw new Error("Groq API key not configured");
+  const groqKeys = getGroqKeys();
+  if (groqKeys.length === 0) throw new Error("Groq API key not configured");
   let lastErr: unknown = new Error(`Groq unavailable for ${skillName}`);
   for (let attempt = 0; attempt < 3; attempt++) {
+    const groqKey = groqKeys[attempt % groqKeys.length];
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
     }
@@ -203,8 +208,16 @@ async function fetchGroqWithBackoff(
         });
         continue;
       }
-      // Quota guard: permanent 4xx (400/401/403/404 — bad key or dead
-      // model) fail fast with the status attached; only 429/5xx retry.
+      // Quota guard: 429/5xx retry (with the next key in the pool);
+      // 401 means THIS key is dead, so rotate past it too. Other permanent
+      // 4xx (400/403/404 — bad request or dead model) fail fast with the
+      // status attached; no key can fix those.
+      if (res.status === 401) {
+        lastErr = Object.assign(new Error(`Groq 401 (dead key) for ${skillName}`), {
+          status: res.status,
+        });
+        continue;
+      }
       if (!res.ok)
         throw Object.assign(new Error(`Groq ${res.status} for ${skillName}`), {
           status: res.status,
