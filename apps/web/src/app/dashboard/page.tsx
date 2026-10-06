@@ -9,6 +9,7 @@ import {
   TrendingUp, Zap, Crown, User as UserIcon, History, ShieldCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { MEMORY_COPY } from "@/lib/companion/copy";
 import type { AuthUser, Workspace, WorkspaceMember, MemberRole, Startup } from "@/lib/types";
 
 interface WorkspaceWithRole extends Workspace {
@@ -339,6 +340,18 @@ export default function DashboardPage() {
             >
               <History className="w-3.5 h-3.5 text-brand-400" />
               <span className="hidden sm:inline">History</span>
+            </Link>
+
+            {/* Memories console entry (companion Task 9) */}
+            <Link
+              href="/memories"
+              className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
+              id="memories-link"
+              title={MEMORY_COPY.page_title}
+              aria-label={MEMORY_COPY.page_title}
+            >
+              <Brain className="w-3.5 h-3.5 text-brand-400" />
+              <span className="hidden sm:inline">{MEMORY_COPY.page_title}</span>
             </Link>
 
             {/* User avatar / sign out */}

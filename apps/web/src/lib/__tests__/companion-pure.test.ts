@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { estimateTokens, normalizeForMatch } from "../companion/normalize";
 import { toUntrusted, truncateField } from "../companion/escape";
 import { containsBlockedSecret, containsThirdPartyPii } from "../companion/scans";
@@ -174,6 +176,22 @@ describe("copy", () => {
     for (const v of Object.values(MEMORY_COPY)) expect(v.length).toBeGreaterThan(0);
     expect(MEMORY_COPY.cap_full).toBe("القائمة ممتلئة — احذف ذكرى أولًا");
     expect(MEMORY_COPY.memory_duplicate).toBe("مكررة — هذه الذكرى معتمدة مسبقًا");
+  });
+
+  it("memories console renders copy from MEMORY_COPY with no inline Arabic", () => {
+    // Task 9 page-level assertion: the console must import the frozen copy;
+    // `grep -rn "اعتماد" src/app/memories/` must return nothing (all Arabic
+    // lives in copy.ts). Enforced as: no Arabic-block char in the dir.
+    const dir = join(__dirname, "..", "..", "app", "memories");
+    const files = readdirSync(dir).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
+    expect(files).toContain("page.tsx");
+    let pageImportsCopy = false;
+    for (const f of files) {
+      const src = readFileSync(join(dir, f), "utf8");
+      expect(src).not.toMatch(/[\u0600-\u06FF]/);
+      if (f === "page.tsx" && /MEMORY_COPY/.test(src)) pageImportsCopy = true;
+    }
+    expect(pageImportsCopy).toBe(true);
   });
 });
 
