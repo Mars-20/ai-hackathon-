@@ -16,6 +16,7 @@ import {
 } from "./redis";
 import {
   decideActionSchema,
+  memoryCursorSchema,
   memoryIdSchema,
   memoryKindSchema,
   memoryStartupIdSchema,
@@ -203,6 +204,9 @@ export async function listMemories(
   const d = await depsWith(over);
   const safeStatus = statusFilterSchema.parse(status);
   const safeLimit = Math.min(Math.max(Math.floor(limit) || 20, 1), 100);
+  // Cursor validated BEFORE interpolation (review debt): hostile cursors
+  // throw here, before any query executes.
+  const safeCursor = cursor === undefined ? undefined : memoryCursorSchema.parse(cursor);
   throwIfDeniedForList(await d.getEntitlementStatus(userId));
   const client = await d.userClient();
   // `all` ≡ pending + approved — rejected is NEVER surfaced (H10).
@@ -211,9 +215,9 @@ export async function listMemories(
     safeStatus === "all" ? q.in("status", ["pending", "approved"]) : q.eq("status", safeStatus)
   ) as typeof q;
   q = q.order("created_at", { ascending: false }).order("id", { ascending: false });
-  if (cursor) {
+  if (safeCursor) {
     q = q.or(
-      `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+      `created_at.lt.${safeCursor.created_at},and(created_at.eq.${safeCursor.created_at},id.lt.${safeCursor.id})`,
     );
   }
   const { data, error } = await q.limit(safeLimit + 1);

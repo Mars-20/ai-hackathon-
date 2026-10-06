@@ -183,6 +183,9 @@ describe("copy", () => {
     for (const v of Object.values(MEMORY_COPY)) expect(v.length).toBeGreaterThan(0);
     expect(MEMORY_COPY.cap_full).toBe("القائمة ممتلئة — احذف ذكرى أولًا");
     expect(MEMORY_COPY.memory_duplicate).toBe("مكررة — هذه الذكرى معتمدة مسبقًا");
+    // Review debt: provenance must be pure user-facing copy — no dev-note
+    // parenthetical, no Latin-script fragments (locale is a code concern).
+    expect(MEMORY_COPY.provenance).toBe("من جلسة {date}");
   });
 
   it("memories console renders copy from MEMORY_COPY with no inline Arabic", () => {

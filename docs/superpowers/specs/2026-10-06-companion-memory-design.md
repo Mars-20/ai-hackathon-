@@ -188,12 +188,14 @@ Validation: zod mirrors DB CHECKs.
 | disable_hint | يتوقف التخصيص دون حذف أي شيء |
 | conflict_pair | يتعارض مع ذكرى معتمدة — اختر الصحيحة |
 | empty_queue | لا شيء بانتظارك — سأقترح ما أتعلمه هنا |
-| provenance | من جلسة {date} (عرض التاريخ بlocale عربي) |
+| provenance | من جلسة {date} |
 | cap_full | القائمة ممتلئة — احذف ذكرى أولًا |
 | memory_full | ذاكرتك ممتلئة (200) — احذف أو اندمج قبل إضافة جديد |
 | memory_duplicate | مكررة — هذه الذكرى معتمدة مسبقًا |
 | startup_not_owned | هذا المشروع ليس لك |
 | secret_blocked | عذرًا — لا أحفظ المفاتيح والبيانات الحساسة |
+
+† **v0.3.2 amendment** (`provenance`): the dev-note parenthetical "(عرض التاريخ بlocale عربي)" leaked into the user-facing string — removed. `{date}` MUST still render with an Arabic locale (normative; enforced via code comment + unit test). No other §9 value changed.
 
 ## 10. Threat model
 

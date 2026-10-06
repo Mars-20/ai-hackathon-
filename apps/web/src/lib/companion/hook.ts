@@ -16,6 +16,19 @@ export interface PostSessionCapture {
   memoText: string;
   startupName: string;
   budgetKey: string;
+  // Done-gate (spec §5.1 — infer on SSE `done` ONLY): the route owns this
+  // MUTABLE token and flips `done` when the stream emits `done`. The object
+  // is shared by reference into the after() callback, which runs strictly
+  // after the response completes — so the flag is always settled when read.
+  // Absent or false ⇒ skip inference (spec-strict default).
+  outcome?: SessionOutcome;
+}
+
+// Mutable by design: exactly one writer (the route IIFE, pre-close) and one
+// reader (executePostSessionHook in after(), post-close). No atomics needed:
+// the write strictly precedes the read in program order.
+export interface SessionOutcome {
+  done: boolean;
 }
 
 export interface PostSessionHookDeps {
@@ -31,6 +44,10 @@ export interface PostSessionHookDeps {
     proposed: number;
     dropped: number;
     latencyMs: number;
+    // Skip-trace (§13 line 4 — no more silent skips): the reason is stored in
+    // the trace payload. event_type stays `companion_infer` so the CHECK
+    // allow-list needs no migration.
+    skipped?: string;
   }) => Promise<void>;
 }
 
@@ -95,6 +112,7 @@ async function defaultInsertTrace(row: {
   proposed: number;
   dropped: number;
   latencyMs: number;
+  skipped?: string;
 }): Promise<void> {
   const { createServiceRoleClient } = await import("@/lib/supabase/server");
   const admin = createServiceRoleClient();
@@ -103,23 +121,56 @@ async function defaultInsertTrace(row: {
     workspace_id: null,
     actor: "companion",
     event_type: row.event_type,
-    payload: { user_id: row.userId, proposed: row.proposed, dropped: row.dropped },
+    payload: {
+      user_id: row.userId,
+      proposed: row.proposed,
+      dropped: row.dropped,
+      ...(row.skipped ? { skipped: row.skipped } : {}),
+    },
     cost_usd: null,
     latency_ms: row.latencyMs,
   });
   if (error) throw error;
 }
 
+// Skip-trace helper: every skip path leaves one audit row (best-effort —
+// trace failure warns and resolves, never breaks the run).
+async function traceSkip(
+  over: Partial<PostSessionHookDeps> | undefined,
+  capture: PostSessionCapture,
+  reason: string,
+  t0: number,
+): Promise<void> {
+  const insert = over?.insertTrace ?? defaultInsertTrace;
+  try {
+    await insert({
+      userId: capture.userId,
+      event_type: "companion_infer",
+      proposed: 0,
+      dropped: 0,
+      latencyMs: Date.now() - t0,
+      skipped: reason,
+    });
+  } catch (err) {
+    console.warn("[companion] skip-trace insert failed", reason, err);
+  }
+}
+
 // Dispatcher: calls after() SYNCHRONOUSLY with a snapshot-bound callback.
 // Route code calls this in POST() scope with defaults; tests inject a spy.
+// Returns the shared outcome token: the route flips `outcome.done` when the
+// SSE stream emits `done` (spec §5.1 — infer on done ONLY).
 export function schedulePostSessionHook(
   capture: PostSessionCapture,
   over?: Partial<PostSessionHookDeps>,
-): void {
+): { outcome: SessionOutcome } {
+  const outcome: SessionOutcome = capture.outcome ?? { done: false };
+  const bound: PostSessionCapture = { ...capture, outcome };
   const schedule = over?.afterImpl ?? defaultAfterImpl;
   schedule(() => {
-    void executePostSessionHook(capture, over);
+    void executePostSessionHook(bound, over);
   });
+  return { outcome };
 }
 
 export async function executePostSessionHook(
@@ -127,6 +178,15 @@ export async function executePostSessionHook(
   over?: Partial<PostSessionHookDeps>,
 ): Promise<void> {
   const t0 = Date.now();
+  // Done-gate (spec §5.1): infer ONLY when the run emitted SSE `done`.
+  // Error runs, exceptions, early returns and aborted streams all land here
+  // with done=false (or no token) — skip with an audit row, never infer.
+  if (capture.outcome?.done !== true) {
+    const reason = capture.outcome ? "not-done" : "no-outcome";
+    console.warn(`[companion] post-session inference skipped (${reason})`);
+    await traceSkip(over, capture, reason, t0);
+    return;
+  }
   const getApproved = over?.getApprovedValues ?? defaultGetApprovedValues;
   const runInference = (over?.runInference ?? defaultRunInference) as (
     args: Parameters<typeof defaultRunInference>[0],
@@ -151,9 +211,14 @@ export async function executePostSessionHook(
     });
   } catch (err) {
     console.warn("[companion] post-session inference failed", err);
+    await traceSkip(over, capture, "inference-error", t0);
     return;
   }
-  if ("skipped" in out) return;
+  if ("skipped" in out) {
+    console.warn("[companion] post-session inference skipped", out.skipped);
+    await traceSkip(over, capture, out.skipped, t0);
+    return;
+  }
   // H5: infer spend is ledgered like any other provider call.
   const record = over?.recordSpend;
   try {

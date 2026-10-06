@@ -13,7 +13,10 @@ export const MEMORY_COPY = {
   disable_hint: "يتوقف التخصيص دون حذف أي شيء",
   conflict_pair: "يتعارض مع ذكرى معتمدة — اختر الصحيحة",
   empty_queue: "لا شيء بانتظارك — سأقترح ما أتعلمه هنا",
-  provenance: "من جلسة {date} (عرض التاريخ بlocale عربي)",
+  // Locale rule (was a parenthetical inside the user string — moved here):
+  // {date} is ALWAYS rendered with an Arabic locale (ar-EG/ar-SA digits).
+  // User-facing strings stay pure copy: no dev notes, no Latin fragments.
+  provenance: "من جلسة {date}",
   cap_full: "القائمة ممتلئة — احذف ذكرى أولًا",
   memory_full: "ذاكرتك ممتلئة (200) — احذف أو اندمج قبل إضافة جديد",
   memory_duplicate: "مكررة — هذه الذكرى معتمدة مسبقًا",

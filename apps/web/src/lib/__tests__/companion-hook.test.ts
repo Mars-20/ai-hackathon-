@@ -21,6 +21,10 @@ const CAP: PostSessionCapture = {
   budgetKey: "ws-hook-1",
 };
 
+// Spec §5.1 (done ONLY): a finished run carries outcome.done=true; every
+// other ending skips inference. Existing happy-path tests use CAP_DONE.
+const CAP_DONE: PostSessionCapture = { ...CAP, outcome: { done: true } };
+
 describe("schedulePostSessionHook dispatcher", () => {
   it("calls after synchronously in POST scope (C4)", () => {
     const seen: Array<() => void> = [];
@@ -39,13 +43,99 @@ describe("schedulePostSessionHook dispatcher", () => {
     expect(hits).toHaveLength(1);
     expect(src.indexOf("schedulePostSessionHook(")).toBeLessThan(src.indexOf("(async () => {"));
   });
+
+  it("returns a shared outcome token, initially not-done", () => {
+    const seen: Array<() => void> = [];
+    const token = schedulePostSessionHook(CAP, {
+      afterImpl: ((cb: () => void) => {
+        seen.push(cb);
+      }) as never,
+    });
+    expect(token.outcome.done).toBe(false);
+    // Shared by reference: the route flips it when SSE `done` is emitted.
+    token.outcome.done = true;
+    expect(token.outcome.done).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe("executePostSessionHook done-gate (spec §5.1)", () => {
+  it("skips inference when the run did not emit done (error paths)", async () => {
+    let inferred = 0;
+    const traces: Array<{ event_type: string; skipped?: string }> = [];
+    await executePostSessionHook(
+      { ...CAP, outcome: { done: false } },
+      {
+        getApprovedValues: async () => [],
+        runInference: (async () => {
+          inferred++;
+          return { proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 1 } };
+        }) as never,
+        recordSpend: (async () => 0) as never,
+        insertTrace: (async (row: { event_type: string; skipped?: string }) => {
+          traces.push(row);
+        }) as never,
+      },
+    );
+    expect(inferred).toBe(0);
+    expect(traces).toHaveLength(1);
+    expect(traces[0].event_type).toBe("companion_infer");
+    expect(typeof traces[0].skipped).toBe("string");
+  });
+
+  it("skips safely when no outcome token is present (spec-strict default)", async () => {
+    let inferred = 0;
+    await executePostSessionHook(CAP, {
+      getApprovedValues: async () => [],
+      runInference: (async () => {
+        inferred++;
+        return { proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 1 } };
+      }) as never,
+      recordSpend: (async () => 0) as never,
+      insertTrace: (async () => {}) as never,
+    });
+    expect(inferred).toBe(0);
+  });
+
+  it("writes a skip-trace with the reason instead of returning silently (§13.4)", async () => {
+    const recorded: Array<[string, number]> = [];
+    const traces: Array<{ event_type: string; skipped?: string; proposed: number }> = [];
+    await executePostSessionHook(CAP_DONE, {
+      getApprovedValues: async () => [],
+      runInference: (async () => ({ skipped: "disabled" })) as never,
+      recordSpend: (async (key: string, usd: number) => {
+        recorded.push([key, usd]);
+        return usd;
+      }) as never,
+      insertTrace: (async (row: { event_type: string; skipped?: string; proposed: number }) => {
+        traces.push(row);
+      }) as never,
+    });
+    expect(recorded).toHaveLength(0);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ event_type: "companion_infer", skipped: "disabled", proposed: 0 });
+  });
+
+  it("runs inference when the run emitted done", async () => {
+    let inferred = 0;
+    await executePostSessionHook(CAP_DONE, {
+      getApprovedValues: async () => [],
+      runInference: (async () => {
+        inferred++;
+        return { proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 1 } };
+      }) as never,
+      recordSpend: (async () => 0) as never,
+      insertTrace: (async () => {}) as never,
+    });
+    expect(inferred).toBe(1);
+  });
 });
 
 describe("executePostSessionHook spend (H5)", () => {
   it("records infer spend once + inserts one companion_infer trace", async () => {
     const recorded: Array<[string, number]> = [];
     const traces: Array<{ event_type: string }> = [];
-    await executePostSessionHook(CAP, {
+    await executePostSessionHook(CAP_DONE, {
       getApprovedValues: async () => [],
       runInference: (async () => ({
         proposed: { results: [], dropped: [] },
@@ -73,7 +163,7 @@ describe("executePostSessionHook spend (H5)", () => {
       .spyOn(console, "warn")
       .mockImplementation((...a: unknown[]) => void warned.push(a));
     try {
-      await executePostSessionHook(CAP, {
+      await executePostSessionHook(CAP_DONE, {
         getApprovedValues: async () => [],
         runInference: (async () => ({
           proposed: { results: [], dropped: [] },
@@ -97,7 +187,7 @@ describe("executePostSessionHook spend (H5)", () => {
   it("inference failure never breaks the run (warn + resolve)", async () => {
     const recorded: Array<[string, number]> = [];
     await expect(
-      executePostSessionHook(CAP, {
+      executePostSessionHook(CAP_DONE, {
         getApprovedValues: async () => [],
         runInference: (async () => {
           throw new Error("provider down");

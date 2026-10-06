@@ -486,8 +486,41 @@ describe("entitlement matrix (g)", () => {
   });
 });
 
-describe("all hides rejected (H10) + pagination", () => {
-  it("never surfaces rejected rows and pages by (created_at,id)", async () => {
+describe("cursor hardening (PostgREST .or() debt)", () => {
+  const goodId = "00000000-0000-4000-8000-111111111111";
+  it("rejects hostile cursors before any query runs", async () => {
+    const { deps, state } = makeDeps({ memories: [mem({ user_id: "user-A", value: "seed" })] });
+    // Parseable date BUT carries a PostgREST metachar — must fail the
+    // metachar rule, not just the date rule.
+    await expect(
+      listMemories("user-A", "all", 20, { created_at: "Jan 01, 2024", id: goodId }, deps),
+    ).rejects.toThrow();
+    await expect(
+      listMemories("user-A", "all", 20, { created_at: "not-a-date", id: goodId }, deps),
+    ).rejects.toThrow();
+    await expect(
+      listMemories(
+        "user-A",
+        "all",
+        20,
+        { created_at: "2024-01-01T00:00:00.000Z", id: "not-a-uuid" },
+        deps,
+      ),
+    ).rejects.toThrow();
+    expect(state.calls.from).toEqual([]);
+  });
+
+  it("accepts well-formed cursors (round-trip still pages)", async () => {
+    const rows = [mem({ user_id: "user-A", value: "c1" }), mem({ user_id: "user-A", value: "c2" })];
+    const { deps } = makeDeps({ memories: rows });
+    const first = await listMemories("user-A", "all", 1, undefined, deps);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await listMemories("user-A", "all", 1, first.nextCursor ?? undefined, deps);
+    expect(second.rows).toHaveLength(1);
+  });
+});
+
+describe("all hides rejected (H10) + pagination", () => {  it("never surfaces rejected rows and pages by (created_at,id)", async () => {
     const rows = [
       mem({ user_id: "user-A", value: "p1" }),
       mem({ user_id: "user-A", value: "a1", status: "approved" }),

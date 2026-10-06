@@ -2041,6 +2041,11 @@ export async function POST(req: NextRequest) {
   // snapshotted BY VALUE here; schedulePostSessionHook calls after()
   // synchronously in this POST scope — never from the background IIFE (C4).
   let companionCtx = "";
+  // Done-gate token holder (spec §5.1): assigned at the schedule site below,
+  // flipped ONLY where the SSE `done` event is emitted — error runs never
+  // set it, so post-session inference skips them. Hoisted to POST scope
+  // because the flip site lives inside the streaming IIFE.
+  let sessionOutcome: { done: boolean } | null = null;
   try {
     const fullBody = (await req.clone().json()) as { idea?: unknown; startup_name?: unknown };
     const ideaText = typeof fullBody.idea === "string" ? fullBody.idea : "";
@@ -2064,7 +2069,10 @@ export async function POST(req: NextRequest) {
           typeof fullBody.startup_name === "string" ? fullBody.startup_name.slice(0, 200) : "",
         budgetKey,
       };
-      schedulePostSessionHook(capture);
+      // Done-gate token (spec §5.1): shared by reference into the after()
+      // callback. Flipped ONLY where the SSE `done` event is emitted below —
+      // error runs never set it, so post-session inference skips them.
+      sessionOutcome = schedulePostSessionHook(capture).outcome;
     }
   } catch {
     companionCtx = "";
@@ -2366,6 +2374,9 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
         // best-effort only — ledger failure must not break the stream
       }
 
+      // The run completed with a verdict: mark done BEFORE emitting, so the
+      // after() hook (which runs strictly post-response) always sees it set.
+      if (sessionOutcome) sessionOutcome.done = true;
       await send({
         type: "done",
         startup,
