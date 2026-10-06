@@ -50,10 +50,10 @@ test("history API rejects unauthenticated callers", async ({ request }) => {
   expect([400, 401]).toContain(r.status());
 });
 
-test("agent API reports missing idea inside the SSE stream", async ({ request }) => {
-  // POST /api/agent always answers 200 + text/event-stream; validation
-  // failures arrive as {type:"error"} frames, not HTTP 4xx.
+test("agent API rejects unauthenticated callers before the SSE stream", async ({ request }) => {
+  // POST /api/agent enforces auth pre-flight: anon callers get JSON 401
+  // {code:"UNAUTHENTICATED"}, never the 200 SSE stream.
   const r = await request.post("/api/agent", { data: { nope: true } });
-  expect(r.status()).toBe(200);
-  await expect(r.text()).resolves.toContain("Idea is required");
+  expect(r.status()).toBe(401);
+  await expect(r.text()).resolves.toContain("UNAUTHENTICATED");
 });

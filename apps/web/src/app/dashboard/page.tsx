@@ -170,18 +170,25 @@ export default function DashboardPage() {
   // Trial paywall (Task 7): fresh entitlement check on "New validation".
   // Consumed/paused accounts get the paywall modal (NOT a redirect);
   // every other status keeps the existing direct navigation to /validate.
+  // preventDefault runs SYNCHRONOUSLY: an async preventDefault (after the
+  // fetch await) always loses the race and the browser navigates anyway.
   async function handleNewValidation(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
     try {
       const res = await fetch("/api/entitlements/me", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        router.push("/validate");
+        return;
+      }
       const ent = (await res.json()) as { status?: string };
       if (ent.status === "trial_consumed" || ent.status === "paused") {
-        e.preventDefault();
         setShowPaywallModal(true);
+        return;
       }
     } catch {
       /* fail-open: fall through to /validate */
     }
+    router.push("/validate");
   }
 
   async function sendInvite() {

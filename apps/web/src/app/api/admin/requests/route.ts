@@ -2,8 +2,8 @@
 // /api/admin/requests — admin subscription-request queue (Task 8)
 // Owner-only queue for the manual subscription approval flow. The owner gate
 // reuses the repo PLATFORM_OWNER_EMAILS env contract (comma-separated emails,
-// case-insensitive compare) — repo-wide search shows no pre-existing
-// mechanism, so this module defines it canonically:
+// case-insensitive compare) defined canonically in lib/platform-owner.ts
+// (repo-wide search shows no pre-existing mechanism).
 //   PLATFORM_OWNER_EMAILS="owner@example.com,second@example.com"
 // The env is EMPTY pre-launch → the owner list is [] → every caller gets the
 // stable 403 {"error":"محظور","code":"FORBIDDEN"} (operational pre-launch
@@ -27,22 +27,10 @@ import {
   createServerSupabaseClient,
   createServiceRoleClient,
 } from "@/lib/supabase/server";
+import { isPlatformOwnerEmail } from "@/lib/platform-owner";
 
-// ── Owner gate (canonical PLATFORM_OWNER_EMAILS contract) ───────────────────
-export function getPlatformOwnerEmails(): string[] {
-  const raw = process.env.PLATFORM_OWNER_EMAILS ?? "";
-  return raw
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0);
-}
-
-export function isPlatformOwnerEmail(
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false;
-  return getPlatformOwnerEmails().includes(email.trim().toLowerCase());
-}
+// ── Owner gate: canonical PLATFORM_OWNER_EMAILS contract lives in ───────────
+// ── lib/platform-owner.ts (route modules must export routes only). ──────────
 
 function forbidden() {
   return NextResponse.json({ error: "محظور", code: "FORBIDDEN" }, { status: 403 });
