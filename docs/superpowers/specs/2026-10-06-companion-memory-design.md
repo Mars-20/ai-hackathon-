@@ -1,10 +1,11 @@
-# Companion Memory — Design Spec v0.3.0 (Sub-project 1 of 3)
+# Companion Memory — Design Spec v0.3.1 (Sub-project 1 of 3)
 
-Status: PROPOSED (rev I — v0.2.0 + my own fresh-eyes review: 5 High + 7 Medium + stragglers, all patched below).
-DO NOT IMPLEMENT before written-spec approval + writing-plans.
+Status: APPROVED 2026-10-06 (rev J — v0.3.0 + plan-review deltas: archive TTL-bound deviation,
+`MEMORY_DUPLICATE` code, self-contact allowlist).
 
 History: v0.1.0 → adversarial review 26 findings (`.superpowers/sdd/2026-10-06-companion-memory/spec-review.md`,
-verdict NOT READY) → v0.2.0 (26/26 closed, verified) → personal re-review (5H+7M new) → this v0.3.0.
+verdict NOT READY) → v0.2.0 (26/26 closed, verified) → personal re-review (5H+7M new) → v0.3.0 → this v0.3.1 (adversarial plan-review deltas:
+archive TTL-bound deviation, `MEMORY_DUPLICATE` code + copy, self-contact allowlist).
 
 ## 1. Intent (agreed understanding)
 
@@ -45,7 +46,7 @@ Transition → cache behavior (exhaustive):
 | approve / edit-then-approve | `DEL companion:ctx:v1:{userId}` | compiled block changed — recompile on next read |
 | forget (hard delete) | `DEL` | row gone everywhere |
 | disable/enable toggle | `DEL` | injection on/off flips output |
-| archive-job delete (service-role) | `DEL` via shared `purgeCompanionCache(userId)` helper | background writes invalidate exactly like request writes |
+| archive-job delete (service-role) | NO cache purge — TTL-bounded staleness (≤3600 s, inside the worst-case bound above); rejected rows are never injected so user-visible impact is nil (v0.3.1 deviation: pg_cron runs inside Postgres with no app code, so a DEL is physically impossible) |
 | any other service-role write | `DEL` via the same helper (plan MUST route all service writes through it) | no silent stale path |
 | reject write | NONE (deliberate) | rejected rows are never injected — invalidating would be pure churn |
 | pending write | NONE (deliberate) | pending rows are not injected yet |
@@ -165,7 +166,7 @@ Validation: zod mirrors DB CHECKs.
   `all` = pending+approved; matrix §4 for 402s).
 - `POST /api/companion/memory` `{kind,value,startup_id?}` → 201 (human-entered ⇒ `approved`, confidence NULL);
   422 on schema fail **or non-owned `startup_id` (`STARTUP_NOT_OWNED`)**; 409 `MEMORY_FULL` when approved cap hit,
-  409 on normalized exact-dupe.
+  409 `MEMORY_DUPLICATE` on normalized exact-dupe (v0.3.1: named code).
 - `PATCH /api/companion/memory/:id` `{action:"approve"|"reject", value?}` → 200 (idempotent re-approve);
   404 unknown id; 409 `MEMORY_FULL` on approve-when-full. Only transitions in §3 allowed, else 422.
 - `DELETE /api/companion/memory/:id` → 200 hard delete + cache purge; 404 unknown.
@@ -190,6 +191,7 @@ Validation: zod mirrors DB CHECKs.
 | provenance | من جلسة {date} (عرض التاريخ بlocale عربي) |
 | cap_full | القائمة ممتلئة — احذف ذكرى أولًا |
 | memory_full | ذاكرتك ممتلئة (200) — احذف أو اندمج قبل إضافة جديد |
+| memory_duplicate | مكررة — هذه الذكرى معتمدة مسبقًا |
 | startup_not_owned | هذا المشروع ليس لك |
 | secret_blocked | عذرًا — لا أحفظ المفاتيح والبيانات الحساسة |
 
@@ -208,6 +210,8 @@ Validation: zod mirrors DB CHECKs.
    **About-the-user rule (binding)**: inference extracts facts ABOUT the account holder ONLY. Persons appearing in
    evidence/interviews/CSV (respondents, customers, third parties) are NEVER stored — the extraction prompt forbids
    person-entities other than the user, and the scan blocks email/phone/national-ID patterns in INFERRED candidates.
+   Self-contact exception (v0.3.1): the user's own verified contact (auth email) is allowlisted BEFORE the scan —
+   a regex cannot tell self from third party, so the allowlist decides.
    MANUALLY entered values are the user's explicit act and pass (still length/charset-checked).
 6. **Approval-rate abuse**: decide endpoints rate-limited (§8); mass-approve is user-explicit and logged.
 
