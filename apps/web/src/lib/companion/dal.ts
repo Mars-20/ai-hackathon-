@@ -1,10 +1,19 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveAgentGate, type EntitlementStatus } from "@/lib/entitlements";
 import { compileContext, type MemoryRow } from "./ranker";
 import { normalizeForMatch } from "./normalize";
-import { companionCtxKey, redisDel, redisGet, redisSetex } from "./redis";
+import { containsBlockedSecret } from "./scans";
+import {
+  companionCtxEntryKey,
+  companionCtxGenKey,
+  queryFingerprint,
+  redisDel,
+  redisGet,
+  redisSetex,
+} from "./redis";
 import {
   decideActionSchema,
   memoryIdSchema,
@@ -24,6 +33,7 @@ export type CompanionCode =
   | "NOT_FOUND"
   | "MEMORY_FULL"
   | "MEMORY_DUPLICATE"
+  | "SECRET_BLOCKED"
   | "STARTUP_NOT_OWNED"
   | "TRIAL_CONSUMED"
   | "ACCOUNT_PAUSED"
@@ -63,6 +73,19 @@ export interface CompanionDeps {
   redisSetex(key: string, ttlSec: number, value: string): Promise<void>;
   redisDel(key: string): Promise<void>;
   nowMs(): number;
+}
+
+// Compiled-context cache discipline (review #4): entries are keyed per
+// (user, generation, query-fingerprint) because the stored block is
+// query-RANKED. Writes never enumerate entries — they bump the per-user
+// generation, orphaning every prior entry at once (TTL reaps them ≤3600 s).
+// An empty compiled block is cached as a sentinel so zero-memory users do
+// not hit Postgres on every session.
+export const COMPANION_CTX_TTL_SECONDS = 3600;
+export const COMPANION_CTX_GEN_TTL_SECONDS = 86400;
+const COMPANION_CTX_EMPTY_SENTINEL = "\u0000";
+async function bumpCompanionCacheGen(d: CompanionDeps, userId: string): Promise<void> {
+  await d.redisSetex(companionCtxGenKey(userId), COMPANION_CTX_GEN_TTL_SECONDS, randomUUID());
 }
 
 async function defaultDeps(): Promise<CompanionDeps> {
@@ -213,6 +236,9 @@ export async function createManualMemory(
   throwIfDeniedForWrite(await d.getEntitlementStatus(userId));
   const kind = memoryKindSchema.parse(input.kind);
   const value = memoryValueSchema.parse(input.value);
+  // Server-side secret scan (review #8): the console ALSO scans client-side,
+  // but the API must not trust it — a direct POST with a key must 422 here.
+  if (containsBlockedSecret(value)) throw new CompanionError("SECRET_BLOCKED");
   const startup_id = memoryStartupIdSchema.parse(input.startup_id ?? null) ?? null;
   const client = await d.userClient();
   // App-level normalized-dupe pre-check with the full normalizer (the RPC is
@@ -242,11 +268,21 @@ export async function createManualMemory(
     throw new CompanionError("INVALID");
   // Spec §8: human-entered rows are APPROVED inline (confidence NULL), never
   // left pending. Composed propose → decide through the named RPCs only
-  // (single-writer rule); decideMemory also purges the ctx cache. If the
-  // approve step fails (e.g. MEMORY_FULL at the 200 cap) the pending row
-  // stays visible in the queue — surfaced, never silent.
+  // (single-writer rule); decideMemory also bumps the ctx generation. If the
+  // approve step fails (e.g. MEMORY_FULL at the 200 cap) the just-proposed
+  // pending row is removed again: a failed inline approve must not junk up
+  // the 20-pending queue with rows the user never saw (review #7).
   const id = first.id as string;
-  await decideMemory(userId, id, "approve", undefined, d);
+  try {
+    await decideMemory(userId, id, "approve", undefined, d);
+  } catch (e) {
+    try {
+      await client.from("companion_memory").delete().eq("id", id).eq("user_id", userId);
+    } catch (cleanupErr) {
+      console.warn("[companion] orphaned pending row cleanup failed", cleanupErr);
+    }
+    throw e;
+  }
   return { id };
 }
 
@@ -262,6 +298,12 @@ export async function decideMemory(
   const safeId = memoryIdSchema.parse(id);
   const safeAction = decideActionSchema.parse(action);
   const safeValue = value === undefined ? null : memoryValueSchema.parse(value);
+  // Server-side secret scan for decide-and-edit approves (review #8): the
+  // edited value becomes an approved memory, so it is scanned like a manual
+  // create. Plain approves (no new value) and rejects carry no new bytes.
+  if (safeAction === "approve" && safeValue !== null && containsBlockedSecret(safeValue)) {
+    throw new CompanionError("SECRET_BLOCKED");
+  }
   const client = await d.userClient();
   const { data, error } = await client.rpc("decide_memory", {
     p_user_id: userId,
@@ -272,7 +314,7 @@ export async function decideMemory(
   if (error) throw error;
   const envelope = data as { ok: boolean; code: string; row?: MemoryRow };
   throwIfRpcDenied(envelope);
-  await d.redisDel(companionCtxKey(userId));
+  await bumpCompanionCacheGen(d, userId);
   return envelope.row as MemoryRow;
 }
 
@@ -293,7 +335,7 @@ export async function forgetMemory(
     .select("id");
   if (error) throw error;
   if (!data || (data as unknown[]).length === 0) throw new CompanionError("NOT_FOUND");
-  await d.redisDel(companionCtxKey(userId));
+  await bumpCompanionCacheGen(d, userId);
 }
 
 export async function setMemoryEnabled(
@@ -313,7 +355,7 @@ export async function setMemoryEnabled(
     .select("user_id, memory_enabled")
     .maybeSingle();
   if (error) throw error;
-  await d.redisDel(companionCtxKey(userId));
+  await bumpCompanionCacheGen(d, userId);
   return (data ?? { user_id: userId, memory_enabled: enabled }) as CompanionProfile;
 }
 
@@ -326,9 +368,19 @@ export async function getCompiledContext(
   const profile = await getCompanionProfile(userId, d);
   // Disabled → "" with NO Redis touch (Review-Focus #3).
   if (!profile.memory_enabled) return "";
-  const key = companionCtxKey(userId);
+  // Generation read is fail-open: outage → gen "0", a self-consistent
+  // namespace no writer will ever bump into.
+  let gen = "0";
+  try {
+    const stored = await d.redisGet(companionCtxGenKey(userId));
+    if (typeof stored === "string" && stored.length > 0) gen = stored;
+  } catch {
+    // Redis outage at DAL level: fall through to Postgres (Review-Focus #4).
+  }
+  const key = companionCtxEntryKey(userId, gen, queryFingerprint(query));
   try {
     const hit = await d.redisGet(key);
+    if (hit === COMPANION_CTX_EMPTY_SENTINEL) return "";
     if (typeof hit === "string" && hit.length > 0) return hit;
   } catch {
     // Redis outage at DAL level: fall through to Postgres (Review-Focus #4).
@@ -350,7 +402,11 @@ export async function getCompiledContext(
   }
   const block = compileContext((data ?? []) as MemoryRow[], query, d.nowMs());
   try {
-    await d.redisSetex(key, 3600, block);
+    await d.redisSetex(
+      key,
+      COMPANION_CTX_TTL_SECONDS,
+      block === "" ? COMPANION_CTX_EMPTY_SENTINEL : block,
+    );
   } catch {
     // Best-effort cache write; the block itself is already compiled.
   }
@@ -377,5 +433,5 @@ export async function purgeCompanionCache(
   over?: Partial<CompanionDeps>,
 ): Promise<void> {
   const d = await depsWith(over);
-  await d.redisDel(companionCtxKey(userId));
+  await bumpCompanionCacheGen(d, userId);
 }

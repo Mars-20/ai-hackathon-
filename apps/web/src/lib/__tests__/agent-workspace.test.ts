@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   resolveEffectiveWorkspaceId,
+  verifyWorkspaceMembership,
   type WorkspaceClient,
 } from "@/lib/agent-workspace";
 
@@ -107,5 +108,31 @@ describe("resolveEffectiveWorkspaceId", () => {
     const id = await resolveEffectiveWorkspaceId(client, "u1", "");
     // Either a real id or null — never "" (which the DB rejects).
     expect(id === null || (typeof id === "string" && id.length > 0)).toBe(true);
+  });
+});
+
+describe("verifyWorkspaceMembership (spend-bucket guard, review #12)", () => {
+  test("true only for the requested workspace the user belongs to", async () => {
+    const { client } = makeFake({ memberships: [{ workspace_id: "ws-1" }] });
+    await expect(verifyWorkspaceMembership(client, "u1", "ws-1")).resolves.toBe(true);
+    await expect(verifyWorkspaceMembership(client, "u1", "ws-evil")).resolves.toBe(false);
+  });
+
+  test("false with no memberships and on lookup error (falls back to user id)", async () => {
+    const { client } = makeFake({ memberships: [] });
+    await expect(verifyWorkspaceMembership(client, "u1", "ws-1")).resolves.toBe(false);
+    const failing = {
+      from: () => {
+        throw new Error("db down");
+      },
+    } as unknown as WorkspaceClient;
+    await expect(verifyWorkspaceMembership(failing, "u1", "ws-1")).resolves.toBe(false);
+  });
+
+  test("false without querying on empty ids", async () => {
+    const { calls, client } = makeFake({ memberships: [{ workspace_id: "ws-1" }] });
+    await expect(verifyWorkspaceMembership(client, "", "ws-1")).resolves.toBe(false);
+    await expect(verifyWorkspaceMembership(client, "u1", "")).resolves.toBe(false);
+    expect(calls).toHaveLength(0);
   });
 });

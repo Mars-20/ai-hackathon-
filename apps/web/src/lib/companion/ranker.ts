@@ -30,7 +30,10 @@ const MS_PER_DAY = 86_400_000;
 
 export function scoreMemory(row: MemoryRow, queryTokens: string[], nowMs: number): number {
   const weight = (MEMORY_KIND_WEIGHTS as Record<string, number>)[row.kind] ?? 0;
-  const ageDays = Math.max(0, (nowMs - Date.parse(row.created_at)) / MS_PER_DAY);
+  // Unparseable timestamps score as age 0 — never NaN (NaN poisons the
+  // sort comparator into nondeterminism). Review minor.
+  const parsed = Date.parse(row.created_at);
+  const ageDays = Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / MS_PER_DAY) : 0;
   const decay = Math.exp(-ageDays / MEMORY_RECENCY_HALF_LIFE_DAYS);
   const tokens = new Set(normalizeForMatch(row.value));
   const normQuery = queryTokens.flatMap((t) => normalizeForMatch(t));

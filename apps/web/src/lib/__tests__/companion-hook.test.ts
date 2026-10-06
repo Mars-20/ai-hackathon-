@@ -66,6 +66,34 @@ describe("executePostSessionHook spend (H5)", () => {
     expect(traces[0].event_type).toBe("companion_infer");
   });
 
+  it("ledgers spend even when propose fails (review #9)", async () => {
+    const recorded: Array<[string, number]> = [];
+    const warned: unknown[][] = [];
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation((...a: unknown[]) => void warned.push(a));
+    try {
+      await executePostSessionHook(CAP, {
+        getApprovedValues: async () => [],
+        runInference: (async () => ({
+          proposed: { results: [], dropped: [] },
+          usage: { totalTokenCount: 1500 },
+          proposeError: "MEMORY_FULL at RPC",
+        })) as never,
+        recordSpend: (async (key: string, usd: number) => {
+          recorded.push([key, usd]);
+          return usd;
+        }) as never,
+        insertTrace: (async () => {}) as never,
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0][0]).toBe("ws-hook-1");
+    expect(warned.some((a) => String(a[0]).includes("propose failed"))).toBe(true);
+  });
+
   it("inference failure never breaks the run (warn + resolve)", async () => {
     const recorded: Array<[string, number]> = [];
     await expect(

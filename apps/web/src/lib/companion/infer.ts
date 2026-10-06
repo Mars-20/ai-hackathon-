@@ -122,7 +122,7 @@ export async function runPostSessionInference(args: {
   propose: (rows: ProposeRow[]) => Promise<ProposeResult>;
 }): Promise<
   | { skipped: InferSkipReason }
-  | { proposed: ProposeResult; usage: { totalTokenCount: number } }
+  | { proposed: ProposeResult; usage: { totalTokenCount: number }; proposeError?: string }
 > {
   if (args.isEnabled === false) return { skipped: "disabled" };
   let count: number;
@@ -140,5 +140,20 @@ export async function runPostSessionInference(args: {
     approvedValues: args.approvedValues,
   }).map((c) => ({ kind: c.kind, value: c.value, confidence: c.confidence }));
   if (rows.length === 0) return { proposed: { results: [], dropped: [] }, usage };
-  return { proposed: await args.propose(rows), usage };
+  // Channel stamp (review minor): inferred rows carry their provenance like
+  // manual rows carry "manual". startup_id stays null — only the startup
+  // NAME is known at infer time, never its id.
+  const stamped = rows.map((r) => ({ ...r, source_ref: "post-session" }));
+  try {
+    return { proposed: await args.propose(stamped), usage };
+  } catch (e) {
+    // The model call already spent tokens: surface usage WITH the failure so
+    // the hook still ledgers spend instead of dropping it (review #9).
+    // Nothing was proposed — results stay empty, never partial.
+    return {
+      proposed: { results: [], dropped: [] },
+      usage,
+      proposeError: e instanceof Error ? e.message : String(e),
+    };
+  }
 }

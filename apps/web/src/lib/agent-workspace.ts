@@ -82,3 +82,30 @@ export async function resolveEffectiveWorkspaceId(
   if (memberError) return null;
   return created.id;
 }
+
+// Spend-bucket guard (review #12 follow-up): the agent's spend ledger is
+// keyed by a workspace id taken from the request body. Verify-only probe —
+// NEVER creates anything, returns a boolean. True only when the user is a
+// member of exactly the given workspace. Fails CLOSED (false) on empty ids,
+// lookup errors, and RLS-denied reads: the caller falls back to ledgering
+// under the authenticated user id. A false negative only degrades pooling,
+// never grants cap evasion — so false stays the safe answer.
+export async function verifyWorkspaceMembership(
+  supabase: WorkspaceClient,
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
+  if (!userId || !workspaceId) return false;
+  try {
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const row = membership as { workspace_id?: string } | null;
+    return row?.workspace_id === workspaceId;
+  } catch {
+    return false;
+  }
+}

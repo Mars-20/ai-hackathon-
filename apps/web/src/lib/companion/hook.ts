@@ -132,7 +132,7 @@ export async function executePostSessionHook(
     args: Parameters<typeof defaultRunInference>[0],
   ) => Promise<
     | { skipped: string }
-    | { proposed: ProposeResult; usage: { totalTokenCount: number } }
+    | { proposed: ProposeResult; usage: { totalTokenCount: number }; proposeError?: string }
   >;
   let approvedValues: string[] = [];
   try {
@@ -140,7 +140,7 @@ export async function executePostSessionHook(
   } catch (err) {
     console.warn("[companion] post-session approved-values lookup failed, continuing without dedupe", err);
   }
-  let out: { skipped: string } | { proposed: ProposeResult; usage: { totalTokenCount: number } };
+  let out: { skipped: string } | { proposed: ProposeResult; usage: { totalTokenCount: number }; proposeError?: string };
   try {
     out = await runInference({
       userId: capture.userId,
@@ -165,6 +165,11 @@ export async function executePostSessionHook(
     }
   } catch (err) {
     console.warn("[companion] infer spend ledger failed", err);
+  }
+  // Propose failed AFTER a successful model call: spend above is already
+  // ledgered — say so loudly instead of looking like a silent skip (#9).
+  if (out.proposeError) {
+    console.warn("[companion] post-session propose failed, spend ledgered", out.proposeError);
   }
   const insert = over?.insertTrace ?? defaultInsertTrace;
   try {

@@ -60,6 +60,13 @@ describe("score", () => {
     expect(Number.isFinite(got)).toBe(true);
     expect(Math.abs(got - 0.6 * Math.exp(-1 / 30))).toBeLessThan(1e-9);
   });
+
+  it("unparseable created_at scores as age 0, never NaN (review minor)", () => {
+    const r = memRow({ value: "نبيع القهوة في الصباح", created_at: "not-a-date" });
+    const got = scoreMemory(r, [], Date.now());
+    expect(Number.isFinite(got)).toBe(true);
+    expect(got).toBe(MEMORY_KIND_WEIGHTS.fact);
+  });
 });
 
 describe("escape", () => {

@@ -372,24 +372,77 @@ describe("ownership (H4)", () => {
 });
 
 describe("cache discipline", () => {
-  it("forget + toggle purge the exact ctx key", async () => {
+  it("forget + toggle bump the cache generation (no key enumeration)", async () => {
     const row = mem({ user_id: "user-A", value: "forgettable" });
     const { deps, state } = makeDeps({ memories: [row] });
     await forgetMemory("user-A", row.id, deps);
     expect(state.memories).toHaveLength(0);
     await setMemoryEnabled("user-A", false, deps);
-    expect(state.calls.redisDel).toEqual(["companion:ctx:v1:user-A", "companion:ctx:v1:user-A"]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex.map((c) => c.key)).toEqual([
+      "companion:ctxgen:v1:user-A",
+      "companion:ctxgen:v1:user-A",
+    ]);
+    expect(state.calls.redisSetex.every((c) => c.ttl === 86_400)).toBe(true);
   });
 
-  it("approve purges; forgetting a ghost is NOT_FOUND", async () => {
+  it("approve bumps the generation; forgetting a ghost is NOT_FOUND", async () => {
     const row = mem({ user_id: "user-A", value: "approve me" });
     const { deps, state } = makeDeps({ memories: [row] });
     state.rpcImpl = contractRpc(state);
     await decideMemory("user-A", row.id, "approve", undefined, deps);
-    expect(state.calls.redisDel).toEqual(["companion:ctx:v1:user-A"]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex.map((c) => c.key)).toEqual(["companion:ctxgen:v1:user-A"]);
     await expect(
       forgetMemory("user-A", "00000000-0000-4000-8000-999999999999", deps),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("entries are keyed per query: different ideas never share a block", async () => {
+    const row = mem({ user_id: "user-A", value: "نبيع القهوة", status: "approved" });
+    const { deps, state } = makeDeps({
+      profiles: new Map([["user-A", true]]),
+      memories: [row],
+    });
+    await getCompiledContext("user-A", "القهوة", deps);
+    await getCompiledContext("user-A", "الشاي", deps);
+    const keys = state.calls.redisSetex.map((c) => c.key);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).toMatch(/^companion:ctx:v1:user-A:0:[0-9a-f]{8}$/);
+  });
+
+  it("a generation bump orphans prior entries: reads follow the new gen", async () => {
+    const row = mem({ user_id: "user-A", value: "approve me" });
+    const { deps, state } = makeDeps({
+      profiles: new Map([["user-A", true]]),
+      memories: [row],
+    });
+    state.rpcImpl = contractRpc(state);
+    await decideMemory("user-A", row.id, "approve", undefined, deps);
+    const bumped = state.calls.redisSetex[0].value;
+    expect(typeof bumped).toBe("string");
+    const { deps: readDeps, state: readState } = makeDeps({
+      profiles: new Map([["user-A", true]]),
+      memories: [row],
+      redisGetImpl: async (key: string) => (key === "companion:ctxgen:v1:user-A" ? bumped : null),
+    });
+    await getCompiledContext("user-A", "q", readDeps);
+    expect(readState.calls.redisSetex[0].key).toContain(`user-A:${bumped}:`);
+  });
+
+  it("empty blocks cache a sentinel so zero-memory users skip Postgres", async () => {
+    const { deps, state } = makeDeps({ profiles: new Map([["user-A", true]]), memories: [] });
+    await expect(getCompiledContext("user-A", "q", deps)).resolves.toBe("");
+    expect(state.calls.redisSetex).toHaveLength(1);
+    expect(state.calls.redisSetex[0].value).toBe("\u0000");
+    const { deps: hitDeps, state: hitState } = makeDeps({
+      profiles: new Map([["user-A", true]]),
+      memories: [mem({ user_id: "user-A", value: "late arrival", status: "approved" })],
+      redisGetImpl: async () => "\u0000",
+    });
+    await expect(getCompiledContext("user-A", "q", hitDeps)).resolves.toBe("");
+    expect(hitState.calls.from).toEqual(["companion_profile"]);
   });
 });
 
@@ -508,11 +561,15 @@ describe("manual create", () => {
     expect(sent[0].confidence).toBeNull();
     expect(state.calls.rpc.map((c) => c.name)).toEqual(["propose_memories", "decide_memory"]);
     expect(state.calls.rpc[1].params).toMatchObject({ p_action: "approve", p_id: "00000000-0000-4000-8000-0000000000a1" });
-    expect(state.calls.redisDel).toEqual(["companion:ctx:v1:user-A"]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex.map((c) => c.key)).toEqual(["companion:ctxgen:v1:user-A"]);
   });
 
   it("manual create surfaces MEMORY_FULL when the approve step hits the cap", async () => {
-    const { deps, state } = makeDeps();
+    const pendingId = "00000000-0000-4000-8000-0000000000a9";
+    const { deps, state } = makeDeps({
+      memories: [mem({ id: pendingId, user_id: "user-A", value: "قيمة جديدة" })],
+    });
     state.rpcImpl = (name: string) => {
       if (name === "decide_memory")
         return { data: { ok: false, code: "MEMORY_FULL" }, error: null };
@@ -520,7 +577,7 @@ describe("manual create", () => {
         data: {
           ok: true,
           code: "OK",
-          results: [{ index: 0, ok: true, code: "OK", id: "00000000-0000-4000-8000-0000000000a9" }],
+          results: [{ index: 0, ok: true, code: "OK", id: pendingId }],
           dropped: [],
         },
         error: null,
@@ -530,6 +587,41 @@ describe("manual create", () => {
       createManualMemory("user-A", { kind: "fact", value: "قيمة جديدة" }, deps),
     ).rejects.toMatchObject({ code: "MEMORY_FULL" });
     expect(state.calls.redisDel).toEqual([]);
+    // The orphaned pending row is removed: a failed inline approve must not
+    // junk up the 20-pending queue (review #7).
+    expect(state.memories.some((m) => m.id === pendingId)).toBe(false);
+  });
+});
+
+describe("server-side secret scan (review #8)", () => {
+  it("manual create rejects secrets without touching the RPC", async () => {
+    const { deps, state } = makeDeps();
+    state.rpcImpl = () => {
+      throw new Error("RPC must not be called for a blocked secret");
+    };
+    await expect(
+      createManualMemory("user-A", { kind: "fact", value: "token sk-live-abc123XYZ here" }, deps),
+    ).rejects.toMatchObject({ code: "SECRET_BLOCKED" });
+    expect(state.calls.rpc).toHaveLength(0);
+  });
+
+  it("decide-and-edit approve scans the edited value", async () => {
+    const row = mem({ user_id: "user-A", value: "clean" });
+    const { deps, state } = makeDeps({ memories: [row] });
+    state.rpcImpl = contractRpc(state);
+    await expect(
+      decideMemory("user-A", row.id, "approve", "key AKIAIOSFODNN7EXAMPLE here", deps),
+    ).rejects.toMatchObject({ code: "SECRET_BLOCKED" });
+    expect(state.calls.rpc).toHaveLength(0);
+    expect(row.status).toBe("pending");
+  });
+
+  it("plain approve without an edited value is not scanned", async () => {
+    const row = mem({ user_id: "user-A", value: "clean" });
+    const { deps, state } = makeDeps({ memories: [row] });
+    state.rpcImpl = contractRpc(state);
+    const out = await decideMemory("user-A", row.id, "approve", undefined, deps);
+    expect(out.status).toBe("approved");
   });
 });
 
@@ -557,10 +649,12 @@ describe("propose batch", () => {
 });
 
 describe("purge helper", () => {
-  it("deletes the ctx key and nothing else", async () => {
+  it("bumps the generation key and nothing else", async () => {
     const { deps, state } = makeDeps();
     await purgeCompanionCache("user-A", deps);
-    expect(state.calls.redisDel).toEqual(["companion:ctx:v1:user-A"]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex.map((c) => c.key)).toEqual(["companion:ctxgen:v1:user-A"]);
+    expect(state.calls.redisSetex[0].ttl).toBe(86_400);
   });
 });
 
@@ -576,6 +670,7 @@ describe("redis cache path", () => {
       "<untrusted>cached</untrusted>",
     );
     expect(state.calls.from).toEqual(["companion_profile"]);
+    expect(state.calls.redisGet[0]).toBe("companion:ctxgen:v1:user-A");
 
     const { deps: missDeps, state: missState } = makeDeps({
       profiles: new Map([["user-A", true]]),
@@ -584,7 +679,7 @@ describe("redis cache path", () => {
     const block = await getCompiledContext("user-A", "القهوة", missDeps);
     expect(block).toContain("نبيع القهوة");
     expect(missState.calls.redisSetex).toHaveLength(1);
-    expect(missState.calls.redisSetex[0].key).toBe("companion:ctx:v1:user-A");
+    expect(missState.calls.redisSetex[0].key).toMatch(/^companion:ctx:v1:user-A:0:[0-9a-f]{8}$/);
     expect(missState.calls.redisSetex[0].ttl).toBe(3600);
   });
 });

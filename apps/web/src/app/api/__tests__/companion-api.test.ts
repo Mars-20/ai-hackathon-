@@ -18,6 +18,7 @@ import {
 } from "@/lib/companion/http";
 import type { EntitlementStatus } from "@/lib/entitlements";
 import type { MemoryRow } from "@/lib/companion/ranker";
+import { MEMORY_COPY } from "@/lib/companion/copy";
 
 const UID = "11111111-1111-4111-8111-111111111111";
 const RID = (n: string): string => `00000000-0000-4000-8000-0000000000${n}`;
@@ -54,7 +55,7 @@ interface FakeState {
   profile: { user_id: string; memory_enabled: boolean } | null;
   listError: { code?: string; message?: string } | null;
   rpcImpl: (name: string, params: Record<string, unknown>) => unknown;
-  calls: { rpc: string[]; orArgs: string[]; limits: number[]; redisDel: string[] };
+  calls: { rpc: string[]; orArgs: string[]; limits: number[]; redisDel: string[]; redisSetex: string[] };
 }
 
 // Chainable PostgREST-shaped fake: terminals limit()/maybeSingle()/await.
@@ -149,7 +150,7 @@ function makeCtx(over?: Partial<FakeState>): {
         error: null,
       };
     },
-    calls: { rpc: [], orArgs: [], limits: [], redisDel: [] },
+    calls: { rpc: [], orArgs: [], limits: [], redisDel: [], redisSetex: [] },
     ...over,
   };
   const client = {
@@ -163,7 +164,9 @@ function makeCtx(over?: Partial<FakeState>): {
     userClient: async () => client as unknown as SupabaseClient,
     getEntitlementStatus: async () => state.entitlement,
     redisGet: async () => null,
-    redisSetex: async () => {},
+    redisSetex: async (key: string) => {
+      state.calls.redisSetex.push(key);
+    },
     redisDel: async (key: string) => {
       state.calls.redisDel.push(key);
     },
@@ -199,13 +202,14 @@ describe("GET /api/companion/memory", () => {
     expect(p1.status).toBe(200);
     const b1 = await body(p1);
     expect((b1.items as unknown[]).map((r) => (r as MemoryRow).id)).toEqual([R1.id, R2.id]);
-    expect(b1.nextCursor).toEqual({ created_at: R2.created_at, id: R2.id });
+    // Opaque cursor: an encoded string, used verbatim — never re-encoded.
+    expect(typeof b1.nextCursor).toBe("string");
     expect(state.calls.limits).toEqual([3]);
     expect(state.calls.orArgs).toEqual([]);
 
     const p2 = await handleListCompanionMemories(
       new Request(
-        `http://localhost/api/companion/memory?limit=2&cursor=${enc(b1.nextCursor)}`,
+        `http://localhost/api/companion/memory?limit=2&cursor=${b1.nextCursor}`,
       ),
       ctx,
     );
@@ -223,6 +227,7 @@ describe("GET /api/companion/memory", () => {
     for (const url of [
       "http://localhost/api/companion/memory?status=everything",
       "http://localhost/api/companion/memory?cursor=!!!not-base64!!!",
+      `http://localhost/api/companion/memory?cursor=${enc({ created_at: "not-a-date", id: RID("01") })}`,
       "http://localhost/api/companion/memory?limit=abc",
       "http://localhost/api/companion/memory?limit=0",
       "http://localhost/api/companion/memory?limit=101",
@@ -251,7 +256,8 @@ describe("POST /api/companion/memory", () => {
     expect(state.calls.rpc).toEqual(["propose_memories", "decide_memory"]);
     expect(rateProbe).toHaveBeenCalledTimes(1);
     expect(rateProbe.mock.calls[0][0]).toBe(companionRateKey(UID));
-    expect(state.calls.redisDel).toEqual([`companion:ctx:v1:${UID}`]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex).toEqual([`companion:ctxgen:v1:${UID}`]);
   });
 
   it("invalid kind / malformed JSON / blank value → 422 before rate + RPC", async () => {
@@ -314,6 +320,92 @@ describe("POST /api/companion/memory", () => {
   });
 });
 
+describe("domain error copy (review #5)", () => {
+  const post = (v: unknown) =>
+    new Request("http://localhost/api/companion/memory", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(v),
+    });
+
+  it("denies carry the frozen Arabic copy, not English strings", async () => {
+    const owned = makeCtx({
+      rpcImpl: () => ({ data: { ok: false, code: "STARTUP_NOT_OWNED" }, error: null }),
+    });
+    const r1 = await handleCreateCompanionMemory(
+      post({ kind: "fact", value: "x", startup_id: RID("f1") }),
+      owned.ctx,
+    );
+    expect(r1.status).toBe(422);
+    expect(await body(r1)).toEqual({
+      error: MEMORY_COPY.startup_not_owned,
+      code: "STARTUP_NOT_OWNED",
+    });
+
+    const dupe = makeCtx({
+      rpcImpl: (name: string) => {
+        if (name === "decide_memory")
+          return { data: { ok: true, code: "OK", row: { ...R2, status: "approved" } }, error: null };
+        return {
+          data: { ok: true, code: "OK", results: [{ index: 0, ok: false, code: "MEMORY_DUPLICATE" }], dropped: [] },
+          error: null,
+        };
+      },
+    });
+    const r2 = await handleCreateCompanionMemory(post({ kind: "fact", value: "مكررة" }), dupe.ctx);
+    expect(r2.status).toBe(409);
+    expect(await body(r2)).toEqual({
+      error: MEMORY_COPY.memory_duplicate,
+      code: "MEMORY_DUPLICATE",
+    });
+
+    const full = makeCtx({
+      rpcImpl: () => ({ data: { ok: false, code: "MEMORY_FULL" }, error: null }),
+    });
+    const r3 = await handleDecideCompanionMemory(
+      new Request(`http://localhost/api/companion/memory/${R2.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      }),
+      R2.id,
+      full.ctx,
+    );
+    expect(r3.status).toBe(409);
+    expect(await body(r3)).toEqual({ error: MEMORY_COPY.memory_full, code: "MEMORY_FULL" });
+  });
+
+  it("blocks secrets server-side with Arabic copy (reviews #5 + #8)", async () => {
+    const { ctx, state } = makeCtx();
+    const r1 = await handleCreateCompanionMemory(
+      post({ kind: "fact", value: "key sk-live-abc123XYZ" }),
+      ctx,
+    );
+    expect(r1.status).toBe(422);
+    expect(await body(r1)).toEqual({
+      error: MEMORY_COPY.secret_blocked,
+      code: "SECRET_BLOCKED",
+    });
+    expect(state.calls.rpc).toEqual([]);
+
+    const r2 = await handleDecideCompanionMemory(
+      new Request(`http://localhost/api/companion/memory/${R2.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve", value: "xoxb-12345678-token" }),
+      }),
+      R2.id,
+      ctx,
+    );
+    expect(r2.status).toBe(422);
+    expect(await body(r2)).toEqual({
+      error: MEMORY_COPY.secret_blocked,
+      code: "SECRET_BLOCKED",
+    });
+    expect(state.calls.rpc).toEqual([]);
+  });
+});
+
 describe("PATCH /api/companion/memory/[id]", () => {
   it("plain approve → 200 without conflict field + purges", async () => {
     const { ctx, state } = makeCtx();
@@ -330,7 +422,8 @@ describe("PATCH /api/companion/memory/[id]", () => {
     const b = await body(res);
     expect(b).toMatchObject({ id: R2.id, status: "approved" });
     expect(b).not.toHaveProperty("possible_conflict_with");
-    expect(state.calls.redisDel).toEqual([`companion:ctx:v1:${UID}`]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex).toEqual([`companion:ctxgen:v1:${UID}`]);
   });
 
   it("decide-and-edit approve surfaces possible_conflict_with (true positive)", async () => {
@@ -475,7 +568,8 @@ describe("DELETE /api/companion/memory/[id]", () => {
     );
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ purged: true });
-    expect(state.calls.redisDel).toEqual([`companion:ctx:v1:${UID}`]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex).toEqual([`companion:ctxgen:v1:${UID}`]);
   });
 
   it("absent row (archive-equivalent) → 404 likely-archived", async () => {
@@ -510,7 +604,8 @@ describe("profile toggle", () => {
     );
     expect(toggled.status).toBe(200);
     expect(await body(toggled)).toEqual({ user_id: UID, memory_enabled: false });
-    expect(state.calls.redisDel).toEqual([`companion:ctx:v1:${UID}`]);
+    expect(state.calls.redisDel).toEqual([]);
+    expect(state.calls.redisSetex).toEqual([`companion:ctxgen:v1:${UID}`]);
   });
 
   it("non-boolean toggle → 422 before rate", async () => {

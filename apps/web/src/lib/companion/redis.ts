@@ -7,8 +7,34 @@
 // the inference budget are NON-CRITICAL paths with a Postgres fallback.
 // Budget-path throw (incr) means the CALLER skips inference.
 
+import { normalizeForMatch } from "./normalize";
+
 export function companionCtxKey(userId: string): string {
   return `companion:ctx:v1:${userId}`;
+}
+
+// Cache-generation counter per user: writes bump it (invalidating every
+// per-query entry at once); readers embed it in the entry key. Old entries
+// are never deleted — they TTL out (≤3600 s) unread.
+export function companionCtxGenKey(userId: string): string {
+  return `companion:ctxgen:v1:${userId}`;
+}
+
+// Order-insensitive fingerprint of the normalized query tokens, so the same
+// idea in different words hits the same entry while different ideas never
+// share a query-ranked block (review #4).
+export function queryFingerprint(query: string): string {
+  const toks = normalizeForMatch(query).sort().join(" ");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < toks.length; i++) {
+    h ^= toks.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+export function companionCtxEntryKey(userId: string, gen: string, fp: string): string {
+  return `companion:ctx:v1:${userId}:${gen}:${fp}`;
 }
 
 export function companionBudgetKey(userId: string, nowMs: number = Date.now()): string {

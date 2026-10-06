@@ -16,6 +16,7 @@ import {
 } from "./dal";
 import { flagPossibleConflicts } from "./ranker";
 import type { MemoryRow } from "./ranker";
+import { MEMORY_COPY } from "./copy";
 import {
   decideActionSchema,
   memoryIdSchema,
@@ -74,15 +75,17 @@ function mapCompanionError(e: CompanionError): Response {
     case "INVALID":
       return invalid();
     case "STARTUP_NOT_OWNED":
-      return json(422, { error: "startup not owned", code: "STARTUP_NOT_OWNED" });
+      return json(422, { error: MEMORY_COPY.startup_not_owned, code: "STARTUP_NOT_OWNED" });
     case "NOT_FOUND":
       // Advisory only: the rows a client holds that vanish are TTL-archived
       // rejects; the hint is identical for never-existed ids (no oracle).
       return json(404, { error: "not found", code: "NOT_FOUND", hint: "likely-archived" });
     case "MEMORY_FULL":
-      return json(409, { error: "memory full", code: "MEMORY_FULL" });
+      return json(409, { error: MEMORY_COPY.memory_full, code: "MEMORY_FULL" });
     case "MEMORY_DUPLICATE":
-      return json(409, { error: "memory duplicate", code: "MEMORY_DUPLICATE" });
+      return json(409, { error: MEMORY_COPY.memory_duplicate, code: "MEMORY_DUPLICATE" });
+    case "SECRET_BLOCKED":
+      return json(422, { error: MEMORY_COPY.secret_blocked, code: "SECRET_BLOCKED" });
     case "TRIAL_CONSUMED":
       return gate402(e.code, "trial consumed");
     case "ACCOUNT_PAUSED":
@@ -124,8 +127,12 @@ function decodeCursor(raw: string | null): MemoryCursor | undefined {
   }
   if (typeof parsed !== "object" || parsed === null) throw new CompanionError("INVALID");
   const rec = parsed as Record<string, unknown>;
-  if (typeof rec.created_at !== "string" || rec.created_at.length === 0)
+  // created_at must be a non-empty PARSEABLE timestamp: raw interpolation
+  // into the PostgREST .or() filter otherwise (review minor).
+  if (typeof rec.created_at !== "string" || rec.created_at.length === 0) {
     throw new CompanionError("INVALID");
+  }
+  if (Number.isNaN(Date.parse(rec.created_at))) throw new CompanionError("INVALID");
   const id = memoryIdSchema.safeParse(rec.id);
   if (!id.success) throw new CompanionError("INVALID");
   return { created_at: rec.created_at, id: id.data };
@@ -171,7 +178,14 @@ export async function handleListCompanionMemories(
   try {
     const status = statusRaw as "pending" | "approved" | "rejected" | "all";
     const { rows, nextCursor } = await listMemories(user.id, status, limit, cursor, ctx.dalOver);
-    return json(200, { items: rows.map(toItem), nextCursor });
+    // Opaque cursor: base64url-encoded here, decoded by decodeCursor above.
+    // The raw {created_at,id} object must never leave the server — no client
+    // can build a valid cursor from parts (review #6).
+    const opaque =
+      nextCursor === null
+        ? null
+        : Buffer.from(JSON.stringify(nextCursor), "utf8").toString("base64url");
+    return json(200, { items: rows.map(toItem), nextCursor: opaque });
   } catch (e) {
     return mapError("list", e);
   }

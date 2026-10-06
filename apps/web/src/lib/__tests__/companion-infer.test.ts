@@ -169,7 +169,7 @@ describe("runPostSessionInference", () => {
     const out = await runPostSessionInference({ ...base, callAI: canned(text), propose });
     expect(propose).toHaveBeenCalledTimes(1);
     expect(propose.mock.calls[0][0]).toEqual([
-      { kind: "preference", value: "يفضل الدفع المسبق", confidence: 0.9 },
+      { kind: "preference", value: "يفضل الدفع المسبق", confidence: 0.9, source_ref: "post-session" },
     ]);
     expect(out).toEqual({
       proposed: { results: [{ index: 0, ok: true, code: "OK", id: "m1" }], dropped: [] },
@@ -189,6 +189,23 @@ describe("runPostSessionInference", () => {
     expect(out).toEqual({ proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 123 } });
   });
 
+  it("returns usage with proposeError when the propose step fails (review #9)", async () => {
+    mockedIncr.mockResolvedValue(3);
+    const propose = vi.fn(async () => {
+      throw new Error("MEMORY_FULL at RPC");
+    });
+    const out = await runPostSessionInference({
+      ...base,
+      callAI: canned(`[{"kind":"fact","value":"يستيقظ مبكرا","confidence":0.9}]`),
+      propose,
+    });
+    expect(propose).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({
+      proposed: { results: [], dropped: [] },
+      usage: { totalTokenCount: 123 },
+      proposeError: "MEMORY_FULL at RPC",
+    });
+  });
   it("keeps near-miss conflicts for propose (Task 7 flags them at decide time)", () => {
     const kept = filterExtractionCandidates(
       parseExtractionResult(`[{"kind":"fact","value":"ميزانية المشروع 8000 ريال","confidence":0.88}]`),

@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   companionBudgetKey,
+  companionCtxEntryKey,
+  companionCtxGenKey,
   companionCtxKey,
   incrBudgetAtomic,
+  queryFingerprint,
   redisDel,
   redisGet,
   redisSetex,
@@ -49,6 +52,22 @@ describe("keys", () => {
   it("builds the UTC YYYYMMDD budget key with no dashes", () => {
     expect(companionBudgetKey("u1", Date.parse("2026-10-06T00:00:00Z"))).toBe(
       "companion:inferbudget:u1:20261006",
+    );
+  });
+
+  it("builds the per-user cache generation key", () => {
+    expect(companionCtxGenKey("u1")).toBe("companion:ctxgen:v1:u1");
+  });
+
+  it("fingerprints queries stably and order-insensitively", () => {
+    expect(queryFingerprint("القهوة العربية")).toBe(queryFingerprint("العربية القهوة"));
+    expect(queryFingerprint("القهوة")).not.toBe(queryFingerprint("الشاي"));
+    expect(queryFingerprint("")).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("builds the per-query entry key from user, gen, and fingerprint", () => {
+    expect(companionCtxEntryKey("u1", "g1", "ab12cd34")).toBe(
+      "companion:ctx:v1:u1:g1:ab12cd34",
     );
   });
 });

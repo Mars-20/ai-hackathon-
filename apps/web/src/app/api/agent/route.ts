@@ -1844,7 +1844,32 @@ export async function POST(req: NextRequest) {
   // unauthenticated requests are ledgered under the rate-limit key so anon
   // abuse still hits the spend cap. Fail-closed on store error (explicit 429)
   // — never silently bypass the budget.
-  const budgetKey = peekWorkspaceId || rateUserId || rateKey;
+  // Review #12: the body id is NOT trusted blindly — an invented id would
+  // shard spend across bottomless buckets and evade the cap. Honor the
+  // peeked id ONLY with a verified membership; otherwise ledger under the
+  // authenticated user (anon keeps the workspace/ip bucket — trial/IP caps
+  // own that path). Lookup failure also falls back to the user id: spend
+  // stays capped, pooling merely degrades.
+  let budgetKey = peekWorkspaceId || rateUserId || rateKey;
+  if (rateUserId && peekWorkspaceId) {
+    try {
+      const { createServerSupabaseClient: createBudgetClient } = await import(
+        "@/lib/supabase/server"
+      );
+      const { verifyWorkspaceMembership } = await import("@/lib/agent-workspace");
+      const budgetClient = await createBudgetClient();
+      const member = await verifyWorkspaceMembership(budgetClient, rateUserId, peekWorkspaceId);
+      if (member) {
+        budgetKey = peekWorkspaceId;
+      } else {
+        budgetKey = rateUserId;
+        console.warn("[agent] unverified workspace_id in spend bucket, using user id");
+      }
+    } catch (e) {
+      budgetKey = rateUserId;
+      console.warn("[agent] workspace membership check failed, using user id", e);
+    }
+  }
   try {
     const b = await checkBudget(budgetKey);
     if (!b.allowed) {
