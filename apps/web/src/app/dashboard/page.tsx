@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -48,6 +48,25 @@ export default function DashboardPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("member");
   const [inviteStatus, setInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  // Trial paywall (Task 7): consumed/paused accounts get this modal (NOT a
+  // redirect) when they click "New validation".
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const paywallCloseRef = useRef<HTMLButtonElement>(null);
+
+  // Trial paywall (Task 7 R1): dialog semantics — autofocus close on open,
+  // ESC-to-close, return focus to the trigger on close.
+  useEffect(() => {
+    if (!showPaywallModal) return;
+    paywallCloseRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPaywallModal(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.getElementById("new-startup-btn")?.focus();
+    };
+  }, [showPaywallModal]);
 
 
 
@@ -146,6 +165,30 @@ export default function DashboardPage() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.replace("/login");
+  }
+
+  // Trial paywall (Task 7): fresh entitlement check on "New validation".
+  // Consumed/paused accounts get the paywall modal (NOT a redirect);
+  // every other status keeps the existing direct navigation to /validate.
+  // preventDefault runs SYNCHRONOUSLY: an async preventDefault (after the
+  // fetch await) always loses the race and the browser navigates anyway.
+  async function handleNewValidation(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/entitlements/me", { cache: "no-store" });
+      if (!res.ok) {
+        router.push("/validate");
+        return;
+      }
+      const ent = (await res.json()) as { status?: string };
+      if (ent.status === "trial_consumed" || ent.status === "paused") {
+        setShowPaywallModal(true);
+        return;
+      }
+    } catch {
+      /* fail-open: fall through to /validate */
+    }
+    router.push("/validate");
   }
 
   async function sendInvite() {
@@ -353,6 +396,7 @@ export default function DashboardPage() {
                 <h2 className="font-bold text-slate-200 text-sm">Your Startups</h2>
                 <Link
                   href="/validate"
+                  onClick={handleNewValidation}
                   className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                   id="new-startup-btn"
                 >
@@ -529,6 +573,35 @@ export default function DashboardPage() {
                     : <><Users className="w-4 h-4" /> Send Invite</>}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TRIAL PAYWALL MODAL (Task 7) ─────────────────────────────────── */}
+      {showPaywallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
+          <div dir="rtl" role="dialog" aria-modal="true" aria-labelledby="paywall-modal-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
+            <h3 id="paywall-modal-title" className="font-bold text-slate-200 text-lg mb-2">انتهت تجربتك المجانية</h3>
+            <p className="text-slate-400 text-sm mb-6">
+              استخدمت مشروعك التجريبي المجاني — جميع مشاريعك ونتائجك محفوظة ويمكنك الاطلاع عليها في أي وقت. اشترك لبدء مشروع جديد.
+            </p>
+            <div className="flex gap-3">
+              <Link
+                href="/plans"
+                id="paywall-modal-cta"
+                className="flex-1 btn-glow text-white font-bold py-3 rounded-xl text-sm text-center"
+              >
+                عرض خطط الاشتراك
+              </Link>
+              <button
+                ref={paywallCloseRef}
+                onClick={() => setShowPaywallModal(false)}
+                aria-label="إغلاق النافذة"
+                className="flex-1 glass py-3 rounded-xl text-sm text-slate-400 hover:text-slate-200 transition-all"
+              >
+                إغلاق
+              </button>
             </div>
           </div>
         </div>

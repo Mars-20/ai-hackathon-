@@ -26,9 +26,17 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { resolveInviteGate, type EntitlementStatus } from "@/lib/entitlements";
 import { INVITE_TTL_MS, hashInviteToken as hashToken, isInviteExpired } from "@/lib/invites";
 import { inviteActionSchema, inviteIdSchema, inviteListQuerySchema, inviteSchema } from "@/lib/validation";
 import type { MemberRole } from "@/lib/types";
+
+// Trial-paywall denial messages (402).
+const INVITE_GATE_MESSAGES: Record<string, string> = {
+  SUBSCRIPTION_REQUIRED: "الدعوات ميزة مدفوعة — اشترك لدعوة أعضاء",
+  TRIAL_CONSUMED: "انتهت تجربتك المجانية — اشترك لفتح مشاريع جديدة",
+  ACCOUNT_PAUSED: "حسابك موقوف مؤقتًا — راجع الإدارة",
+};
 
 // Columns safe to expose — token / token_hash deliberately excluded.
 const PUBLIC_COLUMNS =
@@ -130,6 +138,38 @@ export async function POST(request: NextRequest) {
   // Cannot invite someone with higher permissions than yourself
   if (ROLE_RANK[role] > ROLE_RANK[callerRoleValue]) {
     return NextResponse.json({ error: "Cannot assign a role higher than your own" }, { status: 403 });
+  }
+
+  // Trial paywall: invites are a paid feature — only subscribed/legacy
+  // callers may create them (402). 401/403 guards above unchanged.
+  // Service-role read: user_entitlements has no user-RLS read path.
+  let createStatus: EntitlementStatus | null = "legacy";
+  try {
+    const { data: entitlement, error: entitlementError } = await createServiceRoleClient()
+      .from("user_entitlements")
+      .select("status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (entitlementError) throw entitlementError;
+    if (!entitlement) {
+      console.warn("[invite] missing user_entitlements row, treating as legacy", { user_id: user.id });
+    } else {
+      const rawStatus = (entitlement as { status?: unknown }).status;
+      createStatus = typeof rawStatus === "string" ? (rawStatus as EntitlementStatus) : "legacy";
+    }
+  } catch {
+    return NextResponse.json({ error: "Entitlement check unavailable. Try again shortly." }, { status: 429 });
+  }
+  const createGate = resolveInviteGate(createStatus, "create");
+  if (!createGate.allowed) {
+    return NextResponse.json(
+      {
+        error: INVITE_GATE_MESSAGES[createGate.code] ?? INVITE_GATE_MESSAGES.SUBSCRIPTION_REQUIRED,
+        code: createGate.code,
+        plans_url: "/plans",
+      },
+      { status: 402 },
+    );
   }
 
   // Duplicate guard: pending invite already exists for this email+workspace.
@@ -255,6 +295,36 @@ export async function PATCH(request: NextRequest) {
       // accept: already a member → idempotent conflict, invite left untouched.
       if (role) {
         return NextResponse.json({ error: "Already a member of this workspace" }, { status: 409 });
+      }
+      // Trial paywall: the INVITEE's (user.id) entitlement gates the accept
+      // (402). On-behalf/privileged/expiry/pending rules above unchanged.
+      let acceptStatus: EntitlementStatus | null = "legacy";
+      try {
+        const { data: acceptEntitlement, error: acceptEntitlementError } = await service
+          .from("user_entitlements")
+          .select("status")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (acceptEntitlementError) throw acceptEntitlementError;
+        if (!acceptEntitlement) {
+          console.warn("[invite] missing user_entitlements row, treating as legacy", { user_id: user.id });
+        } else {
+          const rawAccept = (acceptEntitlement as { status?: unknown }).status;
+          acceptStatus = typeof rawAccept === "string" ? (rawAccept as EntitlementStatus) : "legacy";
+        }
+      } catch {
+        return NextResponse.json({ error: "Entitlement check unavailable. Try again shortly." }, { status: 429 });
+      }
+      const acceptGate = resolveInviteGate(acceptStatus, "accept");
+      if (!acceptGate.allowed) {
+        return NextResponse.json(
+          {
+            error: INVITE_GATE_MESSAGES[acceptGate.code] ?? INVITE_GATE_MESSAGES.SUBSCRIPTION_REQUIRED,
+            code: acceptGate.code,
+            plans_url: "/plans",
+          },
+          { status: 402 },
+        );
       }
       // Service-role member insert: RLS members_insert is owner/admin-only
       // and the invitee is by definition not a member yet; the email +
