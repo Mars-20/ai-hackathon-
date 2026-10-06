@@ -49,10 +49,10 @@ const R3 = row({ id: RID("03"), value: "المقر في جدة", created_at: "20
 interface FakeState {
   entitlement: EntitlementStatus | null;
   authed: boolean;
-  listRows: MemoryRow[];
   approvedValues: string[];
   deleteRows: Array<{ id: string }>;
   profile: { user_id: string; memory_enabled: boolean } | null;
+  listError: { code?: string; message?: string } | null;
   rpcImpl: (name: string, params: Record<string, unknown>) => unknown;
   calls: { rpc: string[]; orArgs: string[]; limits: number[]; redisDel: string[] };
 }
@@ -91,8 +91,9 @@ class FQ {
     this.upsertRow = r;
     return this;
   }
-  limit(n: number): { data: unknown; error: null } {
+  limit(n: number): { data: unknown; error: { code?: string; message?: string } | null } {
     this.state.calls.limits.push(n);
+    if (this.state.listError) return { data: null, error: this.state.listError };
     if (this.table === "companion_memory" && !this.isDelete) {
       const page = this.ors.length > 0 ? [R3] : [R1, R2, R3];
       return { data: page.slice(0, n), error: null };
@@ -133,9 +134,9 @@ function makeCtx(over?: Partial<FakeState>): {
   const state: FakeState = {
     entitlement: "trial_active",
     authed: true,
-    listRows: [R1, R2, R3],
     approvedValues: [],
     deleteRows: [{ id: A1 }],
+    listError: null,
     profile: { user_id: UID, memory_enabled: true },
     rpcImpl: (name: string) => {
       if (name === "decide_memory")
@@ -379,6 +380,34 @@ describe("PATCH /api/companion/memory/[id]", () => {
     );
     expect(res.status).toBe(200);
     expect(await body(res)).not.toHaveProperty("possible_conflict_with");
+  });
+
+  it("conflict-lookup outage still returns the decided row (best-effort flag)", async () => {
+    const edited = "ميزانية المشروع 8000 ريال";
+    const { ctx } = makeCtx({
+      listError: { code: "XX000", message: "boom" },
+      rpcImpl: (name: string) => {
+        if (name === "decide_memory")
+          return {
+            data: { ok: true, code: "OK", row: { ...R1, id: A2, value: edited, status: "approved" } },
+            error: null,
+          };
+        return { data: { ok: true, code: "OK", results: [], dropped: [] }, error: null };
+      },
+    });
+    const res = await handleDecideCompanionMemory(
+      new Request(`http://localhost/api/companion/memory/${A2}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve", value: edited }),
+      }),
+      A2,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const b = await body(res);
+    expect(b).toMatchObject({ id: A2, status: "approved" });
+    expect(b).not.toHaveProperty("possible_conflict_with");
   });
 
   it("rejected→approve is allowed (spec §3 changed-mind), unknown id → 404 likely-archived", async () => {

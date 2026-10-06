@@ -243,17 +243,23 @@ export async function handleDecideCompanionMemory(
     const item = toItem(out);
     // Decide-and-edit approve: surface a conflicting approved id (if any) so
     // the ذكرياتي console can show the pair together (spec §5.3, no overwrite).
+    // Best-effort: the decide already committed — a lookup outage must not
+    // turn it into a 500; the row returns without the flag instead.
     if (action === "approve" && value !== undefined) {
-      const approved = await listMemories(user.id, "approved", 200, undefined, ctx.dalOver);
-      const others = approved.rows
-        .filter((r) => r.id !== out.id)
-        .map((r) => ({ id: r.id, kind: r.kind, value: r.value, created_at: r.created_at }));
-      const flags = flagPossibleConflicts(
-        [{ id: out.id, kind: out.kind, value: out.value, created_at: out.created_at }],
-        others,
-      );
-      const hit = flags.get(0);
-      if (hit) return json(200, { ...item, possible_conflict_with: hit });
+      try {
+        const approved = await listMemories(user.id, "approved", 200, undefined, ctx.dalOver);
+        const others = approved.rows
+          .filter((r) => r.id !== out.id)
+          .map((r) => ({ id: r.id, kind: r.kind, value: r.value, created_at: r.created_at }));
+        const flags = flagPossibleConflicts(
+          [{ id: out.id, kind: out.kind, value: out.value, created_at: out.created_at }],
+          others,
+        );
+        const hit = flags.get(0);
+        if (hit) return json(200, { ...item, possible_conflict_with: hit });
+      } catch (e) {
+        console.warn("[companion] conflict lookup failed, returning row without flag", e);
+      }
     }
     return json(200, item);
   } catch (e) {
