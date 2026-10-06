@@ -479,22 +479,57 @@ describe("manual create", () => {
     expect(state.calls.rpc).toHaveLength(0);
   });
 
-  it("single-row propose with NULL confidence returns the new id", async () => {
+  it("single-row propose with NULL confidence is approved inline (spec §8) + purges", async () => {
     const { deps, state } = makeDeps();
-    state.rpcImpl = () => ({
-      data: {
-        ok: true,
-        code: "OK",
-        results: [{ index: 0, ok: true, code: "OK", id: "new-id-1" }],
-        dropped: [],
-      },
-      error: null,
-    });
+    state.rpcImpl = (name: string) => {
+      if (name === "decide_memory")
+        return {
+          data: {
+            ok: true,
+            code: "OK",
+            row: { id: "00000000-0000-4000-8000-0000000000a1", kind: "preference", value: "أحب الشاي", status: "approved" },
+          },
+          error: null,
+        };
+      return {
+        data: {
+          ok: true,
+          code: "OK",
+          results: [{ index: 0, ok: true, code: "OK", id: "00000000-0000-4000-8000-0000000000a1" }],
+          dropped: [],
+        },
+        error: null,
+      };
+    };
     await expect(
       createManualMemory("user-A", { kind: "preference", value: "أحب الشاي" }, deps),
-    ).resolves.toEqual({ id: "new-id-1" });
+    ).resolves.toEqual({ id: "00000000-0000-4000-8000-0000000000a1" });
     const sent = state.calls.rpc[0].params.p_rows as Array<Record<string, unknown>>;
     expect(sent[0].confidence).toBeNull();
+    expect(state.calls.rpc.map((c) => c.name)).toEqual(["propose_memories", "decide_memory"]);
+    expect(state.calls.rpc[1].params).toMatchObject({ p_action: "approve", p_id: "00000000-0000-4000-8000-0000000000a1" });
+    expect(state.calls.redisDel).toEqual(["companion:ctx:v1:user-A"]);
+  });
+
+  it("manual create surfaces MEMORY_FULL when the approve step hits the cap", async () => {
+    const { deps, state } = makeDeps();
+    state.rpcImpl = (name: string) => {
+      if (name === "decide_memory")
+        return { data: { ok: false, code: "MEMORY_FULL" }, error: null };
+      return {
+        data: {
+          ok: true,
+          code: "OK",
+          results: [{ index: 0, ok: true, code: "OK", id: "00000000-0000-4000-8000-0000000000a9" }],
+          dropped: [],
+        },
+        error: null,
+      };
+    };
+    await expect(
+      createManualMemory("user-A", { kind: "fact", value: "قيمة جديدة" }, deps),
+    ).rejects.toMatchObject({ code: "MEMORY_FULL" });
+    expect(state.calls.redisDel).toEqual([]);
   });
 });
 

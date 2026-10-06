@@ -238,8 +238,16 @@ export async function createManualMemory(
   throwIfRpcDenied(envelope);
   const first = envelope.results?.[0];
   if (!first?.ok) throw new CompanionError((first?.code ?? "INVALID") as CompanionCode);
-  // Pending rows are never injected: no cache purge on propose.
-  return { id: first.id as string };
+  if (typeof first.id !== "string" || first.id.length === 0)
+    throw new CompanionError("INVALID");
+  // Spec §8: human-entered rows are APPROVED inline (confidence NULL), never
+  // left pending. Composed propose → decide through the named RPCs only
+  // (single-writer rule); decideMemory also purges the ctx cache. If the
+  // approve step fails (e.g. MEMORY_FULL at the 200 cap) the pending row
+  // stays visible in the queue — surfaced, never silent.
+  const id = first.id as string;
+  await decideMemory(userId, id, "approve", undefined, d);
+  return { id };
 }
 
 export async function decideMemory(
