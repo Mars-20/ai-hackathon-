@@ -227,11 +227,27 @@ body::before {
   border-color: rgba(92, 124, 250, 0.5);
 }
 
+/* Touch: kill double-tap zoom delay, intentional highlight */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(92, 124, 250, 0.25);
+}
+
 /* Responsive containers */
 .container-app {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 16px;
+}
+@media (min-width: 640px) {
+  .container-app {
+    padding: 0 24px;
+  }
+}
+
+/* Notch safety for fixed/sticky top bars */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
 }
 
 /* Font mono override */

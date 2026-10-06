@@ -116,9 +116,9 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-dvh">
       {/* ── NAVBAR ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+      <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center">
@@ -150,7 +150,7 @@ export default function LandingPage() {
           </div>
 
           {/* Headline */}
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-tight mb-6 animate-slide-up">
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black leading-tight mb-6 animate-slide-up text-balance">
             Stop building{" "}
             <span className="gradient-text">the wrong thing.</span>
           </h1>
@@ -286,7 +286,7 @@ export default function LandingPage() {
           <div className="glass rounded-3xl p-8 lg:p-12 border border-white/5">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <div>
-                <h2 className="text-3xl font-bold mb-4">
+            <h2 className="text-3xl font-bold mb-4 text-balance">
                   Honest decisions,{" "}
                   <span className="gradient-text">every time</span>
                 </h2>

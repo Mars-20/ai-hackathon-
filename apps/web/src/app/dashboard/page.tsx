@@ -193,7 +193,7 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-slate-500 text-sm">Loading your workspace…</p>
@@ -206,9 +206,9 @@ export default function DashboardPage() {
   const canInvite = activeWorkspace && ["owner", "admin"].includes(activeWorkspace.role);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* ── HEADER ──────────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           {/* Logo */}
           <div className="flex items-center gap-2">
@@ -220,22 +220,22 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             {/* Workspace Switcher */}
             <div className="relative">
               <button
                 onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)}
-                className="glass glass-hover flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border border-white/5"
+                className="glass glass-hover flex items-center gap-2 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs border border-white/5"
                 id="workspace-switcher-btn"
               >
                 <span className="w-5 h-5 rounded bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-xs font-bold">
                   {activeWorkspace?.name?.[0] || "W"}
                 </span>
-                <span className="text-slate-300 max-w-24 truncate">{activeWorkspace?.name || "No Workspace"}</span>
-                <span className={`text-xs px-1.5 py-0.5 rounded border ${ROLE_BADGE_STYLE[activeWorkspace?.role || "member"]}`}>
+                <span className="hidden sm:inline text-slate-300 max-w-24 truncate">{activeWorkspace?.name || "No Workspace"}</span>
+                <span className={`hidden sm:inline text-xs px-1.5 py-0.5 rounded border ${ROLE_BADGE_STYLE[activeWorkspace?.role || "member"]}`}>
                   {activeWorkspace?.role}
                 </span>
-                <ChevronDown className="w-3 h-3 text-slate-500" />
+                <ChevronDown className="w-3 h-3 text-slate-500 hidden sm:block" />
               </button>
 
               {showWorkspaceSwitcher && (
@@ -279,9 +279,10 @@ export default function DashboardPage() {
                 className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
                 id="admin-link"
                 title="Admin"
+                aria-label="Admin"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
-                Admin
+                <span className="hidden sm:inline">Admin</span>
               </Link>
             )}
 
@@ -291,9 +292,10 @@ export default function DashboardPage() {
               className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
               id="history-link"
               title="History"
+              aria-label="History"
             >
               <History className="w-3.5 h-3.5 text-brand-400" />
-              History
+              <span className="hidden sm:inline">History</span>
             </Link>
 
             {/* User avatar / sign out */}

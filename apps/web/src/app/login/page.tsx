@@ -97,7 +97,7 @@ function AuthForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative">
+    <div className="min-h-dvh flex items-center justify-center px-4 relative">
       {/* Background glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full"
@@ -123,7 +123,7 @@ function AuthForm() {
         </div>
 
         {/* Card */}
-        <div className="glass rounded-3xl p-8 border border-white/10">
+        <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10">
           {/* Mode toggle */}
           <div className="flex rounded-xl p-1 mb-6" style={{ background: "rgba(255,255,255,0.05)" }}>
             {(["login", "signup"] as AuthMode[]).map((m) => (
@@ -278,7 +278,7 @@ function AuthForm() {
 
 export default function AuthPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-dvh flex items-center justify-center">Loading...</div>}>
       <AuthForm />
     </Suspense>
   );

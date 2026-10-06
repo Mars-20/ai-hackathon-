@@ -49,8 +49,8 @@ export default async function AdminLayout({
   );
 
   return (
-    <div className="min-h-screen">
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+    <div className="min-h-dvh">
+      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="font-bold text-sm tracking-tight">
@@ -65,22 +65,22 @@ export default async function AdminLayout({
         </div>
       </header>
 
-      <div className="pt-14 flex">
+      <div className="pt-14 flex flex-col sm:flex-row">
         <nav
           aria-label="Admin sections"
-          className="w-48 shrink-0 min-h-[calc(100vh-3.5rem)] border-r border-white/5 p-4 space-y-1"
+          className="sticky top-14 z-30 sm:static glass sm:bg-transparent border-b sm:border-b-0 sm:border-r border-white/5 p-2 sm:p-4 flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible sm:w-48 sm:shrink-0 sm:min-h-[calc(100dvh-3.5rem)]"
         >
           {items.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="block px-3 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/5 hover:text-brand-400 transition-colors"
+              className="shrink-0 whitespace-nowrap px-3 py-2 rounded-xl text-sm text-slate-300 hover:bg-white/5 hover:text-brand-400 transition-colors"
             >
               {item.label}
             </Link>
           ))}
         </nav>
-        <main className="flex-1 min-w-0 px-6 py-8">
+        <main className="flex-1 min-w-0 px-4 sm:px-6 py-6 sm:py-8">
           <div className="max-w-6xl">{children}</div>
         </main>
       </div>

@@ -773,9 +773,9 @@ function ValidateDashboard() {
   const secondaryEvidence = evidence.filter((e) => e.evidence_type === "secondary");
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-dvh flex flex-col">
       {/* ── Top bar ── */}
-      <header className="glass border-b border-white/5 sticky top-0 z-40">
+      <header className="glass border-b border-white/5 sticky top-0 z-40 safe-top">
         <div className="container-app h-14 flex items-center gap-4">
           <Link href="/dashboard" className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
             <ArrowLeft className="w-4 h-4" />
@@ -809,11 +809,11 @@ function ValidateDashboard() {
                 stats.verifier_approved ? "text-green-400 bg-green-500/10" : "text-yellow-400 bg-yellow-500/10"
               )}>
                 <Shield className="w-3.5 h-3.5" />
-                Verifier {stats.verifier_approved ? "✓" : `⚠ ${stats.unsupported_claims} flags`}
+                <span className="hidden sm:inline">Verifier</span> {stats.verifier_approved ? "✓" : `⚠ ${stats.unsupported_claims} flags`}
               </div>
             )}
             {stats.tool_calls !== undefined && (
-              <div className="text-xs text-slate-500 px-2 py-1 glass rounded-lg">
+              <div className="hidden sm:block text-xs text-slate-500 px-2 py-1 glass rounded-lg">
                 {stats.tool_calls}/{15} calls
               </div>
             )}
@@ -821,9 +821,9 @@ function ValidateDashboard() {
         </div>
       </header>
 
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col lg:flex-row">
         {/* ── Left sidebar — Input ── */}
-        <aside className="w-80 shrink-0 glass border-r border-white/5 p-4 flex flex-col gap-4 overflow-y-auto">
+        <aside className="w-full lg:w-80 lg:shrink-0 glass border-b lg:border-b-0 lg:border-r border-white/5 p-4 flex flex-col gap-4 lg:overflow-y-auto">
           <div>
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
               Startup Idea
@@ -1208,7 +1208,7 @@ function ValidateDashboard() {
 export default function ValidatePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
       </div>
     }>

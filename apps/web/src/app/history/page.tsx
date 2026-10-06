@@ -216,9 +216,9 @@ export default function HistoryPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="flex items-center gap-2">
@@ -285,8 +285,8 @@ export default function HistoryPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Export CSV">
-              <Download className="w-3.5 h-3.5" /> Export
+            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Export CSV" aria-label="Export CSV">
+              <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span>
             </button>
             <Link href="/validate" className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
               + New

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,6 +11,11 @@ export const metadata: Metadata = {
     description: "AI agent that validates startup ideas with real evidence, not opinions.",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#080b14",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -29,7 +34,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen relative z-10">
+      <body className="min-h-dvh relative z-10">
         {children}
       </body>
     </html>

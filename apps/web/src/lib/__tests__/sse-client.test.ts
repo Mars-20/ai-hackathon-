@@ -45,4 +45,41 @@ describe("createSseParser", () => {
     expect(events).toEqual([{ type: "phase", phase: "intake" }]);
     expect(p.droppedCount()).toBe(1);
   });
+
+  test("reassembles a prod-shaped leads event fed in small TCP-like chunks", () => {
+    // Prod 2026-10-05: /api/agent sends a ~17KB `leads` frame (Snov emails,
+    // em dash + smart quotes in message). The UI showed no leads while the
+    // trace proved the server sent them — rule out the parser dropping the
+    // frame when it straddles many TCP chunks.
+    const leads = [1, 2, 3, 4].map((n) => ({
+      id: `lead-${n}`,
+      name: "Omar Qari",
+      title: "ceo",
+      company: "Logicbroker",
+      email: "oqari@Logicbroker.com",
+      linkedin_url: "https://www.linkedin.com/in/oqari",
+      city: null,
+      country: "New York, New York, United States",
+      seniority: null,
+      headline: null,
+    }));
+    const payload = {
+      type: "leads",
+      leads,
+      message:
+        'Found 4 potential interviewees matching "startup founders and CEOs" — reach out to validate your assumptions with real people.',
+      trace: [],
+    };
+    const frame = `data: ${JSON.stringify(payload)}\n\n`;
+    const p = createSseParser();
+    const out = [];
+    for (let i = 0; i < frame.length; i += 53) out.push(...p.push(frame.slice(i, i + 53)));
+    expect(out.length).toBe(1);
+    const data = out[0] as unknown as { type: string; leads: unknown[]; message: unknown };
+    expect(data.type).toBe("leads");
+    expect(Array.isArray(data.leads)).toBe(true);
+    expect(data.leads).toHaveLength(4);
+    expect(typeof data.message).toBe("string");
+    expect(p.droppedCount()).toBe(0);
+  });
 });

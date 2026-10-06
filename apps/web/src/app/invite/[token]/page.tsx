@@ -55,7 +55,7 @@ export default function InviteTokenPage({ params }: { params: Promise<{ token: s
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-dvh flex items-center justify-center px-4">
       <div className="w-full max-w-md glass rounded-3xl p-8 border border-white/10 text-center">
         <h1 className="font-black text-xl tracking-tight mb-2">Workspace invite</h1>
         {phase === "accepted" && (
