@@ -51,6 +51,8 @@ import { resolveAgentGate } from "@/lib/entitlements";
 import type { EntitlementStatus } from "@/lib/entitlements";
 import { evaluateTrialStart } from "@/lib/trial-claims";
 import type { ClaimsDb } from "@/lib/trial-claims";
+import { composePrompt } from "@/lib/companion/prompt";
+import type { PostSessionCapture } from "@/lib/companion/hook";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -834,7 +836,8 @@ async function runIntakeSkill(
   idea: string,
   trace: TraceEvent[],
   opts?: { workspace_id?: string; owner_id?: string },
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
 ): Promise<IntakeResult> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:startup-intake", "skill_start", { idea }));
@@ -877,7 +880,7 @@ are missing or ambiguous in the idea. NEVER guess facts not present — ask
 instead of inventing. If nothing is ambiguous, return an empty list.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    prompt: composePrompt(prompt, companionCtx),
     systemPrompt: "You are the startup-intake skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
@@ -916,7 +919,8 @@ instead of inventing. If nothing is ambiguous, return an empty list.`;
 async function runAssumptionMappingSkill(
   startup: Startup,
   trace: TraceEvent[],
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
 ): Promise<Assumption[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:assumption-mapping", "skill_start", { startup_id: startup.id }));
@@ -978,7 +982,7 @@ For each assumption:
 Return assumptions sorted by risk_level: critical first, then high, medium, low.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    prompt: composePrompt(prompt, companionCtx),
     systemPrompt: "You are the assumption-mapping skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
@@ -1222,7 +1226,8 @@ async function runExperimentDesignerSkill(
   startup: Startup,
   assumptions: Assumption[],
   trace: TraceEvent[],
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
 ): Promise<Experiment> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:experiment-designer", "skill_start", { startup_id: startup.id }));
@@ -1278,7 +1283,7 @@ RULES (non-negotiable):
 Design 4-7 interview/survey questions. Make them open-ended and past-behavior focused.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    prompt: composePrompt(prompt, companionCtx),
     systemPrompt: "You are the experiment-designer and survey-designer skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
@@ -1370,7 +1375,8 @@ async function runResponseAnalyzerSkill(
   uploadedData: string,
   experiment: Experiment,
   trace: TraceEvent[],
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
 ): Promise<Evidence[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:response-analyzer", "skill_start", { startup_id: startup.id }));
@@ -1427,7 +1433,7 @@ For each evidence item, count how many respondents it represents (sample_size).
 Write a summary of what the data actually shows.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    prompt: composePrompt(prompt, companionCtx),
     systemPrompt: "You are the response-analyzer skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
@@ -1477,7 +1483,8 @@ async function runDecisionMemoSkill(
   allEvidence: Evidence[],
   trace: TraceEvent[],
   verifier?: { approved: boolean; unsupportedClaims: string[] },
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
 ): Promise<Decision> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:decision-memo", "skill_start", { startup_id: startup.id }));
@@ -1531,7 +1538,7 @@ Produce:
 Be honest. If evidence is thin, say "test_more". Never inflate.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    prompt: composePrompt(prompt, companionCtx),
     systemPrompt: "You are the decision-memo skill for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     trace,
@@ -1686,7 +1693,9 @@ Only flag market/competitor/data claims that need sources but have none.
 Return: approved=true if 0 unsupported claims, false otherwise. List any unsupported claims.`;
 
   const rawText = await callAIWithFallback({
-    prompt,
+    // H2: companion block is NEVER evidence — the verifier judges output
+    // against retrieved evidence only, so it always composes with "" ctx.
+    prompt: composePrompt(prompt, ""),
     systemPrompt: "You are the Verifier for a Validation Copilot. Respond ONLY with valid JSON.",
     responseSchema: schema,
     geminiModel: VERIFIER_MODEL,
@@ -2002,6 +2011,40 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Companion memory: fetch compiled ctx ONCE after auth+gate ──────────
+  // Fail-soft: any failure injects nothing. The post-session capture is
+  // snapshotted BY VALUE here; schedulePostSessionHook calls after()
+  // synchronously in this POST scope — never from the background IIFE (C4).
+  let companionCtx = "";
+  try {
+    const fullBody = (await req.clone().json()) as { idea?: unknown; startup_name?: unknown };
+    const ideaText = typeof fullBody.idea === "string" ? fullBody.idea : "";
+    if (rateUserId && ideaText.trim()) {
+      // Lazy server modules: keeps the route's static graph free of
+      // server-only so unit tests can import POST directly (rate-limit
+      // precedent); matches the lazy supabase-server imports above.
+      const { getCompiledContext } = await import("@/lib/companion/dal");
+      const { schedulePostSessionHook } = await import("@/lib/companion/hook");
+      try {
+        companionCtx = await getCompiledContext(rateUserId, ideaText);
+      } catch (ctxErr) {
+        console.warn("[companion] context fetch failed, injecting nothing", ctxErr);
+        companionCtx = "";
+      }
+      const capture: PostSessionCapture = {
+        userId: rateUserId,
+        userEmail: rateUserEmail,
+        memoText: ideaText.slice(0, 8000),
+        startupName:
+          typeof fullBody.startup_name === "string" ? fullBody.startup_name.slice(0, 200) : "",
+        budgetKey,
+      };
+      schedulePostSessionHook(capture);
+    }
+  } catch {
+    companionCtx = "";
+  }
+
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -2032,6 +2075,11 @@ export async function POST(req: NextRequest) {
       }
       const idea = sanitizeForPrompt(rawIdea);
       const uploaded_data = rawData ? sanitizeForPrompt(rawData) : undefined;
+
+      // Companion injection meter (spec §11): one row per run that injects.
+      if (companionCtx) {
+        trace.push(makeTrace("companion", "companion_inject", { chars: companionCtx.length }));
+      }
 
       // ── Phase 1: Routing (dedicated Groq classifier BEFORE the Planner) ──
       trace.push(makeTrace("router", "tool_call", { intent: "startup_validation", idea: idea.slice(0, 100) }));
@@ -2071,7 +2119,7 @@ export async function POST(req: NextRequest) {
         );
       }
       const intakeUsage: AiUsage[] = [];
-      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId ?? undefined, owner_id: ownerId }, intakeUsage);
+      const { startup, questions } = await runIntakeSkill(idea, trace, { workspace_id: workspaceId ?? undefined, owner_id: ownerId }, intakeUsage, companionCtx);
       await send({ type: "startup", startup, questions, trace: [...trace] });
 
       // Per-phase budget + real metering (usageMetadata when available,
@@ -2084,7 +2132,7 @@ export async function POST(req: NextRequest) {
       // ── Phase 3: Assumption Mapping ─────────────────────────────────────────
       await send({ type: "phase", phase: "mapping", trace: [...trace] });
       const mappingUsage: AiUsage[] = [];
-      const assumptions = await runAssumptionMappingSkill(startup, trace, mappingUsage);
+      const assumptions = await runAssumptionMappingSkill(startup, trace, mappingUsage, companionCtx);
       await send({ type: "assumptions", assumptions, trace: [...trace] });
 
       toolCalls++;
@@ -2105,7 +2153,7 @@ export async function POST(req: NextRequest) {
       // ── Phase 5: Experiment Design ──────────────────────────────────────────
       await send({ type: "phase", phase: "experiment", trace: [...trace] });
       const experimentUsage: AiUsage[] = [];
-      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace, experimentUsage);
+      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace, experimentUsage, companionCtx);
       toolCalls++;
       totalCost += costFromUsage(experimentUsage, "gemini_call");
       checkTimeout();
@@ -2138,7 +2186,7 @@ export async function POST(req: NextRequest) {
       if (uploaded_data?.trim()) {
         await send({ type: "phase", phase: "evidence", trace: [...trace] });
         const evidenceUsage: AiUsage[] = [];
-        primaryEvidence = await runResponseAnalyzerSkill(startup, uploaded_data, experiment, trace, evidenceUsage);
+        primaryEvidence = await runResponseAnalyzerSkill(startup, uploaded_data, experiment, trace, evidenceUsage, companionCtx);
         toolCalls++;
         totalCost += costFromUsage(evidenceUsage, "gemini_call");
         checkTimeout();
@@ -2167,7 +2215,7 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
       // ── Phase 7: Decision Memo ──────────────────────────────────────────────
       await send({ type: "phase", phase: "memo", trace: [...trace] });
       const memoUsage: AiUsage[] = [];
-      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult, memoUsage);
+      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult, memoUsage, companionCtx);
       toolCalls++;
       totalCost += costFromUsage(memoUsage, "gemini_call");
       checkTimeout();

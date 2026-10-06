@@ -175,8 +175,8 @@ export interface Decision {
 }
 
 // ── Trace Event ───────────────────────────────────────────────────────────────
-export type TraceActor = "router" | "planner" | "executor" | "verifier" | `skill:${string}` | "tool";
-export type TraceEventType = "tool_call" | "tool_result" | "verification" | "decision" | "error" | "skill_start" | "skill_end";
+export type TraceActor = "router" | "planner" | "executor" | "verifier" | "companion" | `skill:${string}` | "tool";
+export type TraceEventType = "tool_call" | "tool_result" | "verification" | "decision" | "error" | "skill_start" | "skill_end" | "companion_inject" | "companion_infer" | "companion_decide";
 
 export interface TraceEvent {
   id: string;
