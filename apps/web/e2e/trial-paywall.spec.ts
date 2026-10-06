@@ -17,7 +17,7 @@ import * as path from "node:path";
 //      entitlement / startups / requests / claims rows).
 // Journeys run serially because they mutate one user's trial state:
 //   fresh → first memo consumes trial → second project denied → frozen UX →
-//   dashboard modal → plans request → (admin approve skipped: no owner grant).
+//   dashboard modal → plans request → owner approve → subscribed + unfrozen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ServiceEnv = { url: string; anon: string; service: string };
@@ -66,6 +66,89 @@ type TrialUser = { id: string; email: string; password: string };
 let trialUser: TrialUser | null = null;
 let trialStartupId: string | null = null;
 
+// ── Owner session (journey 6) ────────────────────────────────────────────────
+// The platform owner pre-exists (real Google user, real `platform_admins`
+// grant, email in the dev server's PLATFORM_OWNER_EMAILS), so there is no
+// password to log in with. Same auth family as the user journeys — genuine
+// Supabase Auth, no mocks — via a one-time magiclink minted with the
+// service-role Admin API and exchanged server-side for a session; the session
+// is then planted as @supabase/ssr cookies (default `base64url` encoding,
+// `sb-<ref>-auth-token`, 3180-char chunks — the installed @supabase/ssr
+// 0.6.1 layout) on a SEPARATE browser context, so the trial user's session in
+// `page` is untouched. The Site URL redirect fallback makes navigating the
+// magiclink itself unusable against the dev server, hence the cookie route.
+const SUPABASE_REF = new URL(env.url).host.split(".")[0] ?? "";
+const SSR_COOKIE_CHUNK = 3180;
+
+function ownerEmailFromEnv(): string {
+  const fromProc = (process.env.PLATFORM_OWNER_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)[0];
+  if (fromProc) return fromProc;
+  const here =
+    typeof __dirname !== "undefined" ? __dirname : path.join(process.cwd(), "e2e");
+  for (const p of [path.join(process.cwd(), ".env.local"), path.join(here, "..", ".env.local")]) {
+    try {
+      for (const line of fs.readFileSync(p, "utf8").split("\n")) {
+        const t = line.trim();
+        if (!t || t.startsWith("#") || !t.startsWith("PLATFORM_OWNER_EMAILS")) continue;
+        const email = t
+          .slice(t.indexOf("=") + 1)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)[0];
+        if (email) return email;
+      }
+    } catch {
+      /* try next candidate */
+    }
+  }
+  throw new Error("trial-paywall e2e: PLATFORM_OWNER_EMAILS has no entry (owner cannot approve)");
+}
+
+function ssrSessionCookies(session: unknown): Array<{ name: string; value: string }> {
+  const key = `sb-${SUPABASE_REF}-auth-token`;
+  const encoded = "base64-" + Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
+  // base64url output is encodeURIComponent-stable ASCII, so plain slicing
+  // reproduces the chunker layout (key / key.0, key.1, …) exactly.
+  if (encoded.length <= SSR_COOKIE_CHUNK) return [{ name: key, value: encoded }];
+  const chunks: Array<{ name: string; value: string }> = [];
+  for (let i = 0; i * SSR_COOKIE_CHUNK < encoded.length; i++) {
+    chunks.push({
+      name: `${key}.${i}`,
+      value: encoded.slice(i * SSR_COOKIE_CHUNK, (i + 1) * SSR_COOKIE_CHUNK),
+    });
+  }
+  return chunks;
+}
+
+async function mintOwnerSession(ownerEmail: string): Promise<unknown> {
+  const gen = await fetch(`${env.url}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: svcHeaders,
+    body: JSON.stringify({ type: "magiclink", email: ownerEmail }),
+  });
+  if (!gen.ok) throw new Error(`owner generate_link failed: ${gen.status}`);
+  const genBody = (await gen.json()) as { action_link?: string };
+  const tokenHash =
+    typeof genBody.action_link === "string"
+      ? new URL(genBody.action_link).searchParams.get("token")
+      : null;
+  if (!tokenHash) throw new Error("owner generate_link returned no token");
+  const ver = await fetch(`${env.url}/auth/v1/verify`, {
+    method: "POST",
+    headers: { apikey: env.service, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "magiclink", token_hash: tokenHash }),
+  });
+  if (!ver.ok) throw new Error(`owner session verify failed: ${ver.status}`);
+  const session = (await ver.json()) as { user?: { email?: string } };
+  if (session.user?.email?.toLowerCase() !== ownerEmail.toLowerCase()) {
+    throw new Error("owner session came back for the wrong email");
+  }
+  return session;
+}
+
 async function loginAs(page: Page, email: string, password: string): Promise<void> {
   await page.goto("/login");
   await page.locator("#auth-email-input").fill(email);
@@ -113,13 +196,62 @@ test.describe.serial("trial paywall journeys (real backend)", () => {
 
   test.afterAll(async () => {
     if (!trialUser) return;
+    const userId = trialUser.id;
+    // Collect FK-orphan-prone row ids BEFORE the delete (unrecoverable after):
+    // owner_alerts.ref_id has no FK, and workspace_spend is keyed by
+    // workspace id with no FK — both survive the auth.users cascade.
+    let requestIds: string[] = [];
+    let workspaceIds: string[] = [];
     try {
-      await fetch(`${env.url}/auth/v1/admin/users/${trialUser.id}`, {
+      const rq = await fetch(
+        `${env.url}/rest/v1/subscription_requests?select=id&user_id=eq.${userId}`,
+        { headers: svcHeaders },
+      );
+      if (rq.ok) requestIds = ((await rq.json()) as Array<{ id: string }>).map((r) => r.id);
+      const ws = await fetch(`${env.url}/rest/v1/workspaces?select=id&owner_id=eq.${userId}`, {
+        headers: svcHeaders,
+      });
+      if (ws.ok) workspaceIds = ((await ws.json()) as Array<{ id: string }>).map((w) => w.id);
+    } catch (err) {
+      console.warn("[e2e] pre-delete orphan scan failed (best-effort):", err);
+    }
+    try {
+      await fetch(`${env.url}/auth/v1/admin/users/${userId}`, {
         method: "DELETE",
         headers: svcHeaders,
       });
     } catch (err) {
       console.warn(`[e2e] cleanup delete failed for ${trialUser.email}:`, err);
+    }
+    // The app exposes no delete path for these; wipe this run's rows directly.
+    for (const rid of requestIds) {
+      try {
+        await fetch(`${env.url}/rest/v1/owner_alerts?ref_id=eq.${rid}`, {
+          method: "DELETE",
+          headers: svcHeaders,
+        });
+      } catch (err) {
+        console.warn(`[e2e] owner_alerts cleanup failed for request ${rid}:`, err);
+      }
+    }
+    for (const wid of workspaceIds) {
+      try {
+        await fetch(`${env.url}/rest/v1/workspace_spend?key=eq.${wid}`, {
+          method: "DELETE",
+          headers: svcHeaders,
+        });
+      } catch (err) {
+        console.warn(`[e2e] workspace_spend cleanup failed for workspace ${wid}:`, err);
+      }
+    }
+    // Spend is also keyed by user id in some paths (see lib/cost.ts callers).
+    try {
+      await fetch(`${env.url}/rest/v1/workspace_spend?key=eq.${userId}`, {
+        method: "DELETE",
+        headers: svcHeaders,
+      });
+    } catch (err) {
+      console.warn("[e2e] workspace_spend cleanup failed for user key:", err);
     }
   });
 
@@ -194,7 +326,13 @@ test.describe.serial("trial paywall journeys (real backend)", () => {
     page,
   }) => {
     if (!trialStartupId) throw new Error("journey 1 did not capture a startup id");
-    await page.goto(`/validate?startup_id=${trialStartupId}`);
+    // Dev-server first-compile of /validate is heavy (900+ modules); the
+    // document is served fast but `load` stalls on client hydration, so sync
+    // on DOM readiness — the expects below still gate on real content.
+    await page.goto(`/validate?startup_id=${trialStartupId}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 120_000,
+    });
     await expect(page.getByText("انتهت تجربتك المجانية")).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("#paywall-cta")).toHaveAttribute("href", "/plans");
     // Fill the idea so the disabled state proves the frozen lock (not the
@@ -231,16 +369,93 @@ test.describe.serial("trial paywall journeys (real backend)", () => {
     expect((await dup.json()) as { code?: string }).toMatchObject({ code: "DUPLICATE_PENDING" });
   });
 
-  test("journey 6 — admin approve unfreezes the startup", async ({ page }) => {
-    test.skip(
-      true,
-      "No owner session available: marslino.work@gmail.com has no auth.users row and no " +
-        "platform_admins grant, so approve-as-owner cannot run. Re-run after the owner " +
-        "signs in once (trigger + manual grant), then unskip.",
+  test("journey 6 — owner approve unfreezes startup, agent 200 again, subscribed", async ({
+    page,
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(300_000);
+    if (!trialUser) throw new Error("trial user not created (beforeAll failed)");
+    if (!trialStartupId) throw new Error("journey 1 did not capture a startup id");
+    const userId = trialUser.id;
+
+    // (a) Owner session on a SEPARATE context — the trial user's `page`
+    // session stays untouched. Approval goes through the REAL route.
+    const ownerEmail = ownerEmailFromEnv();
+    const session = await mintOwnerSession(ownerEmail);
+    const ownerCtx = await browser.newContext({ baseURL });
+    try {
+      const host = new URL(baseURL ?? "http://127.0.0.1:3100").hostname;
+      await ownerCtx.addCookies(
+        ssrSessionCookies(session).map((c) => ({ ...c, domain: host, path: "/" })),
+      );
+      const queueRes = await ownerCtx.request.get("/api/admin/requests?status=pending");
+      expect(queueRes.status()).toBe(200);
+      const queue = (await queueRes.json()) as {
+        requests?: Array<{ id: string; user_id: string; status: string }>;
+      };
+      const target = (queue.requests ?? []).find(
+        (r) => r.user_id === userId && r.status === "pending",
+      );
+      expect(target, "expected this run's pending subscription request in the owner queue").toBeTruthy();
+
+      // (b) Approve through the real API as the platform owner.
+      const approve = await ownerCtx.request.post("/api/admin/requests", {
+        data: { request_id: target!.id, action: "approve" },
+      });
+      expect(approve.status()).toBe(200);
+      expect((await approve.json()) as { request?: unknown }).toMatchObject({
+        request: { id: target!.id, status: "approved" },
+      });
+    } finally {
+      await ownerCtx.close();
+    }
+
+    // (c) Entitlement flips to subscribed (the RPC applies it synchronously;
+    // poll briefly for read-your-write safety).
+    let status = "";
+    for (let i = 0; i < 20; i++) {
+      const r = await page.request.get("/api/entitlements/me");
+      if (r.ok()) {
+        status = ((await r.json()) as { status?: string }).status ?? "";
+        if (status === "subscribed") break;
+      }
+      await page.waitForTimeout(1000);
+    }
+    expect(status).toBe("subscribed");
+
+    // Startup unfrozen — real data read (no app read path exposes is_frozen
+    // to the user client) plus the real UX: banner gone, run re-enabled.
+    const frozenRes = await fetch(
+      `${env.url}/rest/v1/startups?select=id,is_frozen&owner_id=eq.${userId}`,
+      { headers: svcHeaders },
     );
-    // (Unskip path: as the owner, POST /api/admin/requests
-    // {request_id, action:"approve"} → startup is_frozen=false, agent 200 again.)
-    expect(page).toBeTruthy();
+    expect(frozenRes.ok).toBe(true);
+    const frozenRows = (await frozenRes.json()) as Array<{ id: string; is_frozen: boolean }>;
+    expect(frozenRows.length).toBeGreaterThan(0);
+    for (const row of frozenRows) expect(row.is_frozen).toBe(false);
+
+    await page.goto(`/validate?startup_id=${trialStartupId}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 120_000,
+    });
+    await expect(page.locator("#idea-textarea")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("انتهت تجربتك المجانية")).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator("#paywall-cta")).toBeHidden();
+    await page.locator("#idea-textarea").fill("A post-subscription validation idea after approval.");
+    await expect(page.locator("#run-agent-btn")).toBeEnabled();
+
+    // Agent 200 again — a second live run on the now-subscribed account.
+    const idea =
+      "Subscription-based car-maintenance tracker for Egyptian drivers: " +
+      "service reminders, spare-part price comparison, B2C freemium at 100 EGP/month.";
+    const res = await page.request.post("/api/agent", {
+      data: { idea },
+      timeout: 280_000,
+    });
+    expect(res.status()).toBe(200);
+    const frames = parseSseFrames(await res.text());
+    expect(frames.find((f) => f["type"] === "done"), "expected a done frame after approval").toBeTruthy();
   });
 
   test("journey 6 (real denial) — non-owner admin queue read is 403 FORBIDDEN", async ({
