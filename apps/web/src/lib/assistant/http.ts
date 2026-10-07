@@ -156,6 +156,33 @@ interface ConvRow {
   title: string;
 }
 
+/** Owned evidence rows for the critic (claim + source_url, capped). */
+async function ownedEvidenceRows(
+  ctx: AssistantHttpContext
+): Promise<Array<{ claim: string; source_url: string }>> {
+  try {
+    const { data: owned } = (await ctx.db
+      .from("startups")
+      .select("id")
+      .eq("owner_id", ctx.userId)
+      .limit(50)) as unknown as { data: Array<{ id: string }> | null };
+    const ids = (owned ?? []).map((s) => s.id);
+    if (ids.length === 0) return [];
+    const { data: rows } = (await ctx.db
+      .from("evidence")
+      .select("claim,source_url")
+      .in("startup_id", ids)
+      .limit(100)) as unknown as {
+      data: Array<{ claim: string; source_url: string | null }> | null;
+    };
+    return (rows ?? [])
+      .filter((r) => typeof r.claim === "string" && typeof r.source_url === "string" && r.source_url.length > 0)
+      .map((r) => ({ claim: r.claim, source_url: r.source_url as string }));
+  } catch {
+    return [];
+  }
+}
+
 interface Row {
   [k: string]: unknown;
 }
@@ -332,6 +359,10 @@ export async function handleAssistantPost(
   // 4. conversation resolve (uniform 403, no existence oracle)
   let conversation: ConvRow | null = null;
   let isNew = false;
+  // True when a user row with this client_message_id already exists (retry
+  // after an undelivered turn): the re-execution must NOT re-insert it —
+  // unique(conversation_id, client_message_id) would 23505.
+  let userRowPersisted = false;
   if (conversation_id) {
     conversation = await getOwnedConversation(ctx.db, ctx.userId, conversation_id);
     if (!conversation) return json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
@@ -391,6 +422,7 @@ export async function handleAssistantPost(
           );
           if (adopted) {
             conversation = adopted;
+            userRowPersisted = true;
           } else {
             return json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
           }
@@ -443,6 +475,8 @@ export async function handleAssistantPost(
     }
     // No delivered answer (e.g. outage persisted only the question):
     // fall through and re-execute — quota was never consumed for it.
+    // The user row already exists: skip the insert below (unique guard).
+    userRowPersisted = true;
   }
 
   // Thread cap 200 (before quota: 409 consumes nothing).
@@ -485,15 +519,18 @@ export async function handleAssistantPost(
     );
   }
 
-  // Persist the user message (swept + redacted).
+  // Persist the user message (swept + redacted) — unless this is a retry
+  // of an undelivered turn whose row is already stored (see above).
   const safeMessage = redactPii(sanitizeForPrompt(message));
-  await ctx.db.from("assistant_messages").insert({
-    id: crypto.randomUUID(),
-    conversation_id: conversation.id,
-    client_message_id,
-    role: "user",
-    content: safeMessage.slice(0, REPLY_MAX),
-  });
+  if (!userRowPersisted) {
+    await ctx.db.from("assistant_messages").insert({
+      id: crypto.randomUUID(),
+      conversation_id: conversation.id,
+      client_message_id,
+      role: "user",
+      content: safeMessage.slice(0, REPLY_MAX),
+    });
+  }
   void isNew;
 
   // 6. grounding: compiled memory context + owned startups + last turns.
@@ -553,7 +590,10 @@ export async function handleAssistantPost(
   // 8. execute tool calls sequentially (failures → inline cards, no extra quota).
   const toolEvents: unknown[] = [];
   for (const tc of turn.toolCalls as AssistantToolCall[]) {
-    await traceTool(ctx.db, "tool_call", { tool: tc.name, args: tc.args });
+    // Redacted once, reused for the trace payload, the persisted row, and
+    // the SSE event (spec §5 requires `args` on tool events).
+    const safeArgs = JSON.parse(redactPii(JSON.stringify(tc.args)));
+    await traceTool(ctx.admin, "tool_call", { tool: tc.name, args: safeArgs });
     try {
       let summary = "";
       let url: string | undefined;
@@ -582,7 +622,7 @@ export async function handleAssistantPost(
         url = `/validate?startup_id=${sid}`;
         summary = `Opening project`;
       }
-      await traceTool(ctx.db, "tool_result", { tool: tc.name, ok: true });
+      await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: true });
       const safeSummary = redactPii(summary).slice(0, 2000);
       await ctx.db.from("assistant_messages").insert({
         id: crypto.randomUUID(),
@@ -591,17 +631,18 @@ export async function handleAssistantPost(
         role: "tool",
         content: safeSummary,
         tool_name: tc.name,
-        tool_args: JSON.parse(JSON.stringify(redactPii(JSON.stringify(tc.args)))),
+        tool_args: safeArgs,
       });
       toolEvents.push({
         type: "tool",
         tool: tc.name,
+        args: safeArgs,
         result_summary: safeSummary,
         ...(url ? { url } : {}),
       });
     } catch (toolErr) {
       const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-      await traceTool(ctx.db, "tool_result", { tool: tc.name, ok: false, error: msg });
+      await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: false, error: msg });
       const summary = `Action failed: ${msg.slice(0, 500)} — you can retry this action.`;
       await ctx.db.from("assistant_messages").insert({
         id: crypto.randomUUID(),
@@ -617,14 +658,18 @@ export async function handleAssistantPost(
   }
 
   // 9. verifier-as-critic rescan; flagged draft → refusal + trace row.
+  // The critic matches numeric/factual lines against rows WITH source
+  // URLs, so feed it the owned evidence rows (claim + source_url) — a
+  // startups-only input has no URLs and would refuse every numeric reply.
   let reply = turn.reply;
-  const adapted = adaptCitedRows(
-    startups.map((s) => ({ claim: `${s.name}: ${s.one_liner ?? ""}`, source_url: undefined }))
-  );
+  const adapted = adaptCitedRows([
+    ...startups.map((s) => ({ claim: `${s.name}: ${s.one_liner ?? ""}` })),
+    ...(await ownedEvidenceRows(ctx)),
+  ]);
   const verdict = criticScan(reply, adapted);
   if (verdict.blocked) {
     reply = refusalFor(message);
-    await traceTool(ctx.db, "tool_result", {
+    await traceTool(ctx.admin, "tool_result", {
       critic: "blocked",
       unsupported: verdict.unsupported.slice(0, 10),
     });
@@ -831,17 +876,42 @@ export async function handlePutPrefs(
   const parsed = prefsSchema.safeParse(rawBody);
   if (!parsed.success) return json({ error: "Invalid prefs", code: "INVALID" }, 400);
   const { float_enabled, active_conversation_id } = parsed.data;
-  if (active_conversation_id) {
+  // An omitted active_conversation_id preserves the stored value — a plain
+  // upsert would otherwise null out the pinned thread on float-only writes.
+  let activeId: string | null = active_conversation_id ?? null;
+  if (active_conversation_id === undefined) {
+    const { data: current } = await ctx.db
+      .from("assistant_prefs")
+      .select("active_conversation_id")
+      .eq("user_id", ctx.userId)
+      .maybeSingle();
+    activeId =
+      (current as unknown as { active_conversation_id: string | null } | null)
+        ?.active_conversation_id ?? null;
+  } else if (active_conversation_id) {
     const owned = await getOwnedConversation(ctx.db, ctx.userId, active_conversation_id);
     if (!owned) return json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
   }
   await ctx.db.from("assistant_prefs").upsert({
     user_id: ctx.userId,
     float_enabled,
-    active_conversation_id: active_conversation_id ?? null,
+    active_conversation_id: activeId,
     updated_at: new Date((ctx.nowMs ?? Date.now)()).toISOString(),
   });
-  return json({ float_enabled, active_conversation_id: active_conversation_id ?? null }, 200);
+  // Select-after-write: prove the row landed and echo stored state.
+  const { data: stored } = await ctx.db
+    .from("assistant_prefs")
+    .select("float_enabled,active_conversation_id")
+    .eq("user_id", ctx.userId)
+    .maybeSingle();
+  const row = (stored as unknown as {
+    float_enabled: boolean;
+    active_conversation_id: string | null;
+  } | null) ?? { float_enabled, active_conversation_id: activeId };
+  return json(
+    { float_enabled: row.float_enabled, active_conversation_id: row.active_conversation_id },
+    200
+  );
 }
 
 // Route-layer helper: read the caller's entitlement via the service-role

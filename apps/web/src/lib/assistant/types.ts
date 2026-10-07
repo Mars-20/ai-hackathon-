@@ -53,6 +53,7 @@ export interface SseTokenEvent {
 export interface SseToolEvent {
   type: "tool";
   tool: string;
+  args: Record<string, unknown>;
   result_summary: string;
   url?: string;
   error?: boolean;

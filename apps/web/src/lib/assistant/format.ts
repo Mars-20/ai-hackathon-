@@ -15,7 +15,9 @@ export interface CiteSegment {
 
 export type MessageSegment = TextSegment | CiteSegment;
 
-const CITE_RE = /\[(S|E|W|M)(\d{1,3})\]/g;
+// Marker letters mirror the server citation kinds: S=tartup, A=ssumption,
+// E=vidence, D=ecision, M=emory. W is tolerated (legacy) but never emitted.
+const CITE_RE = /\[(S|A|E|D|M|W)(\d{1,3})\]/g;
 
 /** Split assistant text into plain-text and citation-chip segments. */
 export function parseCitationTokens(text: string): MessageSegment[] {

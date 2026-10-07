@@ -27,6 +27,8 @@ interface FakeDb {
   conversations: Row[];
   messages: Row[];
   prefs: Row[];
+  startups: Row[];
+  evidence: Row[];
   rpcImpl: (name: string, params: Row) => unknown;
   spent: Array<{ key: string; usd: number }>;
   quota: { used: number; max: number };
@@ -76,7 +78,11 @@ class FQ {
         ? this.db.conversations
         : this.table === "assistant_messages"
           ? this.db.messages
-          : this.db.prefs;
+          : this.table === "startups"
+            ? this.db.startups
+            : this.table === "evidence"
+              ? this.db.evidence
+              : this.db.prefs;
     let out = src.filter((r) =>
       this.filters.every((f) => r[f.col] === f.val)
     );
@@ -143,7 +149,21 @@ class FQ {
             );
             if (ix >= 0) src[ix] = { ...src[ix], ...r };
             else src.push({ ...r });
-          } else src.push({ ...r });
+          } else {
+            // Mirror the real unique(conversation_id, client_message_id):
+            // a duplicate insert is a 23505, not a silent second row.
+            if (
+              this.table === "assistant_messages" &&
+              src.some(
+                (x) =>
+                  x.conversation_id === r.conversation_id &&
+                  x.client_message_id === r.client_message_id
+              )
+            ) {
+              throw { code: "23505", message: "duplicate key value" };
+            }
+            src.push({ ...r });
+          }
         }
         return resolve({ data: this.insertRows, error: null });
       }
@@ -187,6 +207,8 @@ function makeCtx(over: Partial<FakeDb & { entitlement: unknown }> = {}): {
     conversations: [],
     messages: [],
     prefs: [],
+    startups: [],
+    evidence: [],
     rpcImpl: (name: string) => {
       if (name === "consume_assistant_message") {
         if (db.quota.used >= db.quota.max) {
@@ -399,6 +421,112 @@ describe("assistant-chat handlers", () => {
     expect(events[0]).toMatchObject({ type: "token", text: "here is your data." });
     expect(db.quota.used).toBe(1);
     expect(db.conversations).toHaveLength(1);
+    // The retry reuses the persisted question row — no duplicate insert
+    // (the fake enforces unique(conversation_id, client_message_id) like
+    // Postgres, so a re-insert would throw 23505 here).
+    expect(
+      db.messages.filter(
+        (m) => m.role === "user" && m.client_message_id === MSG_NEW
+      )
+    ).toHaveLength(1);
+  });
+
+  it("critic passes grounded numeric replies, refuses invented ones", async () => {
+    const sid = "33333333-3333-4333-8333-333333333333";
+    const seed = (over: Partial<FakeDb> = {}) =>
+      makeCtx({
+        startups: [{ id: sid, owner_id: UID, name: "Acme", one_liner: "widgets" }],
+        evidence: [
+          {
+            startup_id: sid,
+            claim: "Acme landing page converts at 12 percent",
+            source_url: "https://example.com/acme-study",
+          },
+        ],
+        ...over,
+      });
+    const body = { client_message_id: MSG_NEW, message: "how does Acme convert?" };
+
+    // Grounded: the 12% figure appears in owned evidence → streams as-is.
+    {
+      const { ctx } = seed();
+      ctx.modelCaller = async () => ({
+        reply: "Acme converts at 12 percent [E1].",
+        citations: [],
+        toolCalls: [],
+        usage: [{ totalTokenCount: 10 }],
+        dispatched: true,
+      });
+      const res = await handleAssistantPost(ctx, body);
+      const text = (await readSse(res)).map((e) => JSON.parse(e));
+      const tokens = text
+        .filter((e) => e.type === "token")
+        .map((e) => e.text)
+        .join("");
+      expect(tokens).toContain("12 percent");
+      expect(tokens).not.toMatch(/can't find supporting data/);
+    }
+    // Invented: 87 terawatt-hours appears in no owned row and shares no
+    // claim tokens with any of them → refusal replaces the draft.
+    {
+      const { ctx } = seed();
+      ctx.modelCaller = async () => ({
+        reply: "Bitcoin miners use 87 terawatt hours.",
+        citations: [],
+        toolCalls: [],
+        usage: [{ totalTokenCount: 10 }],
+        dispatched: true,
+      });
+      const res = await handleAssistantPost(
+        { ...ctx, nowMs: ctx.nowMs },
+        { client_message_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", message: "how does Acme convert?" }
+      );
+      const text = (await readSse(res)).map((e) => JSON.parse(e));
+      const tokens = text
+        .filter((e) => e.type === "token")
+        .map((e) => e.text)
+        .join("");
+      expect(tokens).toMatch(/can't find supporting data/);
+      expect(tokens).not.toContain("87 terawatt");
+    }
+  });
+
+  it("tool SSE events carry redacted args per spec §5", async () => {
+    const { ctx } = makeCtx();
+    ctx.modelCaller = async () => ({
+      reply: "Saved.",
+      citations: [],
+      toolCalls: [
+        { name: "save_memory", args: { kind: "preference", value: "likes dark mode" } },
+      ],
+      usage: [{ totalTokenCount: 10 }],
+      dispatched: true,
+    });
+    ctx.tools!.saveMemory = async () => ({ id: "mem-9" });
+    const res = await handleAssistantPost(ctx, {
+      client_message_id: MSG_NEW,
+      message: "remember I like dark mode",
+    });
+    const events = (await readSse(res)).map((e) => JSON.parse(e));
+    const tool = events.find((e) => e.type === "tool");
+    expect(tool).toMatchObject({
+      tool: "save_memory",
+      args: { kind: "preference", value: "likes dark mode" },
+    });
+    expect(tool.result_summary).toContain("mem-9");
+  });
+
+  it("prefs PUT without active_conversation_id preserves the pinned thread", async () => {
+    const { ctx, db } = makeCtx({
+      prefs: [{ user_id: UID, float_enabled: false, active_conversation_id: CONV_A }],
+    });
+    const res = await handlePutPrefs(ctx, { float_enabled: true });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      float_enabled: true,
+      active_conversation_id: CONV_A,
+    });
+    expect(db.prefs[0].active_conversation_id).toBe(CONV_A);
   });
 
   it("list/get/rename/delete are owner-scoped; prefs round-trip", async () => {

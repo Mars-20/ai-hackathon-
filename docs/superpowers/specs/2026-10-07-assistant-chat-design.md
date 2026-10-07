@@ -211,12 +211,24 @@ startup (columns nullable, 0000:171-182). No new event types, no CHECK edit.
 
 1. **Grounding first:** every reply about user data cites ≥1 row id; citations persisted in
    `citations` jsonb and rendered as clickable chips. Test: `citation-required`.
+   Marker alphabet (binding, loop decision 2026-10-07): the reply text carries INLINE
+   markers whose letter matches the citation kind — `[S#]` startup, `[A#]` assumption,
+   `[E#]` evidence, `[D#]` decision, `[M#]` memory (numbered in order of first use).
+   The `citations[]` array MUST contain one entry per marker with the IDENTICAL label
+   (marker `[S1]` ↔ `label: "S1"`) and the cited row's id; the client renders a chip
+   per marker and resolves its card from the matching entry. The system prompt states
+   this rule verbatim (`model.ts`); the client parser accepts `[S|A|E|D|M|W]#` (`W`
+   legacy-tolerated, never emitted).
 2. **Refuse, never invent:** no supporting rows → explicit refusal naming the gap.
    Test: `refusal-on-no-data`.
 3. **Verifier-as-critic:** draft replies pass `findUnsupportedFactualClaims`
    (`apps/web/src/lib/utils.ts:266`, signature `(text, Array<{claim?, source_url?}>)`)
    over an adapter mapping cited rows → `{claim, source_url}`; flagged draft → refusal +
    trace row. The LLM never outranks the scan.
+   Critic input (binding, loop decision 2026-10-07): startups briefs carry NO urls, so a
+   startups-only feed neuters the scan (every numeric reply refused). The handler MUST
+   union startup briefs with owned `evidence` rows (`claim + source_url`, capped 100)
+   before scanning; evidence-free users still get correct refusals via the no-support path.
 4. **Tool schemas (zod, strict):** run-validation `{idea 1..2000c, uploaded_data?}` ·
    save-memory `{kind enum(memoryKindSchema), value 1..500c, startup_id?}` → wraps
    `createManualMemory` (`dal.ts:234`, inline-approve semantics included) ·

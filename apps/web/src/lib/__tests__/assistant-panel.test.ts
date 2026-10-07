@@ -45,6 +45,16 @@ describe("parseCitationTokens", () => {
       { kind: "text", text: "." },
     ]);
   });
+  it("supports the full kind alphabet [A#]/[D#]", () => {
+    const segs = parseCitationTokens("Assume [A1], decided [D2].");
+    expect(segs).toEqual([
+      { kind: "text", text: "Assume " },
+      { kind: "cite", label: "A1" },
+      { kind: "text", text: ", decided " },
+      { kind: "cite", label: "D2" },
+      { kind: "text", text: "." },
+    ]);
+  });
   it("ignores bracket text that is not a citation", () => {
     const segs = parseCitationTokens("Use the [draft] version (see [12]).");
     expect(segs).toEqual([{ kind: "text", text: "Use the [draft] version (see [12])." }]);

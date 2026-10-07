@@ -56,6 +56,26 @@
 **Interfaces:**
 - Consumes: spec §4 SQL verbatim.
 - Produces: tables `assistant_conversations|assistant_messages|assistant_quota|assistant_prefs`, RPCs `consume_assistant_message(uuid,integer)`, `refund_assistant_message(uuid)`.
+- Fingerprint matrix (binding, loop decision 2026-10-07 — every item verified live before Task 5):
+  `assistant_conversations(id uuid pk, user_id, title check 1..200, created_at, updated_at)` —
+  1 policy `assistant_conversations_owner` (all, authenticated, `(select auth.uid())=user_id`);
+  `assistant_messages(id uuid pk, conversation_id fk cascade, client_message_id uuid, role
+  check user|assistant|tool, content check 1..8000, tool_name, tool_args jsonb, citations jsonb,
+  created_at, UNIQUE(conversation_id, client_message_id))` — 1 policy `assistant_messages_via_parent`
+  (all, authenticated, parent-owned);
+  `assistant_quota(user_id, day date, used_count int ≥0, updated_at, pk(user_id,day))` — RLS on,
+  NO policies (service-role only; add none);
+  `assistant_prefs(user_id uuid pk → auth.users cascade, float_enabled bool default false,
+  active_conversation_id uuid nullable, updated_at)` — 1 policy `assistant_prefs_owner`
+  (all, authenticated, `(select auth.uid())=user_id`).
+  `trace_events` ALTER: `actor` CHECK gains `'executor'`, `event_type` CHECK gains
+  `('tool_call','tool_result')`; rows written with `startup_id NULL` stay INVISIBLE to RLS
+  (select requires `startup_id IS NOT NULL`, spec §4) — handler trace writes go through the
+  SERVICE-ROLE client (`ctx.admin`), never the user client.
+  Live queries: `select count(*) from pg_policies where tablename like 'assistant%'` → 3
+  (NOT 4: quota intentionally policy-less); RPC probe; `set search_path=''` present;
+  `REVOKE ALL ON … FROM anon, authenticated` + `GRANT SELECT,INSERT,UPDATE,DELETE` (conversations,
+  messages, prefs only) confirmed. Migration chain `0000→0015` zero gaps.
 
 - [ ] **Step 1: Write the migration file with the exact SQL from spec §4 (tables + RLS + triggers + 2 RPCs + REVOKE/GRANT)**
 
@@ -235,7 +255,13 @@ git commit -m "feat(assistant): atomic daily quota + refund + UTC-midnight Retry
 
 **Interfaces:**
 - Consumes: Tasks 2–4 outputs, `createManualMemory` (@/lib/companion/dal), `getCompiledContext`, `resolveAgentGate`, `checkRateLimit`, `recordSpendAsync`, `sanitizeForPrompt`+`toUntrusted`, `containsBlockedSecret`.
-- Produces: `AssistantHttpContext { userId, userClient, adminClient, trialStatus, quota, rateLimit }`, handlers listed in plan file structure. Routes do NOTHING but build context + call handler + serialize (companion-api.test.ts pattern).
+- Produces: `AssistantHttpContext { userId, db (user RLS client), admin (service-role: entitlement read, spend, trace_events), entitlement, quotaMax, nowMs, rate, modelCaller, grounding {compiled, startups}, tools {saveMemory, createExperiment, updateExperiment, runValidation}, spend }`, handlers listed in plan file structure. Routes do NOTHING but build context + call handler + serialize (companion-api.test.ts pattern).
+- Loop invariants (binding, 2026-10-07): list `message_count` via single grouped `COUNT(*)` query
+  (no per-row query, no counter column); tool SSE events carry redacted `args` (spec §5);
+  critic scans startup briefs UNION owned evidence rows with `source_url` (startups-only input
+  neuters the scan); PUT prefs with omitted `active_conversation_id` preserves the stored pin
+  (read-before-upsert) and echoes a select-after-write; persisted `tool_args` is an OBJECT
+  (`JSON.parse(redacted)` — never double-stringified).
 
 - [ ] **Step 1: Write the failing tests** (handler-level, fake clients like companion-api.test.ts FQ pattern)
 
