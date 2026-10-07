@@ -261,6 +261,12 @@ export function claimHasUrlSupport(
   });
 }
 
+// Citation markers ([S1]/[A2]/[E3]/[D4]/[M5]) are provenance pointers, not
+// factual content: the digit inside a marker must never trip the numeric
+// detector, or every cited reply is flagged unsupported (markers never carry
+// source_url). Bare numbers/URLs elsewhere in the line are still checked.
+const CITATION_MARKER_RE = /\[[SAEDMW]\d+\]/g;
+
 // Deterministic safety net: factual lines (numbers / $ / % / URLs / market
 // sizing words) with no per-claim URL support are ungrounded.
 export function findUnsupportedFactualClaims(
@@ -269,6 +275,7 @@ export function findUnsupportedFactualClaims(
 ): string[] {
   const out: string[] = [];
   const factualLines = text
+    .replace(CITATION_MARKER_RE, "")
     .split(/[\n;.]/)
     .map((l) => l.trim())
     .filter((l) => /(\d|%|\$|http|million|billion|market worth)/i.test(l));

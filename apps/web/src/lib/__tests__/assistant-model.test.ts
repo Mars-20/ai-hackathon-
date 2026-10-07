@@ -58,6 +58,32 @@ describe("assistant-model", () => {
     });
   });
 
+  it("critic ignores citation markers (markers are provenance, not claims)", () => {
+    // Live regression (2026-10-07): every cited reply was blocked because the
+    // digit inside [S1]/[M1]/[E1] markers matched the factual-line detector,
+    // and marker-only rows never carry source_url → refusalFor replaced the
+    // correct answer. Markers must not count as factual content.
+    expect(
+      criticScan("اللون المقترح لشعار Flowboard هو الأزرق المخضر [M1]", [])
+    ).toEqual({ blocked: false, unsupported: [] });
+    expect(
+      criticScan(
+        "I am sorry, but there is no evidence or supporting data recorded in your context or memory for your Flowboard idea [S1], so I cannot name any supporting evidence",
+        []
+      )
+    ).toEqual({ blocked: false, unsupported: [] });
+    expect(
+      criticScan("لقد قمت بحفظ أن اللون المقترح لشعار Flowboard [S1] هو الأزرق المخضر في ذاكرتك", [])
+    ).toEqual({ blocked: false, unsupported: [] });
+  });
+
+  it("critic still blocks bare numbers behind a marker", () => {
+    // Safety net intact: stripping markers must not launder real figures.
+    const r = criticScan("The market is worth $50 billion annually [E1].", []);
+    expect(r.blocked).toBe(true);
+    expect(r.unsupported.length).toBeGreaterThan(0);
+  });
+
   it("adaptCitedRows maps startup+evidence rows", () => {
     const out = adaptCitedRows([
       { claim: "CAC < LTV", source_url: "https://x/1" },
