@@ -669,6 +669,35 @@ const pageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+// Quota snapshot for the list endpoint (F17: visible on load). Reads the
+// service-role table directly â€” assistant_quota has zero public policies,
+// so the user-scoped client (RLS) can never see it. Fail-open with used=0:
+// worst case the bar under-reports until the first answer lands.
+async function readQuotaToday(
+  ctx: AssistantHttpContext
+): Promise<{ used: number; quota: number }> {
+  const quota = ctx.quotaMax || getDailyQuota();
+  try {
+    const { data } = (await ctx.admin
+      .from("assistant_quota")
+      .select("day,used_count")
+      .eq("user_id", ctx.userId)
+      .order("day", { ascending: false })
+      .limit(1)
+      .maybeSingle()) as unknown as {
+      data: { day: string; used_count: number } | null;
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const used =
+      data && data.day === today && Number.isFinite(data.used_count)
+        ? data.used_count
+        : 0;
+    return { used, quota };
+  } catch {
+    return { used: 0, quota };
+  }
+}
+
 export async function handleListConversations(
   ctx: AssistantHttpContext,
   query: unknown
@@ -709,6 +738,7 @@ export async function handleListConversations(
         message_count: counts.get(r.id) ?? 0,
       })),
       meta: { page, limit, pages: Math.max(1, Math.ceil(total / limit)) },
+      quota: await readQuotaToday(ctx),
     },
     200
   );
@@ -815,7 +845,7 @@ export async function handlePutPrefs(
 }
 
 // Route-layer helper: read the caller's entitlement via the service-role
-// client (user_entitlements has no RLS read policies — agent/route.ts:1904).
+// client (user_entitlements has no RLS read policies ï¿½ agent/route.ts:1904).
 // Fail-closed: unreadable entitlement throws (routes map to 429).
 export async function resolveEntitlementFor(
   admin: SupabaseClient,

@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Middleware — Auth Session Refresh + Route Protection
 // Runs on every request to keep Supabase session cookies fresh
-// Protected routes: /validate, /dashboard, /history, /workspace/*, /admin/*
+// Protected routes: /validate, /dashboard, /history, /assistant, /workspace/*, /admin/*
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes that require authentication
-const PROTECTED_ROUTES = ["/validate", "/dashboard", "/history", "/workspace", "/admin"];
+const PROTECTED_ROUTES = ["/validate", "/dashboard", "/history", "/assistant", "/workspace", "/admin"];
 // Routes only for unauthenticated users (redirect logged-in users away)
 const AUTH_ROUTES = ["/login", "/signup"];
 

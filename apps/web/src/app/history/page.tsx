@@ -6,7 +6,7 @@ import {
   Brain, Search, X, ChevronDown, ChevronLeft, ChevronRight,
   ArrowRight, Calendar, BarChart2, FlaskConical, Target, Clock,
   AlertTriangle, CheckCircle2, XCircle, RotateCcw,
-  SlidersHorizontal, Download, RefreshCw,
+  SlidersHorizontal, Download, RefreshCw, MessageCircle,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -294,6 +294,9 @@ export default function HistoryPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link href="/assistant" className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Assistant" aria-label="Assistant" id="history-assistant-link">
+              <MessageCircle className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Assistant</span>
+            </Link>
             <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Export CSV" aria-label="Export CSV">
               <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span>
             </button>

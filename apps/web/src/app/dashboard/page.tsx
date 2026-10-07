@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   Brain, Plus, LogOut, Users, ChevronDown,
   ArrowRight, FlaskConical, Target, CheckCircle2, Clock,
-  TrendingUp, Zap, Crown, User as UserIcon, History, ShieldCheck,
+  TrendingUp, Zap, Crown, User as UserIcon, History, ShieldCheck, MessageCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { MEMORY_COPY } from "@/lib/companion/copy";
@@ -329,6 +329,18 @@ export default function DashboardPage() {
                 <span className="hidden sm:inline">Admin</span>
               </Link>
             )}
+
+            {/* Assistant entry */}
+            <Link
+              href="/assistant"
+              className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
+              id="assistant-link"
+              title="Assistant"
+              aria-label="Assistant"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-brand-400" />
+              <span className="hidden sm:inline">Assistant</span>
+            </Link>
 
             {/* History entry */}
             <Link

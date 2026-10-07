@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import AssistantFloatProvider from "@/components/AssistantFloatProvider";
 
 export const metadata: Metadata = {
   title: "Validation Copilot — AI-Powered Startup Validation",
@@ -36,6 +37,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-dvh relative z-10">
         {children}
+        <AssistantFloatProvider />
       </body>
     </html>
   );

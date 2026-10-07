@@ -21,6 +21,7 @@ import {
   Layers,
   LineChart,
   Loader2,
+  MessageCircle,
   Search,
   Shield,
   Target,
@@ -854,6 +855,15 @@ function ValidateDashboard() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/assistant"
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200 glass transition-colors"
+              id="validate-assistant-link"
+              title="Assistant"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Assistant</span>
+            </Link>
             <Link
               href="/history"
               className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200 glass transition-colors"
