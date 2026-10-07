@@ -57,3 +57,24 @@ test("agent API rejects unauthenticated callers before the SSE stream", async ({
   expect(r.status()).toBe(401);
   await expect(r.text()).resolves.toContain("UNAUTHENTICATED");
 });
+
+// ── Assistant chat guards (Task 9) ─────────────────────────────────────
+test("protected route /assistant redirects to login", async ({ page }) => {
+  await page.goto("/assistant");
+  await expect(page).toHaveURL(/\/login\?next=(%2F|\/)assistant/);
+});
+
+test("assistant API rejects unauthenticated callers before the SSE stream", async ({ request }) => {
+  // POST /api/assistant enforces auth pre-flight: anon callers get JSON 401
+  // {code:"UNAUTHENTICATED"}, never the 200 SSE stream.
+  const r = await request.post("/api/assistant", {
+    data: { client_message_id: "00000000-0000-4000-8000-000000000000", message: "hi" },
+  });
+  expect(r.status()).toBe(401);
+  await expect(r.text()).resolves.toContain("UNAUTHENTICATED");
+});
+
+test("assistant float widget is absent when logged out", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.locator("[data-assistant-float]")).toHaveCount(0);
+});

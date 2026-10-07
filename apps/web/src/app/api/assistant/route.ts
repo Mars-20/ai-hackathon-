@@ -8,6 +8,7 @@ import {
   type AssistantHttpContext,
 } from "@/lib/assistant/http";
 import { getDailyQuota } from "@/lib/assistant/quota";
+import { assistantClosedResponse, isAssistantOpen } from "@/lib/assistant/gate";
 
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -20,6 +21,8 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
+  // Closed rollout (spec §10/§11): auth first (401 above), gate second.
+  if (!isAssistantOpen()) return assistantClosedResponse();
   const admin = createServiceRoleClient();
   let entitlement: AssistantHttpContext["entitlement"];
   try {

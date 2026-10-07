@@ -8,9 +8,10 @@ import {
   type AssistantHttpContext,
 } from "@/lib/assistant/http";
 import { getDailyQuota } from "@/lib/assistant/quota";
+import { assistantClosedResponse, isAssistantOpen } from "@/lib/assistant/gate";
 
 async function ctxFor(): Promise<
-  { ctx: AssistantHttpContext } | { response: NextResponse }
+  { ctx: AssistantHttpContext } | { response: Response }
 > {
   const supabase = await createServerSupabaseClient();
   const {
@@ -24,6 +25,8 @@ async function ctxFor(): Promise<
       ),
     };
   }
+  // Closed rollout (spec §10/§11): auth first (401 above), gate second.
+  if (!isAssistantOpen()) return { response: assistantClosedResponse() };
   const admin = createServiceRoleClient();
   let entitlement: AssistantHttpContext["entitlement"];
   try {

@@ -7,6 +7,7 @@ import {
   type AssistantHttpContext,
 } from "@/lib/assistant/http";
 import { getDailyQuota } from "@/lib/assistant/quota";
+import { assistantClosedResponse, isAssistantOpen } from "@/lib/assistant/gate";
 
 export async function GET(
   req: NextRequest,
@@ -23,6 +24,8 @@ export async function GET(
       { status: 401 }
     );
   }
+  // Closed rollout (spec §10/§11): auth first (401 above), gate second.
+  if (!isAssistantOpen()) return assistantClosedResponse();
   const admin = createServiceRoleClient();
   let entitlement: AssistantHttpContext["entitlement"];
   try {

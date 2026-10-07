@@ -6,6 +6,7 @@
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAssistantOpen } from "@/lib/assistant/gate";
 
 // Routes that require authentication
 const PROTECTED_ROUTES = ["/validate", "/dashboard", "/history", "/assistant", "/workspace", "/admin"];
@@ -43,6 +44,16 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // Closed-rollout gate (spec §10/§11): signed-in users bounce to the
+  // dashboard while ASSISTANT_OPEN_CHAT is unset. Logged-out visitors keep
+  // the normal login redirect (which re-enters this gate after sign-in).
+  if (!isAssistantOpen() && pathname.startsWith("/assistant") && user) {
+    const dashboardUrl = request.nextUrl.clone();
+    dashboardUrl.pathname = "/dashboard";
+    dashboardUrl.search = "";
+    return NextResponse.redirect(dashboardUrl);
+  }
 
   // Redirect unauthenticated users away from protected routes
   const isProtected = PROTECTED_ROUTES.some((r) => pathname.startsWith(r));
