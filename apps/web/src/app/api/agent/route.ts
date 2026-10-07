@@ -2354,8 +2354,9 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
             }
           }
           try {
-            await supabase.from("experiments").insert({
-              id: experiment.id, startup_id: startup.id, workspace_id: workspaceId || null,
+            const { createExperiment } = await import("@/lib/experiments");
+            await createExperiment(supabase, ownerId, {
+              id: experiment.id, startup_id: startup.id, workspace_id: workspaceId,
               assumption_id: experiment.assumption_id ?? null, type: experiment.type,
               design: experiment.design, status: experiment.status,
             });
