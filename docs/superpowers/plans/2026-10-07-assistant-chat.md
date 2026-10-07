@@ -68,14 +68,22 @@
   `assistant_prefs(user_id uuid pk → auth.users cascade, float_enabled bool default false,
   active_conversation_id uuid nullable, updated_at)` — 1 policy `assistant_prefs_owner`
   (all, authenticated, `(select auth.uid())=user_id`).
-  `trace_events` ALTER: `actor` CHECK gains `'executor'`, `event_type` CHECK gains
-  `('tool_call','tool_result')`; rows written with `startup_id NULL` stay INVISIBLE to RLS
-  (select requires `startup_id IS NOT NULL`, spec §4) — handler trace writes go through the
-  SERVICE-ROLE client (`ctx.admin`), never the user client.
+  NO `trace_events` ALTER needed (verified live 2026-10-07): `event_type` CHECK already
+  includes `tool_call/tool_result`, no `actor` CHECK exists, `startup_id` nullable, and
+  `trace_service_all` (ALL, service_role, true) covers handler writes. User SELECT
+  (`trace_select`) only resolves `startup_id` to owned startups, so `startup_id NULL`
+  rows stay invisible — handler trace writes go through the SERVICE-ROLE client
+  (`ctx.admin`), never the user client.
+  RPC grants (verified live 2026-10-07): `REVOKE ALL … FROM public` does NOT strip the
+  explicit anon EXECUTE that project default privileges auto-create, so the migration
+  ALSO revokes `FROM anon` explicitly (0011 precedent). Final: exactly
+  `authenticated + service_role` (+owner postgres). Table access inherits project default
+  privileges (verified live on `startups`: authenticated full) — no table GRANTs needed.
   Live queries: `select count(*) from pg_policies where tablename like 'assistant%'` → 3
-  (NOT 4: quota intentionally policy-less); RPC probe; `set search_path=''` present;
-  `REVOKE ALL ON … FROM anon, authenticated` + `GRANT SELECT,INSERT,UPDATE,DELETE` (conversations,
-  messages, prefs only) confirmed. Migration chain `0000→0015` zero gaps.
+  (NOT 4: quota intentionally policy-less); RPC probe with a REAL user id
+  (zero-UUID 23503s on the `assistant_quota → auth.users` FK — correct behavior, use a
+  real id, then refund to net-zero); `set search_path=''` present.
+  Migration chain `0000→0015` zero gaps.
 
 - [ ] **Step 1: Write the migration file with the exact SQL from spec §4 (tables + RLS + triggers + 2 RPCs + REVOKE/GRANT)**
 

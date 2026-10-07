@@ -14,7 +14,13 @@ const FREE_QUOTA = process.env.NEXT_PUBLIC_PLAN_FREE_QUOTA;
 const PRO_QUOTA = process.env.NEXT_PUBLIC_PLAN_PRO_QUOTA;
 const TEAM_QUOTA = process.env.NEXT_PUBLIC_PLAN_TEAM_QUOTA;
 
-export default function PlansPage() {
+export default async function PlansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  const { reason } = await searchParams;
+  const showQuotaBanner = reason === "assistant_quota";
   return (
     <div dir="rtl" className="min-h-dvh flex flex-col">
       <header className="glass border-b border-white/5">
@@ -94,6 +100,21 @@ export default function PlansPage() {
             </a>
           </div>
         </div>
+
+        {showQuotaBanner && (
+          <div
+            role="alert"
+            className="glass rounded-2xl p-4 mb-6 border border-amber-400/30 text-center"
+          >
+            <p className="text-sm font-bold text-amber-200">
+              انتهت حصتك اليومية من رسائل المساعد
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              تعود الحصة تلقائيًا عند منتصف الليل (UTC) — أو راسلنا بالأسفل
+              لترقية خطتك إلى حصة أعلى.
+            </p>
+          </div>
+        )}
 
         <div id="request-form" className="mt-10 scroll-mt-20">
           <RequestForm />

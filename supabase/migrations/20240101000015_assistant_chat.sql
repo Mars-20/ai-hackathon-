@@ -69,6 +69,9 @@ begin
   end if;
 end; $$;
 revoke all on function public.consume_assistant_message(uuid, integer) from public;
+-- Explicit anon revoke: project default privileges auto-grant EXECUTE to anon at
+-- CREATE time, which REVOKE FROM PUBLIC does not strip (0011 precedent).
+revoke all on function public.consume_assistant_message(uuid, integer) from anon;
 grant execute on function public.consume_assistant_message(uuid, integer) to authenticated, service_role;
 
 -- Refund: provider-total-outage before dispatch only. Never refunds delivered answers.
@@ -79,6 +82,7 @@ begin
    where user_id = p_user and day = (now() at time zone 'utc')::date;
 end; $$;
 revoke all on function public.refund_assistant_message(uuid) from public;
+revoke all on function public.refund_assistant_message(uuid) from anon;
 grant execute on function public.refund_assistant_message(uuid) to authenticated, service_role;
 
 -- DB-backed float preference (D9: no localStorage-first debt)

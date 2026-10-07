@@ -5,6 +5,7 @@ import {
   parseSearchQuery,
   scopedAdminQuery,
 } from "@/lib/admin";
+import { getDailyQuota } from "@/lib/assistant/quota";
 import type { AdminQueryDeps } from "./shared";
 
 const SORT_ALLOWLIST = ["email", "created_at"] as const;
@@ -246,4 +247,34 @@ export async function queryUsersList(
     page,
     limit,
   };
+}
+
+export interface AssistantQuotaBrief {
+  day: string;
+  used: number;
+  quota: number;
+}
+
+/**
+ * Read-only assistant quota brief for the admin users panel. Service-role
+ * read (assistant_quota has zero public policies — user clients cannot see
+ * it). Missing row = 0 used. Throws on infra failure (fail-closed).
+ */
+export async function getAssistantQuota(
+  deps: Pick<AdminQueryDeps, "service">,
+  userId: string,
+): Promise<AssistantQuotaBrief> {
+  const day = new Date().toISOString().slice(0, 10);
+  const { data, error } = await deps.service
+    .from("assistant_quota")
+    .select("used_count")
+    .eq("user_id", userId)
+    .eq("day", day)
+    .maybeSingle();
+  if (error) throw error;
+  const used =
+    isRecord(data) && typeof data["used_count"] === "number"
+      ? data["used_count"]
+      : 0;
+  return { day, used, quota: getDailyQuota() };
 }

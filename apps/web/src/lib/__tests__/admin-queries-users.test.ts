@@ -42,6 +42,7 @@ import { requireAdminFromSupabase } from "@/lib/admin";
 import type { RequireAdminResult } from "@/lib/admin";
 import {
   queryUsersList,
+  getAssistantQuota,
   type UsersListInput,
 } from "@/lib/admin-queries/users";
 import type { AdminQueryDeps } from "@/lib/admin-queries/shared";
@@ -385,5 +386,46 @@ describe("users DAL parity", () => {
     );
     const routeBody = await routeRes.json();
     expect(dalRes).toEqual({ ok: true, data: routeBody });
+  });
+});
+
+describe("getAssistantQuota", () => {
+  // Minimal service-role fake: only the assistant_quota chain the helper uses.
+  function makeService(rows: Array<{ user_id: string; day: string; used_count: number }>) {
+    return {
+      from: (table: string) => {
+        const eqs: Array<{ col: string; val: unknown }> = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const q: any = {
+          select: () => q,
+          eq: (col: string, val: unknown) => {
+            eqs.push({ col, val });
+            return q;
+          },
+          maybeSingle: async () => {
+            if (table !== "assistant_quota") return { data: null, error: null };
+            const row =
+              rows.find((r) => eqs.every((f) => (r as unknown as Record<string, unknown>)[f.col] === f.val)) ?? null;
+            return { data: row, error: null };
+          },
+        };
+        return q;
+      },
+    };
+  }
+  const deps = (service: unknown) =>
+    ({ service }) as unknown as Parameters<typeof getAssistantQuota>[0];
+
+  test("returns used + quota for today's row", async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const service = makeService([{ user_id: "u-1", day, used_count: 7 }]);
+    const brief = await getAssistantQuota(deps(service), "u-1");
+    expect(brief).toEqual({ day, used: 7, quota: 50 });
+  });
+
+  test("missing row reads as zero used", async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const brief = await getAssistantQuota(deps(makeService([])), "u-9");
+    expect(brief).toEqual({ day, used: 0, quota: 50 });
   });
 });
