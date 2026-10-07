@@ -1,0 +1,28 @@
+{
+  "id": "at-005",
+  "label": "Throttled user gets 402 + plans_url + Retry-After",
+  "user_seed": {
+    "note": "Local-dev re-record seed: test user with assistant_quota.used_count already at ASSISTANT_DAILY_QUOTA for today.",
+    "startups": []
+  },
+  "turns": [
+    {
+      "ask": "Anything new today?",
+      "expect": {
+        "error": {
+          "code": "ASSISTANT_QUOTA_EXHAUSTED",
+          "status": 402,
+          "plans_url": "/plans?reason=assistant_quota",
+          "retry_after_present": true
+        }
+      },
+      "recorded": {
+        "status": 402,
+        "code": "ASSISTANT_QUOTA_EXHAUSTED",
+        "error": "Daily assistant quota exhausted",
+        "plans_url": "/plans?reason=assistant_quota",
+        "retryAfter": 23104
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "at-002",
+  "label": "Refusal names the gap: no supporting rows, no citations",
+  "user_seed": {
+    "note": "Local-dev re-record seed: test user owns zero startups and zero evidence rows.",
+    "startups": [],
+    "evidence": []
+  },
+  "turns": [
+    {
+      "ask": "What is our churn rate this quarter?",
+      "expect": {
+        "must_refuse_contains": "can't find supporting data",
+        "must_have_citations": false
+      },
+      "recorded": {
+        "reply": "I can't find supporting data in your workspaces for this - tell me the project name or add the data first.",
+        "citations": [],
+        "done": { "conversation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "deduped": false }
+      }
+    }
+  ]
+}

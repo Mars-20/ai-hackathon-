@@ -1,0 +1,26 @@
+{
+  "id": "at-001",
+  "label": "Cited decision: reply markers resolve to citations[] entries",
+  "user_seed": {
+    "note": "Local-dev re-record seed: one startup (Acme, widgets) + one decision row (kill feature X) owned by the test user.",
+    "startups": [{ "name": "Acme", "one_liner": "widgets" }],
+    "decisions": [{ "decision": "kill feature X after Acme pilot" }]
+  },
+  "turns": [
+    {
+      "ask": "What did we decide about feature X?",
+      "expect": {
+        "must_cite_labels": ["D1", "S1"],
+        "must_contain": "feature X"
+      },
+      "recorded": {
+        "reply": "We decided to kill feature X [D1] after the Acme pilot [S1].",
+        "citations": [
+          { "kind": "decision", "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "label": "D1" },
+          { "kind": "startup", "id": "33333333-3333-4333-8333-333333333333", "label": "S1" }
+        ],
+        "done": { "conversation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "deduped": false }
+      }
+    }
+  ]
+}

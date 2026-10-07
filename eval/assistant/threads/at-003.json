@@ -1,0 +1,33 @@
+{
+  "id": "at-003",
+  "label": "save-memory tool call lands with redacted args",
+  "user_seed": {
+    "note": "Local-dev re-record seed: any authenticated test user; memory lands in companion memories.",
+    "startups": []
+  },
+  "turns": [
+    {
+      "ask": "Remember that I prefer dark mode",
+      "expect": {
+        "must_contain": "Saved",
+        "tool": {
+          "name": "save_memory",
+          "args": { "kind": "preference" }
+        }
+      },
+      "recorded": {
+        "reply": "Saved.",
+        "citations": [],
+        "events": [
+          {
+            "type": "tool",
+            "tool": "save_memory",
+            "args": { "kind": "preference", "value": "likes dark mode" },
+            "result_summary": "Saved to memory (mem-1)"
+          }
+        ],
+        "done": { "conversation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "deduped": false }
+      }
+    }
+  ]
+}

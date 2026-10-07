@@ -1,0 +1,34 @@
+{
+  "id": "at-004",
+  "label": "run-validation tool call yields a real session card link",
+  "user_seed": {
+    "note": "Local-dev re-record seed: test user with one startup; validation creates a real session row.",
+    "startups": [{ "name": "Acme", "one_liner": "widgets" }]
+  },
+  "turns": [
+    {
+      "ask": "Validate my landing page idea for Acme",
+      "expect": {
+        "must_contain": "Validation session started",
+        "tool": {
+          "name": "run_validation",
+          "url_prefix": "/validate?startup_id="
+        }
+      },
+      "recorded": {
+        "reply": "Validation session started.",
+        "citations": [],
+        "events": [
+          {
+            "type": "tool",
+            "tool": "run_validation",
+            "args": { "idea": "landing page for Acme" },
+            "result_summary": "Validation session started",
+            "url": "/validate?startup_id=33333333-3333-4333-8333-333333333333"
+          }
+        ],
+        "done": { "conversation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "deduped": false }
+      }
+    }
+  ]
+}
