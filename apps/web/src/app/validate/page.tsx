@@ -504,6 +504,10 @@ function ValidateDashboard() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Snapshot persistence notice: set when the server save fails and the
+  // snapshot is kept in this browser only, so the user is never left
+  // believing server history has it.
+  const [persistNotice, setPersistNotice] = useState<string | null>(null);
   // Trial paywall (Task 7): locks the run composer when the loaded startup
   // is frozen or the account is consumed/paused. Reads stay untouched.
   const [paywallFrozen, setPaywallFrozen] = useState(false);
@@ -612,7 +616,8 @@ function ValidateDashboard() {
       decision: Decision | null;
     }) => {
       // Prefer server persistence; fall back to localStorage when the
-      // endpoint does not exist (e.g. 404) or the request fails.
+      // endpoint does not exist (e.g. 404) or the request fails — and say
+      // so, so a device-local snapshot is never mistaken for server history.
       try {
         const saveRes = await fetch("/api/startups/save", {
           method: "POST",
@@ -620,10 +625,16 @@ function ValidateDashboard() {
           body: JSON.stringify({ startup: snapshot.startup }),
         });
         if (!saveRes.ok) throw new Error(`save ${saveRes.status}`);
+        setPersistNotice(null);
       } catch {
         try {
           localStorage.setItem(`startup:${snapshot.startup.id}`, JSON.stringify(snapshot));
-        } catch {}
+          setPersistNotice(
+            "Couldn't reach the server — this snapshot is kept in this browser only and won't appear in History on other devices."
+          );
+        } catch {
+          setPersistNotice("Couldn't save this snapshot (server unreachable, browser storage full).");
+        }
       }
     },
     []
@@ -633,6 +644,7 @@ function ValidateDashboard() {
     if (!idea.trim() || isLoading) return;
     setIsLoading(true);
     setError(null);
+    setPersistNotice(null);
     setStartup(null);
     setQuestions([]);
     setAssumptions([]);
@@ -1060,6 +1072,17 @@ function ValidateDashboard() {
                     <div className="text-xs text-slate-500 mt-2">
                       Make sure GEMINI_API_KEY is set in your .env.local file.
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Local-only snapshot notice (server save failed) */}
+              {persistNotice && (
+                <div className="glass rounded-xl p-4 border border-amber-500/30 flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-sm font-semibold text-amber-400 mb-1">Saved in this browser only</div>
+                    <div className="text-sm text-slate-300">{persistNotice}</div>
                   </div>
                 </div>
               )}

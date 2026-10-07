@@ -50,6 +50,7 @@ interface Meta {
 interface SearchResult {
   id: string;
   _type: "startup" | "assumption" | "evidence";
+  startup_id?: string;
   name?: string;
   one_liner?: string;
   domain?: string;
@@ -270,8 +271,16 @@ export default function HistoryPage() {
                         {result.domain && <span>· {result.domain}</span>}
                       </div>
                     </div>
-                    {result._type === "startup" && (
-                      <Link href={`/validate?startup_id=${result.id}`} onClick={() => setShowSearchDropdown(false)}>
+                    {/* Assumption/evidence rows carry the parent startup_id
+                        (see /api/search) so they navigate to the owning
+                        startup; startups link to themselves. */}
+                    {(result._type === "startup" ? result.id : result.startup_id) && (
+                      <Link
+                        href={`/validate?startup_id=${result._type === "startup" ? result.id : result.startup_id}`}
+                        onClick={() => setShowSearchDropdown(false)}
+                        title={result._type === "startup" ? "Open startup" : `Open parent startup${result.startup_name ? ` (${result.startup_name})` : ""}`}
+                        aria-label={result._type === "startup" ? "Open startup" : "Open parent startup"}
+                      >
                         <ArrowRight className="w-3.5 h-3.5 text-slate-500 hover:text-brand-400 transition-colors" />
                       </Link>
                     )}
