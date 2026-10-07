@@ -2237,6 +2237,18 @@ Assumptions count: ${assumptions.length}
 Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)).slice(0, 3).join("; ")}
       `.trim();
 
+      // Planner stage trace (spec §9 actor vocabulary): the plan synthesis
+      // hands plannerSummary to the verifier — recorded as the planner's
+      // decision row so the trace carries all four pipeline actors.
+      trace.push(
+        makeTrace("planner", "decision", {
+          phase: "plan_synthesis",
+          assumptions: assumptions.length,
+          evidence_items: allEvidence.length,
+          summary_chars: plannerSummary.length,
+        })
+      );
+
       await send({ type: "phase", phase: "verifying", trace: [...trace] });
       const verifierUsage: AiUsage[] = [];
       const verifierResult = await runVerifier(plannerSummary, allEvidence, trace, verifierUsage);

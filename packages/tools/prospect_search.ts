@@ -8,8 +8,8 @@
  * prospects table with match_reason. There is deliberately no sequence,
  * cadence, or auto-enrollment support in this module.
  *
- * Follow-up (outside Task 5): prospects-table migration. Inserts are
- * best-effort — search results are returned even when persistence fails
+ * Follow-up done: supabase/migrations/20240101000014_prospects_l3.sql.
+ * Inserts are best-effort — search results are returned even when persistence fails
  * (e.g. table not yet migrated), with the error surfaced on `error`.
  */
 
@@ -151,9 +151,13 @@ export async function prospectSearch(
       const rows = sample.map((s) => ({
         startup_id: input.startup_id,
         apollo_id: s.apollo_id,
+        // Spec Section 9 canonical columns (migration 0014) …
+        company_name: s.company,
+        contact_name: s.name,
+        // … plus compatibility aliases consumed by founder-review UI.
         name: s.name,
-        title: s.title,
         company: s.company,
+        title: s.title,
         email: s.email,
         match_reason,
       }));

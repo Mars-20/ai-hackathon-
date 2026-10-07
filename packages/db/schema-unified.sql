@@ -485,3 +485,119 @@ end; $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function handle_new_user();
+
+-- ── 0014 (canonical mirror of
+-- ── supabase/migrations/20240101000014_prospects_l3.sql) ──────
+-- prospects: Apollo research data, never auto-messaged. Only manual
+-- path to leads via source_prospect_id + 'prospect_manual_convert'.
+create table if not exists prospects (
+  id uuid primary key default gen_random_uuid(),
+  startup_id uuid not null references startups(id) on delete cascade,
+  assumption_id uuid references assumptions(id) on delete set null,
+  source text not null default 'apollo' check (source in ('apollo')),
+  company_name text,
+  company_domain text,
+  company text,
+  contact_name text,
+  title text,
+  seniority text,
+  apollo_id text,
+  email text,
+  match_reason text not null,
+  outreach_status text not null default 'not_contacted'
+    check (outreach_status in ('not_contacted','founder_contacted_manually')),
+  created_at timestamptz not null default now(),
+  unique (startup_id, apollo_id)
+);
+
+create index if not exists idx_prospects_startup on prospects(startup_id);
+create index if not exists idx_prospects_apollo on prospects(apollo_id);
+create index if not exists idx_prospects_email on prospects(email);
+create index if not exists idx_prospects_outreach on prospects(outreach_status);
+
+alter table leads
+  add column if not exists source_prospect_id uuid references prospects(id) on delete set null;
+
+create index if not exists idx_leads_source_prospect on leads(source_prospect_id);
+
+alter table leads drop constraint if exists leads_source_check;
+alter table leads
+  add constraint leads_source_check
+  check (source in ('founder_list','signup_form','community','prospect_manual_convert'));
+
+alter table prospects enable row level security;
+
+drop policy if exists "prospects_select" on prospects;
+create policy "prospects_select" on prospects for select to authenticated
+  using (
+    startup_id in (
+      select s.id from public.startups s
+      where (s.workspace_id is not null and private.is_workspace_member(s.workspace_id))
+         or s.owner_id = (select auth.uid())
+    )
+  );
+drop policy if exists "prospects_insert" on prospects;
+create policy "prospects_insert" on prospects for insert to authenticated
+  with check (
+    startup_id in (
+      select s.id from public.startups s
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
+         or s.owner_id = (select auth.uid())
+    )
+  );
+drop policy if exists "prospects_update" on prospects;
+create policy "prospects_update" on prospects for update to authenticated
+  using (
+    startup_id in (
+      select s.id from public.startups s
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin','member'))
+         or s.owner_id = (select auth.uid())
+    )
+  );
+drop policy if exists "prospects_delete" on prospects;
+create policy "prospects_delete" on prospects for delete to authenticated
+  using (
+    startup_id in (
+      select s.id from public.startups s
+      where (s.workspace_id is not null and private.workspace_role(s.workspace_id) in ('owner','admin'))
+         or s.owner_id = (select auth.uid())
+    )
+  );
+
+-- P1 email-only lock (drop trigger at P2 PDPL license).
+create or replace function public.reject_non_email_channel()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.channel <> 'email' then
+    raise exception 'Channel locked to email until PDPL marketing license (P2): got %', new.channel;
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_messages_email_only on public.messages;
+create trigger trg_messages_email_only
+  before insert or update of channel on public.messages
+  for each row execute function public.reject_non_email_channel();
+
+-- L3 experiment-approval gate at DB level (mirrors campaign.ts).
+create or replace function public.messages_require_approved_experiment()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare v_status text; v_by uuid; v_at timestamptz;
+begin
+  if new.experiment_id is null then
+    return new;
+  end if;
+  select status, approved_by, approved_at
+    into v_status, v_by, v_at
+    from public.experiments
+    where id = new.experiment_id;
+  if not found or v_status <> 'approved' or v_by is null or v_at is null then
+    raise exception 'L3 approval required (403): experiment must have status=''approved'' with approved_by/at before queueing (Section 10).';
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_messages_l3_approval on public.messages;
+create trigger trg_messages_l3_approval
+  before insert or update of experiment_id on public.messages
+  for each row execute function public.messages_require_approved_experiment();

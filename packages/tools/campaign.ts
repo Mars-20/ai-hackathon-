@@ -16,7 +16,11 @@ export interface LeadPayload {
   consent_given?: boolean;
   consent_timestamp?: string;
   consent_text?: string;
-  source?: "founder_list" | "signup_form" | "community";
+  source?: "founder_list" | "signup_form" | "community" | "prospect_manual_convert";
+  // Set ONLY by the manual founder-convert flow (spec §11.4): the founder
+  // personally contacted the prospect outside the platform and obtained
+  // explicit consent. Same consent fields as any other lead — no shortcut.
+  source_prospect_id?: string;
 }
 
 export interface MessagePayload {
@@ -118,6 +122,9 @@ export async function executeCampaignAction(
         startup_id: p.startup_id,
         email,
         source: p.source ?? "founder_list",
+        // Manual-convert link (§11.4). Consent already verified above —
+        // this column records provenance, it never bypasses the gate.
+        ...(p.source_prospect_id ? { source_prospect_id: p.source_prospect_id } : {}),
         consent_given: true,
         consent_timestamp,
         consent_text,

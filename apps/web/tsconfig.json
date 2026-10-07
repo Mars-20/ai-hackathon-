@@ -12,6 +12,10 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
+    // Required: utils.ts re-exports packages/tools/stats with an explicit
+    // `.ts` extension so `node --experimental-strip-types` (eval ts-bridge)
+    // can resolve it. Typecheck-only flag; noEmit already set.
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",

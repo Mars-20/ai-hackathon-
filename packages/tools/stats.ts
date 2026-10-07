@@ -22,7 +22,12 @@ export function sampleStats(data: number[]): SampleStats {
   const max = sorted[n - 1];
   const variance = data.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / n;
   const std = Math.sqrt(variance);
-  return { n, mean: +mean.toFixed(2), median, min, max, std: +std.toFixed(2) };
+  // Display-round the mean, then clamp it inside [min,max]: rounding must
+  // never produce a mean outside the observed range (min<=mean<=max holds
+  // exactly, not within epsilon).
+  const meanRounded = +mean.toFixed(2);
+  const meanClamped = Math.min(max, Math.max(min, meanRounded));
+  return { n, mean: meanClamped, median, min, max, std: +std.toFixed(2) };
 }
 
 export function seanEllisScore(responses: number[]): {
