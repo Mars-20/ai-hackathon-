@@ -28,7 +28,7 @@ export interface ExperimentInput {
 
 export interface ExperimentPatch {
   status?: string;
-  design?: string;
+  design?: unknown;
   assumption_id?: string | null;
 }
 
