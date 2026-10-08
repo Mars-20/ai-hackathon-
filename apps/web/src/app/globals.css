@@ -222,6 +222,41 @@ body::before {
   text-decoration: none;
   transition: all 0.2s ease;
 }
+
+/* Floating assistant widget (rendered on every page via RootLayout, so its
+   positioning must live in global CSS — route-scoped stylesheets only load
+   on their own route, which left the button unstyled/invisible elsewhere). */
+.assistant-float-btn {
+  position: fixed;
+  bottom: 1.5rem;
+  inset-inline-start: 1.5rem;
+  z-index: 45;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #fff;
+  box-shadow: 0 10px 30px var(--brand-glow);
+  transition: transform 0.2s ease;
+}
+
+.assistant-float-btn:hover {
+  transform: translateY(-2px);
+}
+
+.assistant-float-panel {
+  position: fixed;
+  bottom: 5.5rem;
+  inset-inline-start: 1rem;
+  z-index: 50;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(36rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  border-radius: 1rem;
+}
 .cite-link:hover {
   background: rgba(92, 124, 250, 0.2);
   border-color: rgba(92, 124, 250, 0.5);

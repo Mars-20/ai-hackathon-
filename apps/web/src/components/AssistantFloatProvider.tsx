@@ -6,6 +6,7 @@
 // body-inert rule): background is non-interactive until the widget closes.
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { MessageCircle, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -23,18 +24,31 @@ export default function AssistantFloatProvider() {
   const { open, setOpen, enabled, ready } = useAssistantFloatPref(loggedIn);
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  // Session is re-evaluated on auth changes AND on every route change, not
+  // just on mount: login does router.push (no reload), and each
+  // createBrowserClient instance only emits auth events for its own
+  // sign-in — a mount-only snapshot would hide the widget until the next
+  // full refresh.
+  const pathname = usePathname();
   useEffect(() => {
     let cancelled = false;
-    void createClient()
-      .auth.getSession()
+    const client = createClient();
+    void client.auth
+      .getSession()
       .then(({ data }) => {
         if (!cancelled) setLoggedIn(!!data.session?.user);
       })
       .catch(() => {});
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled) setLoggedIn(!!session?.user);
+    });
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [pathname]);
 
   // Page-inert while expanded (bef body-inert rule): every body child
   // except this widget becomes non-interactive. body.inert itself is
