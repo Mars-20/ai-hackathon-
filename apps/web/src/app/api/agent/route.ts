@@ -1761,13 +1761,19 @@ function sanitizeForPrompt(s: string): string {
 // route must never reference COST_TABLE directly — always extractUsageCost.
 
 export async function POST(req: NextRequest) {
-  // ── Pre-flight: workspace peek (no body consumed — clone keeps req readable)
+  // ── Single body read ───────────────────────────────────────────────
+  // The Next prod runtime does not re-tee req.clone() reliably: the second
+  // clone().json() throws "Body is unusable: Body has already been read".
+  // Parse ONCE here; every consumer below (peek, companion, executor)
+  // shares `rawBody` and never touches the request stream again.
+  const rawBody = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  // ── Pre-flight: workspace peek (from the single parsed body) ────────
   // Peeked first so the rate-limit key can prefer user_id, else workspace_id,
   // else ip+route (never trust body.user_id for identity — only for bucketing).
   let peekWorkspaceId = "";
   let peekFp = { ua: "", screen: "", tz: "", lang: "" };
   try {
-    const peeked = (await req.clone().json()) as { workspace_id?: unknown; fp?: unknown };
+    const peeked = rawBody as { workspace_id?: unknown; fp?: unknown };
     if (typeof peeked.workspace_id === "string") peekWorkspaceId = peeked.workspace_id;
     // Optional device fingerprint for trial-abuse detection. Shape-validated
     // per field; missing/malformed → defaults (hashed, NEVER blocks).
@@ -2050,7 +2056,7 @@ export async function POST(req: NextRequest) {
   // because the flip site lives inside the streaming IIFE.
   let sessionOutcome: { done: boolean } | null = null;
   try {
-    const fullBody = (await req.clone().json()) as { idea?: unknown; startup_name?: unknown };
+    const fullBody = rawBody as { idea?: unknown; startup_name?: unknown };
     const ideaText = typeof fullBody.idea === "string" ? fullBody.idea : "";
     if (rateUserId && ideaText.trim()) {
       // Lazy server modules: keeps the route's static graph free of
@@ -2098,7 +2104,7 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-      const body: AgentInput = await req.json();
+      const body: AgentInput = rawBody as unknown as AgentInput;
       const rawIdea = body.idea ?? "";
       const rawData = body.uploaded_data ?? "";
       if (!rawIdea.trim()) {
@@ -2415,6 +2421,10 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
       const message = err instanceof Error ? err.message : "Unknown error";
       const errRetryAfter =
         err instanceof Error ? (err as { retryAfter?: unknown }).retryAfter : undefined;
+      // Server-side root-cause log: the SSE frame carries only the message,
+      // which hides the originating fetch/skill (e.g. transient body-reuse
+      // failures in provider fallback paths).
+      console.error("[agent] executor failure", err instanceof Error ? (err.stack ?? err.message) : err);
       // Ledger partial spend even on failure — the run consumed providers.
       try {
         await recordSpendAsync(budgetKey, totalCost);

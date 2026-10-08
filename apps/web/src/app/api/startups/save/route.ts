@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { resolveSaveGate, type EntitlementStatus } from "@/lib/entitlements";
 import { startupSaveSchema } from "@/lib/validation";
+import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
 import {
   isStageInOrder,
   normalizeKey,
@@ -93,14 +94,14 @@ export async function POST(request: NextRequest) {
 
   const rawId = parsed.data.id ?? crypto.randomUUID();
   const clientSuppliedId = rawIdInput !== undefined;
-  const rawWorkspaceId = parsed.data.workspace_id ?? null;
+  const requestedWorkspaceId = parsed.data.workspace_id ?? "";
 
   // Membership gate: reject any workspace_id the caller is not a member of.
-  if (rawWorkspaceId) {
+  if (requestedWorkspaceId) {
     const { data: membership } = await supabase
       .from("workspace_members")
       .select("workspace_id")
-      .eq("workspace_id", rawWorkspaceId)
+      .eq("workspace_id", requestedWorkspaceId)
       .eq("user_id", user.id)
       .maybeSingle();
     if (!membership) {
@@ -108,8 +109,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Owner fallback: when workspace_id is absent (personal startup), isolation
-  // relies on owner_id === auth user. When a client-supplied id targets an
+  // Effective workspace: prod enforces workspace_id NOT NULL (migration
+  // 0008), so an absent workspace_id resolves to the caller's first
+  // membership, else a personal workspace created on demand (same helper
+  // as the agent memo persist path) — never NULL, which the DB rejects
+  // with 23502. Unresolvable → fail closed (429), never 500.
+  const effectiveWorkspaceId = requestedWorkspaceId
+    ? requestedWorkspaceId
+    : await resolveEffectiveWorkspaceId(supabase, user.id, "");
+  if (!effectiveWorkspaceId) {
+    return NextResponse.json(
+      { error: "Workspace unavailable. Try again shortly." },
+      { status: 429 },
+    );
+  }
+  const rawWorkspaceId = effectiveWorkspaceId;
+
+  // Owner fallback: when a client-supplied id targets an
   // existing row, verify the caller owns it or is a member of its workspace
   // so one user cannot hijack another's startup via guessed UUID.
   // (Trial paywall: the fetched row is reused below — isNew = !existing,
@@ -270,7 +286,13 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
-    console.error("[Save API] Failed to save startup");
+    const errRec = error as unknown as Record<string, unknown>;
+    console.error("[Save API] Failed to save startup", {
+      message: typeof errRec.message === "string" ? errRec.message : null,
+      code: typeof errRec.code === "string" ? errRec.code : null,
+      details: typeof errRec.details === "string" ? errRec.details : null,
+      hint: typeof errRec.hint === "string" ? errRec.hint : null,
+    });
     return NextResponse.json({ error: "Failed to save startup" }, { status: 500 });
   }
 

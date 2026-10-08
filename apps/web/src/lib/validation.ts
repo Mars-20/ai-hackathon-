@@ -35,9 +35,11 @@ export const startupSaveSchema = z.object({
   stage: z.string().trim().min(1).max(100).default("idea"),
   track: z.string().trim().min(1).max(60).optional(),
   domain: z.string().max(100).optional(),
-  // workspace_id stays OPTIONAL: personal startups without a workspace are
-  // allowed and fall back to owner_id isolation (save route enforces
-  // owner_id === auth user + membership gate when workspace_id is present).
+  // workspace_id stays OPTIONAL: when absent, the save route resolves the
+  // caller's effective workspace (first membership, else a personal
+  // workspace created on demand) because prod enforces workspace_id NOT
+  // NULL. The membership gate below still applies when workspace_id is
+  // present.
   workspace_id: workspaceIdSchema.optional(),
 });
 
