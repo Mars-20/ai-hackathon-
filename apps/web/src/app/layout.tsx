@@ -1,40 +1,27 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
+import { getLocale } from "next-intl/server";
+import { Inter, Cairo } from "next/font/google";
 import AssistantFloatProvider from "@/components/AssistantFloatProvider";
 
-export const metadata: Metadata = {
-  title: "Validation Copilot — AI-Powered Startup Validation",
-  description:
-    "Stop building the wrong thing. Validate your startup idea with AI-powered assumption mapping, grounded market research, and real evidence collection — before you spend months and money.",
-  keywords: ["startup validation", "AI copilot", "product-market fit", "assumption mapping", "founder tools"],
-  openGraph: {
-    title: "Validation Copilot",
-    description: "AI agent that validates startup ideas with real evidence, not opinions.",
-    type: "website",
-  },
-};
+const inter = Inter({ subsets: ["latin"], variable: "--font-en" });
+const cairo = Cairo({ subsets: ["arabic", "latin"], variable: "--font-ar" });
 
-export const viewport: Viewport = {
-  themeColor: "#080b14",
-  colorScheme: "dark",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getLocale();
+  const isAr = locale === "ar";
+  return {
+    title: isAr ? "مساعد التحقق — تحقق من فكرتك قبل ما تبني" : "Validation Copilot — AI-Powered Startup Validation",
+    description: isAr ? "تحقق من فكرة مشروعك بأدلة حقيقية قبل ما تصرف وقت وفلوس." : "Stop building the wrong thing. Validate your startup idea with AI-powered evidence.",
+    alternates: { languages: { ar: "/ar", en: "/en" } },
+  };
+}
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getLocale();
+  const isAr = locale === "ar";
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang={locale} dir={isAr ? "rtl" : "ltr"} className={isAr ? cairo.variable : inter.variable} suppressHydrationWarning>
       <body className="min-h-dvh relative z-10">
         {children}
         <AssistantFloatProvider />

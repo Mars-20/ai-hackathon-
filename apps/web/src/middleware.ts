@@ -1,17 +1,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Middleware — Auth Session Refresh + Route Protection
+// Middleware — Auth Session Refresh + Route Protection + Locale Routing
 // Runs on every request to keep Supabase session cookies fresh
 // Protected routes: /validate, /dashboard, /history, /assistant, /workspace/*, /admin/*
+// Locale routing: every page path carries an /ar|/en prefix (detect + redirect)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAssistantOpen } from "@/lib/assistant/gate";
+import { stripLocale } from "@/lib/i18n-path";
 
-// Routes that require authentication
+// Routes that require authentication (matched against the locale-stripped path)
 const PROTECTED_ROUTES = ["/validate", "/dashboard", "/history", "/assistant", "/workspace", "/admin"];
 // Routes only for unauthenticated users (redirect logged-in users away)
 const AUTH_ROUTES = ["/login", "/signup"];
+
+const LOCALES = ["ar", "en"] as const;
+type Locale = (typeof LOCALES)[number];
+function detectLocale(req: NextRequest): Locale {
+  const cookie = req.cookies.get("NEXT_LOCALE")?.value;
+  if (cookie === "ar" || cookie === "en") return cookie;
+  const al = req.headers.get("accept-language") ?? "";
+  return /^ar\b/i.test(al.split(",")[0]?.trim() ?? "") ? "ar" : "en";
+}
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -45,31 +56,59 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Closed-rollout gate (spec §10/§11): signed-in users bounce to the
-  // dashboard while ASSISTANT_OPEN_CHAT is unset. Logged-out visitors keep
-  // the normal login redirect (which re-enters this gate after sign-in).
-  if (!isAssistantOpen() && pathname.startsWith("/assistant") && user) {
+  // Redirects start cookie-free, so re-apply the refreshed Supabase session
+  // cookies onto every redirect — otherwise each redirect drops the refresh.
+  const redirectWithSession = (url: URL) => {
+    const res = NextResponse.redirect(url);
+    for (const cookie of supabaseResponse.cookies.getAll()) {
+      res.cookies.set(cookie);
+    }
+    return res;
+  };
+
+  // 1) Locale-prefix redirect: paths without /ar|/en get one — cookie
+  // (NEXT_LOCALE literal; routing.localeCookie is an object under
+  // next-intl 4.14.9, never a plain string) wins, then Accept-Language.
+  const { locale, rest } = stripLocale(pathname);
+  if (!locale) {
+    const target = detectLocale(request);
+    const url = request.nextUrl.clone();
+    url.pathname = `/${target}${pathname === "/" ? "" : pathname}`;
+    const res = redirectWithSession(url);
+    res.cookies.set("NEXT_LOCALE", target, {
+      path: "/",
+      maxAge: 31536000,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    return res;
+  }
+
+  // 2) Auth guards match the stripped `rest` path — including the /assistant
+  // rollout gate (matching `pathname` would silently disable it under /ar|/en).
+  // Redirect targets keep the locale prefix to avoid a second redirect hop.
+  if (!isAssistantOpen() && rest.startsWith("/assistant") && user) {
     const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
+    dashboardUrl.pathname = `/${locale}/dashboard`;
     dashboardUrl.search = "";
-    return NextResponse.redirect(dashboardUrl);
+    return redirectWithSession(dashboardUrl);
   }
 
   // Redirect unauthenticated users away from protected routes
-  const isProtected = PROTECTED_ROUTES.some((r) => pathname.startsWith(r));
+  const isProtected = PROTECTED_ROUTES.some((r) => rest.startsWith(r));
   if (isProtected && !user) {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname); // preserve intended destination
-    return NextResponse.redirect(loginUrl);
+    loginUrl.pathname = `/${locale}/login`;
+    loginUrl.searchParams.set("next", pathname); // preserve intended destination (with locale)
+    return redirectWithSession(loginUrl);
   }
 
   // Redirect authenticated users away from auth routes
-  const isAuthRoute = AUTH_ROUTES.some((r) => pathname.startsWith(r));
+  const isAuthRoute = AUTH_ROUTES.some((r) => rest.startsWith(r));
   if (isAuthRoute && user) {
     const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
-    return NextResponse.redirect(dashboardUrl);
+    dashboardUrl.pathname = `/${locale}/dashboard`;
+    return redirectWithSession(dashboardUrl);
   }
 
   return supabaseResponse;
