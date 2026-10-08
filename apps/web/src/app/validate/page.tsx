@@ -41,6 +41,8 @@ import type {
   Evidence,
   Experiment,
   Decision,
+  IcpProfile,
+  InvestorScorecard,
   TraceEvent,
   SessionPhase,
 } from "@/lib/types";
@@ -60,12 +62,14 @@ function PhaseIndicator({ phase }: { phase: SessionPhase }) {
   const phases: { id: SessionPhase; label: string; icon: React.ReactNode }[] = [
     { id: "intake", label: "Intake", icon: <Brain className="w-3.5 h-3.5" /> },
     { id: "mapping", label: "Mapping", icon: <Target className="w-3.5 h-3.5" /> },
+    { id: "icp_sizing", label: "ICP & Market", icon: <Globe className="w-3.5 h-3.5" /> },
     { id: "research", label: "Research", icon: <Search className="w-3.5 h-3.5" /> },
     { id: "experiment", label: "Experiment", icon: <FlaskConical className="w-3.5 h-3.5" /> },
     { id: "leads", label: "Leads", icon: <Users className="w-3.5 h-3.5" /> },
     { id: "evidence", label: "Evidence", icon: <Users className="w-3.5 h-3.5" /> },
     { id: "verifying", label: "Verifying", icon: <Shield className="w-3.5 h-3.5" /> },
     { id: "memo", label: "Decision", icon: <LineChart className="w-3.5 h-3.5" /> },
+    { id: "investor_readiness", label: "Investor Ready", icon: <TrendingUp className="w-3.5 h-3.5" /> },
   ];
 
   const activeIdx = phases.findIndex((p) => p.id === phase);
@@ -418,6 +422,101 @@ function LeadsPanel({ leads, message }: { leads: import("@/lib/apollo").ApolloLe
   );
 }
 
+function IcpProfileCard({ profile }: { profile: IcpProfile }) {
+  const dims: { label: string; value: string }[] = [
+    { label: "Role", value: profile.role_title },
+    { label: "Context", value: profile.context },
+    { label: "Pain", value: profile.pain },
+    { label: "Workaround", value: profile.workaround },
+    { label: "Buying authority", value: profile.buying_authority },
+  ];
+  const markets: { label: string; value: string; note?: string }[] = [
+    { label: "TAM", value: profile.tam.value, note: profile.tam.source_url },
+    { label: "SAM", value: profile.sam.value, note: profile.sam.source_note },
+    { label: "SOM", value: profile.som.value, note: profile.som.basis },
+  ];
+  return (
+    <div className="glass rounded-xl p-4 border border-white/5 animate-slide-up">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="text-sm font-bold text-slate-200">{profile.role_title}</span>
+        {profile.preliminary && (
+          <span className="badge text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30">
+            preliminary — pre-research
+          </span>
+        )}
+      </div>
+      <div className="space-y-2 mb-3">
+        {dims.map((d) => (
+          <div key={d.label} className="flex gap-2 text-sm">
+            <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0 w-28">{d.label}</span>
+            <span className="text-sm text-slate-200">{d.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {markets.map((m) => (
+          <div key={m.label} className="glass rounded-lg p-3">
+            <div className="text-xs text-slate-500 mb-1">{m.label}</div>
+            <div className="text-sm font-bold text-slate-100">{m.value}</div>
+            {m.note && <div className="text-xs text-slate-500 mt-1 truncate">{m.note}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InvestorScorecardCard({ scorecard }: { scorecard: InvestorScorecard }) {
+  const fitColor: Record<string, string> = {
+    fundable: "#22c55e",
+    not_yet: "#eab308",
+    unfit: "#ef4444",
+  };
+  const color = fitColor[scorecard.verdict_fit] ?? "#94a3b8";
+  return (
+    <div
+      className="glass rounded-2xl p-6 border animate-slide-up"
+      style={{ borderColor: `${color}40` }}
+    >
+      <div className="flex items-center gap-3 mb-4">
+        <span
+          className="text-3xl font-black uppercase tracking-wider"
+          style={{ color }}
+        >
+          {scorecard.overall_1_10}/10
+        </span>
+        <span
+          className="badge"
+          style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}
+        >
+          {scorecard.verdict_fit.replace("_", " ")}
+        </span>
+      </div>
+      <div className="space-y-2 mb-4">
+        {scorecard.signals.map((s) => (
+          <div key={s.key} className="flex items-start gap-2 text-sm">
+            <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0 w-28">
+              {s.key.replace("_", " ")}
+            </span>
+            <span className="text-sm font-bold text-slate-100 shrink-0 w-8">{s.score_1_10}/10</span>
+            <span className="text-sm text-slate-400">{s.note}</span>
+          </div>
+        ))}
+      </div>
+      {scorecard.top_gaps.length > 0 && (
+        <div className="p-3 glass rounded-lg border-l-2 border-yellow-500/50">
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Top gaps</div>
+          <ul className="text-sm text-slate-300 list-disc list-inside">
+            {scorecard.top_gaps.map((g) => (
+              <li key={g}>{g}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DecisionMemoPanel({ decision }: { decision: Decision }) {
   const verdictColor = getVerdictColor(decision.verdict);
   const verdictEmoji: Record<string, string> = {
@@ -504,6 +603,8 @@ function ValidateDashboard() {
   const [leads, setLeads] = useState<import("@/lib/apollo").ApolloLead[]>([]);
   const [leadsMessage, setLeadsMessage] = useState<string | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
+  const [icpProfile, setIcpProfile] = useState<IcpProfile | null>(null);
+  const [scorecard, setScorecard] = useState<InvestorScorecard | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Snapshot persistence notice: set when the server save fails and the
@@ -734,6 +835,8 @@ function ValidateDashboard() {
             experiment?: Experiment;
             leads?: import("@/lib/apollo").ApolloLead[];
             decision?: Decision;
+            icp_profile?: IcpProfile;
+            investor_scorecard?: InvestorScorecard;
             stats?: {
               tool_calls?: number;
               evidence_count?: number;
@@ -778,6 +881,14 @@ function ValidateDashboard() {
                 if (typeof data.message === "string") setLeadsMessage(data.message);
                 if (data.trace) setTrace([...data.trace]);
                 break;
+              case "icp_profile":
+                if (data.icp_profile) setIcpProfile(data.icp_profile);
+                if (data.trace) setTrace([...data.trace]);
+                break;
+              case "investor_scorecard":
+                if (data.investor_scorecard) setScorecard(data.investor_scorecard);
+                if (data.trace) setTrace([...data.trace]);
+                break;
               case "done":
                 setStartup(data.startup ?? null);
                 if (data.assumptions) setAssumptions(data.assumptions);
@@ -786,6 +897,8 @@ function ValidateDashboard() {
                 if (Array.isArray(data.leads)) setLeads(data.leads);
                 if (typeof data.message === "string") setLeadsMessage(data.message);
                 setDecision(data.decision ?? null);
+                if (data.icp_profile) setIcpProfile(data.icp_profile);
+                if (data.investor_scorecard) setScorecard(data.investor_scorecard);
                 if (data.trace) setTrace(data.trace);
                 setStats(data.stats || {});
                 setPhase("done");
@@ -1224,6 +1337,17 @@ function ValidateDashboard() {
                 </section>
               )}
 
+              {/* ICP & Market */}
+              {icpProfile && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Globe className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">Ideal Customer & Market</h3>
+                  </div>
+                  <IcpProfileCard profile={icpProfile} />
+                </section>
+              )}
+
               {/* Experiment */}
               {experiment && (
                 <section>
@@ -1289,6 +1413,17 @@ function ValidateDashboard() {
                     <h3 className="font-bold text-slate-200 text-sm">Decision Memo</h3>
                   </div>
                   <DecisionMemoPanel decision={decision} />
+                </section>
+              )}
+
+              {/* Investor Readiness */}
+              {scorecard && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="w-4 h-4 text-brand-400" />
+                    <h3 className="font-bold text-slate-200 text-sm">Investor Readiness</h3>
+                  </div>
+                  <InvestorScorecardCard scorecard={scorecard} />
                 </section>
               )}
 
