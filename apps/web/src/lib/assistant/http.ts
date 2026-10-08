@@ -32,6 +32,11 @@ import {
   createExperiment,
   updateExperiment,
 } from "@/lib/experiments";
+import {
+  resolveLocale,
+  systemPromptFor,
+  type AiLocale,
+} from "@/lib/ai-locale";
 
 const UUID = z.string().uuid();
 const MESSAGE_MAX = 4000;
@@ -43,6 +48,7 @@ const postSchema = z.object({
   conversation_id: UUID.optional(),
   client_message_id: UUID,
   message: z.string().min(1).max(MESSAGE_MAX),
+  locale: z.enum(["ar", "en"]).optional(),
 });
 
 const CITATION_KINDS = new Set([
@@ -95,6 +101,8 @@ export interface AssistantHttpContext {
   admin: SupabaseClient;
   entitlement: EntitlementStatus | null;
   quotaMax: number;
+  /** Raw NEXT_LOCALE cookie value (route layer reads it via await cookies()). */
+  cookieLocale?: string | null;
   nowMs?: () => number;
   rate?: (key: string) => Promise<{ limited: boolean; retryAfter: number }>;
   modelCaller?: typeof callAssistantWithTools;
@@ -297,9 +305,9 @@ function defaultTools(db: SupabaseClient): AssistantTools {
   };
 }
 
-function systemPrompt(): string {
+function systemPrompt(locale: AiLocale = "en"): string {
   return [
-    "You answer in the user's language (Arabic when they write Arabic, English otherwise).",
+    systemPromptFor(locale),
     "Ground every factual claim about the user's data in the context rows and cite them.",
     "When no supporting rows exist, refuse explicitly and name the missing data.",
     "Never invent startups, numbers, URLs, or decisions.",
@@ -359,7 +367,10 @@ export async function handleAssistantPost(
   if (!parsed.success) {
     return json({ error: "Invalid request", code: "INVALID" }, 400);
   }
-  const { conversation_id, client_message_id, message } = parsed.data;
+  const { conversation_id, client_message_id, message, locale: bodyLocale } = parsed.data;
+  // Effective locale: body.locale > NEXT_LOCALE cookie > "en"
+  // (resolveLocale pins the parenthesized fallback chain).
+  const effectiveLocale = resolveLocale(bodyLocale, ctx.cookieLocale);
   const nowMs = (ctx.nowMs ?? Date.now)();
   const modelCaller = ctx.modelCaller ?? callAssistantWithTools;
   const spend = ctx.spend ?? recordSpendAsync;
@@ -603,7 +614,7 @@ export async function handleAssistantPost(
   let turn;
   try {
     turn = await modelCaller({
-      systemPrompt: systemPrompt(),
+      systemPrompt: systemPrompt(effectiveLocale),
       context: `${context}\n\nUser message (untrusted): ${safeMessage}`,
       history,
       message: safeMessage,

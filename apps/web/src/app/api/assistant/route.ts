@@ -1,6 +1,7 @@
 // POST /api/assistant — chat turn (SSE). Thin wrapper: auth + context,
 // all logic lives in lib/assistant/http.ts.
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
 import {
   handleAssistantPost,
@@ -33,12 +34,15 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { "Retry-After": "60" } }
     );
   }
+  const cookieStore = await cookies();
+  const cookieLocale = cookieStore.get("NEXT_LOCALE")?.value;
   const ctx: AssistantHttpContext = {
     userId: user.id,
     db: supabase,
     admin,
     entitlement,
     quotaMax: getDailyQuota(),
+    cookieLocale: cookieLocale ?? null,
   };
   let body: unknown;
   try {
