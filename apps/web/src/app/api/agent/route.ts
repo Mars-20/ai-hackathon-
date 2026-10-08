@@ -18,8 +18,10 @@ import type {
 } from "@/lib/types";
 import {
   buildIcpSummary,
+  buildMarketCtx,
   fallbackIcpProfile,
   parseIcpProfile,
+  type MarketNumbers,
 } from "@/lib/skills-helpers";
 import {
   validateQuestion,
@@ -1117,15 +1119,17 @@ async function runMarketResearchSkill(
   startup: Startup,
   assumptions: Assumption[],
   trace: TraceEvent[],
-  usageAcc?: AiUsage[]
+  usageAcc?: AiUsage[],
+  icpSummary: string = ""
 ): Promise<Evidence[]> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:market-research", "skill_start", { startup_id: startup.id }));
 
   const criticalAssumption = assumptions.find((a) => a.risk_level === "critical") ?? assumptions[0];
+  const icpHint = icpSummary ? ` ${truncateField(icpSummary, 120)}` : "";
   const queries = [
-    `${truncateField(sanitizeStartupField(startup.domain), 100)} market size and growth rate 2024 2025`,
-    `${truncateField(sanitizeStartupField(startup.one_liner), 100)} competitors pricing`,
+    `${truncateField(sanitizeStartupField(startup.domain), 100)} market size and growth rate 2024 2025${icpHint} TAM SAM SOM`,
+    `${truncateField(sanitizeStartupField(startup.one_liner), 100)} competitors pricing${icpHint}`,
     `${truncateField(criticalAssumption?.statement ?? "", 100)} evidence data`,
   ].filter(Boolean);
 
@@ -1203,6 +1207,45 @@ async function runMarketResearchSkill(
     } catch (err) {
       trace.push(makeTrace("tool", "error", { query, error: String(err) }));
     }
+  }
+
+  // Synthesis: grounded TAM/SAM/SOM + competitor landscape (icp-market-sizing).
+  // Numbers must cite tool-returned URLs; ungrounded numbers are dropped.
+  let marketSizing: MarketNumbers | null = null;
+  try {
+    const synthSchema = {
+      type: SchemaType.OBJECT,
+      properties: {
+        tam: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING }, source_url: { type: SchemaType.STRING } } },
+        sam: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING }, source_note: { type: SchemaType.STRING } } },
+        som: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING }, basis: { type: SchemaType.STRING } } },
+        competitors: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+      },
+      required: ["tam", "sam", "som", "competitors"],
+    };
+    const synthPrompt = `Summarize the closeable market from these tool results (URLs are tool-grounded; invent none).
+ICP: ${toUntrusted(icpSummary || "not specified")}
+RESULTS:
+${toUntrusted(allResults.slice(0, 12).map((r) => `- [${r.source_type}] ${r.claim}${r.source_url ? ` (${r.source_url})` : ""}`).join("\n"))}
+Rules: anchor on SOM, never present TAM as the relevant market; drop any number without a cited URL.`;
+    const synthText = await callAIWithFallback({
+      prompt: composePrompt(synthPrompt, ""),
+      systemPrompt: "You are the market-sizing synthesizer for a Validation Copilot. Respond ONLY with valid JSON.",
+      responseSchema: synthSchema,
+      trace,
+      skillName: "market-sizing",
+      usageAcc,
+    });
+    const parsed = parseJsonSafely<(MarketNumbers & { competitors?: string[] }) | null>(synthText, null);
+    if (parsed && (parsed.tam?.value || parsed.sam?.value || parsed.som?.value)) {
+      marketSizing = { tam: parsed.tam, sam: parsed.sam, som: parsed.som };
+      trace.push(makeTrace("tool", "tool_result", { market_sizing: marketSizing, competitors: (parsed.competitors ?? []).slice(0, 8) }));
+    } else {
+      trace.push(makeTrace("skill:market-research", "verification", { warning: "synthesis_unparseable" }));
+    }
+  } catch (err) {
+    if (isBudgetError(err)) throw err;
+    trace.push(makeTrace("skill:market-research", "verification", { warning: "synthesis_failed" }));
   }
 
   const latency = Date.now() - t0;
@@ -2284,11 +2327,20 @@ export async function POST(req: NextRequest) {
       // ── Phase 4: Market Research ────────────────────────────────────────────
       await send({ type: "phase", phase: "research", trace: [...trace] });
       const researchUsage: AiUsage[] = [];
-      const secondaryEvidence = await runMarketResearchSkill(startup, assumptions, trace, researchUsage);
-      toolCalls += 3; // 3 search queries
+      const secondaryEvidence = await runMarketResearchSkill(startup, assumptions, trace, researchUsage, icpSummary);
+      toolCalls += 4; // 3 search queries + 1 market-sizing synthesis
       totalCost += costFromUsage(researchUsage, "gemini_call") + 3 * extractUsageCost(undefined, "search");
       checkTimeout();
       assertPhaseBudget(totalCost, toolCalls);
+      // Single-producer rule: marketCtx comes ONLY from the research
+      // synthesis trace payload (grounded numbers); the icp_sizing TAM/SAM/SOM
+      // stay preliminary and never feed prompts.
+      const marketSizingPayload = [...trace].reverse().find(
+        (t) => typeof t.payload?.market_sizing === "object" && t.payload?.market_sizing !== null
+      )?.payload?.market_sizing as MarketNumbers | undefined;
+      const marketCtx = marketSizingPayload
+        ? buildMarketCtx(marketSizingPayload, truncateField(icpSummary, 120))
+        : "";
       await send({ type: "evidence", evidence: secondaryEvidence, trace: [...trace] });
 
       // ── Phase 5: Experiment Design ──────────────────────────────────────────
