@@ -20,6 +20,7 @@ import {
   buildIcpSummary,
   buildMarketCtx,
   fallbackIcpProfile,
+  marketBlock,
   parseIcpProfile,
   type MarketNumbers,
 } from "@/lib/skills-helpers";
@@ -999,6 +1000,13 @@ For each assumption:
 - statement: "We assume that [specific, testable claim]"
 - reasoning: Why this risk level, what evidence would change it
 
+HYPOTHESIS FORMAT (startup-methodology): phrase every statement as
+"We believe [customer segment] has [problem]. We will test this by
+[specific method]. We will know we are right if [measurable signal]
+within [timeframe]." Never let a vague problem statement pass: if the
+problem, ICP, or workaround is unspecified, emit a critical desirability
+assumption demanding Problem Formulation first.
+
 Return assumptions sorted by risk_level: critical first, then high, medium, low.`;
 
   const rawText = await callAIWithFallback({
@@ -1267,7 +1275,8 @@ Rules: anchor on SOM, never present TAM as the relevant market; drop any number 
 // always emit an SSE leads event (even empty) instead of silent skip.
 async function runLeadFinderSkill(
   startup: Startup,
-  trace: TraceEvent[]
+  trace: TraceEvent[],
+  icpSummary: string = ""
 ): Promise<{ leads: ApolloLead[]; error?: string; provider: string; total: number }> {
   const t0 = Date.now();
   trace.push(
@@ -1278,8 +1287,11 @@ async function runLeadFinderSkill(
     })
   );
 
+  // ICP-shaped audience: the 5-dimension summary sharpens Apollo titles/geo;
+  // empty falls back to today's target_customer behavior.
+  const audience = icpSummary ? truncateField(icpSummary, 200) : (startup.target_customer || startup.domain);
   const result = await searchLeads({
-    targetCustomer: startup.target_customer || startup.domain,
+    targetCustomer: audience,
     domain: startup.domain,
     keywords: startup.name,
     limit: 10,
@@ -1296,7 +1308,7 @@ async function runLeadFinderSkill(
       })
     );
     const snov = await searchSnovLeads({
-      targetCustomer: startup.target_customer || startup.domain,
+      targetCustomer: audience,
       domain: startup.domain,
       limit: 10,
     });
@@ -1360,7 +1372,8 @@ async function runExperimentDesignerSkill(
   assumptions: Assumption[],
   trace: TraceEvent[],
   usageAcc?: AiUsage[],
-  companionCtx: string = ""
+  companionCtx: string = "",
+  icpSummary: string = ""
 ): Promise<Experiment> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:experiment-designer", "skill_start", { startup_id: startup.id }));
@@ -1403,6 +1416,15 @@ ASSUMPTION: ${toUntrusted(truncateField(riskiestAssumption?.statement ?? ""))}
 STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
 DOMAIN: ${toUntrusted(sanitizeStartupField(startup.domain))}
 TARGET CUSTOMER: ${toUntrusted(sanitizeStartupField(startup.target_customer || "not specified"))}
+ICP: ${toUntrusted(icpSummary || "not specified")}
+
+EXPERIMENT LADDER (experiment-design-coach — cheapest first):
+Tier 1 conversation ($0, hours) → Tier 2 signal test ($0-100, days) →
+Tier 3 concierge/Wizard-of-Oz ($50-500, weeks) → Tier 4 prototype
+($500+, weeks). NEVER recommend Tier 4+ before exhausting Tiers 1-3.
+Match type to assumption: desirability/existence → interviews (n≥15);
+usage → concierge/WoZ (n≥10); willingness-to-pay → pre-order/pricing
+(n≥5); price level → Van Westendorp (n≥20); feasibility → spike/PoC.
 
 RULES (non-negotiable):
 1. Never recommend building the full product as the first test
@@ -1562,6 +1584,15 @@ COMMITMENT LADDER (assign strength appropriately):
 
 CRITICAL RULE: Distinguish compliments from commitments. "This is amazing!" = opinion. "Here's my credit card" = commitment.
 
+EVIDENCE GRADING (evidence-quality-coach): classify every item on the
+commitment ladder — Rung 1 opinion, 2 stated intent, 3 time given,
+4 contact shared, 5 money/commitment. Bayesian weights: Rung 5 confirm
+5.0x; Rung 3-4 confirm 2.0x / contradict 0.3x; Rung 1-2 = noise either
+way. One Rung 5 contradiction wipes out ten Rung 1 compliments. Mom-Test
+rules: their life not your idea; past specifics not hypotheticals;
+compliments are not data (Rung 1); dig into bad news — hesitation is the
+most valuable signal.
+
 For each evidence item, count how many respondents it represents (sample_size).
 Write a summary of what the data actually shows.`;
 
@@ -1617,7 +1648,8 @@ async function runDecisionMemoSkill(
   trace: TraceEvent[],
   verifier?: { approved: boolean; unsupportedClaims: string[] },
   usageAcc?: AiUsage[],
-  companionCtx: string = ""
+  companionCtx: string = "",
+  marketCtx: string = ""
 ): Promise<Decision> {
   const t0 = Date.now();
   trace.push(makeTrace("skill:decision-memo", "skill_start", { startup_id: startup.id }));
@@ -1654,7 +1686,7 @@ STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sa
 
 EVIDENCE (${allEvidence.length} items):
 ${evidenceSummary}
-
+${marketBlock(marketCtx)}
 THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go threshold: ${thresholdReason}`}
 THIN-EVIDENCE RULE: a single source repeated, or several items sharing one URL once de-duplicated, is thin evidence and MUST NOT produce "go" — "go" needs 3+ DISTINCT sources. When in doubt, output "test_more".
 CONFIDENCE LEVEL: ${confidence.toUpperCase()}
@@ -1667,6 +1699,9 @@ Produce:
 - verdict: Your evidence-based verdict (${allowGo ? "go/iterate/stop/test_more" : "iterate/stop/test_more only"})
 - rationale: 2-3 sentence honest explanation referencing the actual evidence
 - next_experiment: The single cheapest next experiment to run if verdict is not "go"
+- investor_lens: 1-line note on the strongest of the 8 readiness signals
+  (team 30 / market 25 / product 20 / business_model 10 / brand 5 /
+  traction 5 / plan 3 / persuasion 2) this evidence supports
 
 Be honest. If evidence is thin, say "test_more". Never inflate.`;
 
@@ -2346,7 +2381,7 @@ export async function POST(req: NextRequest) {
       // ── Phase 5: Experiment Design ──────────────────────────────────────────
       await send({ type: "phase", phase: "experiment", trace: [...trace] });
       const experimentUsage: AiUsage[] = [];
-      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace, experimentUsage, companionCtx);
+      const experiment = await runExperimentDesignerSkill(startup, assumptions, trace, experimentUsage, companionCtx, icpSummary);
       toolCalls++;
       totalCost += costFromUsage(experimentUsage, "gemini_call");
       checkTimeout();
@@ -2359,7 +2394,7 @@ export async function POST(req: NextRequest) {
       // this phase — empty means "no matches / key misconfigured", visible in
       // trace + UI instead of a perceived freeze after experiment.
       await send({ type: "phase", phase: "leads", trace: [...trace] });
-      const leadResult = await runLeadFinderSkill(startup, trace);
+      const leadResult = await runLeadFinderSkill(startup, trace, icpSummary);
       const leads = leadResult.leads;
       toolCalls++;
       totalCost += extractUsageCost(undefined, "search");
@@ -2420,7 +2455,7 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
       // ── Phase 7: Decision Memo ──────────────────────────────────────────────
       await send({ type: "phase", phase: "memo", trace: [...trace] });
       const memoUsage: AiUsage[] = [];
-      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult, memoUsage, companionCtx);
+      const decision = await runDecisionMemoSkill(startup, assumptions, allEvidence, trace, verifierResult, memoUsage, companionCtx, marketCtx);
       toolCalls++;
       totalCost += costFromUsage(memoUsage, "gemini_call");
       checkTimeout();
