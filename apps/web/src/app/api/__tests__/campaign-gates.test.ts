@@ -286,7 +286,7 @@ describe("task 6 compliance P1 (static)", () => {
   });
 
   test("invite token page: accept/decline, expired 410, single-use, never logs token", () => {
-    const p = path.join(repoRoot, "apps/web/src/app/invite/[token]/page.tsx");
+    const p = path.join(repoRoot, "apps/web/src/app/[locale]/invite/[token]/page.tsx");
     expect(fs.existsSync(p)).toBe(true);
     if (!fs.existsSync(p)) return;
     const src = fs.readFileSync(p, "utf8");

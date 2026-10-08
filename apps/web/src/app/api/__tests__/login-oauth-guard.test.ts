@@ -5,7 +5,7 @@ import path from "path";
 function loginPageSrc(): string {
   // vitest cwd = apps/web
   return fs.readFileSync(
-    path.join(process.cwd(), "src", "app", "login", "page.tsx"),
+    path.join(process.cwd(), "src", "app", "[locale]", "login", "page.tsx"),
     "utf8"
   );
 }

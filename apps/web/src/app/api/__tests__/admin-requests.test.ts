@@ -370,7 +370,7 @@ describe("task 8 static contract (RPC-only money-adjacent writes)", () => {
     "utf8",
   );
   const pageSrc = readFileSync(
-    join(__dirname, "..", "..", "admin", "requests", "page.tsx"),
+    join(__dirname, "..", "..", "[locale]", "admin", "requests", "page.tsx"),
     "utf8",
   );
 

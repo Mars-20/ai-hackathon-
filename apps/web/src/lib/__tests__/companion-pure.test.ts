@@ -190,9 +190,9 @@ describe("copy", () => {
 
   it("memories console renders copy from MEMORY_COPY with no inline Arabic", () => {
     // Task 9 page-level assertion: the console must import the frozen copy;
-    // `grep -rn "اعتماد" src/app/memories/` must return nothing (all Arabic
+    // `grep -rn "اعتماد" src/app/[locale]/memories/` must return nothing (all Arabic
     // lives in copy.ts). Enforced as: no Arabic-block char in the dir.
-    const dir = join(__dirname, "..", "..", "app", "memories");
+    const dir = join(__dirname, "..", "..", "app", "[locale]", "memories");
     const files = readdirSync(dir).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
     expect(files).toContain("page.tsx");
     let pageImportsCopy = false;
