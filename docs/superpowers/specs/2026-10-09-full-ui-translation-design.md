@@ -7,27 +7,27 @@
 ## 1. Problem
 
 - `LanguageSwitcher` (`apps/web/src/components/LanguageSwitcher.tsx`) is a functional placeholder: two unstyled buttons, no active-locale indication, no tooltip, breaks header rhythm.
-- Translation coverage is 8 keys (`common.*`, `nav.*`) against ~700 hardcoded user-facing literals in 31 files (<5% of visible UI). Everything outside `nav.*` ignores the locale switch. AR-only islands (assistant, plans, dashboard paywall) have no EN mirror; EN-only surfaces (landing, validate, admin, invite) have no AR mirror.
+- Translation coverage is 8 keys (`common.*`, `nav.*`) against ~700 hardcoded user-facing literals across ~50 source files (audit-based estimate, Oct 2026; <5% of visible UI). Everything outside `nav.*` ignores the locale switch. AR-only islands (assistant, plans, dashboard paywall) have no EN mirror; EN-only surfaces (landing, validate, admin, invite) have no AR mirror.
 
 ## 2. Scope
 
-In scope: redesign of `LanguageSwitcher`; new `ar`+`en` message namespaces and `useTranslations`/`getTranslations` wiring for landing, login, dashboard, validate, history, assistant, plans, request-form, memories, invite, admin console (7 pages), shared components; parity + no-mixed-language tests.
-Out of scope: locale routing/middleware/cookie behavior; AI prompt/email locale logic (already locale-aware); per-locale `<title>` (parked earlier); translating machine-English field tokens; changing any runtime behavior besides rendered language.
+In scope: redesign of `LanguageSwitcher`; new `ar`+`en` message namespaces and `useTranslations` (client components) / `getTranslations` (server components) wiring for landing, login, dashboard, validate, history, assistant, plans, request-form, memories, invite, admin console (8 pages), shared components; parity + no-mixed-language tests. In-scope string classes in every touched file: rendered text, placeholders, aria-labels, `title`/tooltips, empty states, toasts, browser dialogs (`prompt`/`alert`/`confirm` consume translated strings — client components can pass them as arguments), and route-level metadata titles/descriptions of touched pages.
+Out of scope: locale routing/middleware/cookie behavior; AI prompt wording and full email templates (assistant refusals + email subjects are locale-aware today; template localization is a separate phase); translating machine-English field tokens and CSV export headers (machine-readable — stay English in both locales); server API error bodies (stay as-is); root-shell `<title>`; changing any runtime behavior besides rendered language, except the two allowlisted touches in §8.
 
 ## 3. Phased delivery (each phase merges independently)
 
-- Phase 1 — Switcher: redesign + wire to existing `common.switchToArabic`/`common.switchToEnglish` keys (currently hardcoded, unused). No behavior change (same cookie + same-page `router.replace`).
-- Phase 2 — User surfaces: landing → login → dashboard → validate → history.
-- Phase 3 — Assistant & plans: assistant panel/view, plans page, request-form, memories (`MEMORY_COPY` gains EN mirror; 5 EN residuals keyed), invite flow.
+- Phase 1 — Switcher: redesign + wire to existing `common.switchToArabic`/`common.switchToEnglish` keys (currently hardcoded, unused); the `title` tooltip reuses the same label keys. No behavior change (same cookie + same-page `router.replace`, R11 cookie semantics preserved — see §4). Behavioral proof (query/hash-preserving switch) is owned by the existing CI Playwright switch spec; phase gate is tsc + vitest + build.
+- Phase 2 — User surfaces: landing → login → dashboard → validate → history. Builds `shared.*` incrementally (append-only; per-phase parity still passes).
+- Phase 3 — Assistant & plans: assistant panel/view, plans page, request-form, memories (client-rendered `MEMORY_COPY` gains EN mirror resolved in components; server error bodies unchanged), invite flow. Lib-resident copy (`progress/tracks.ts`, `progress/suggest.ts`, `assistant/format.ts`, `research-label.ts`, `STRENGTH_LABEL`) is keyed by stable ids resolved in components via `shared.*`/`assistant.errors.*` — lib files never call `useTranslations`.
 - Phase 4 — Admin: shell + overview + analytics + content + ops + users + workspaces + workspace-detail + requests (AR mirrors added), shared admin components (`AdminTable`, `ContentActions`, `UserActions`, `WorkspaceSwitcher`, `ReportGenerator`, `EmailResendButton`, `PlatformAdminGrantForm`, `PlatformAdminRevokeButton`, `AnalyticsAutoRefresh`, `KpiCard`).
 
 ## 4. Switcher design (delegated choice, locked)
 
-Pill toggle matching the dark glass header: `glass rounded-full` container, `ع | EN` segments at `text-xs`, active locale `bg-brand-500/20` + bright text, inactive dimmed; single click switches; `title` tooltip; `aria-pressed` retained and now visually reflected. Rejected: dropdown (extra click for 2 locales), icon-only (hides current locale). Files: `LanguageSwitcher.tsx` only (+ colocated test if behavior added; none planned).
+Pill toggle matching the dark glass header: `glass rounded-full` container, `ع | EN` segments at `text-xs`, active locale `bg-brand-500/20` + bright text, inactive dimmed; single click switches; `title` tooltip; `aria-pressed` retained and now visually reflected. Rejected: dropdown (extra click for 2 locales), icon-only (hides current locale). Files: `LanguageSwitcher.tsx` only (+ colocated test if behavior added; none planned). Hard rules from prior SDD run: R11 — client cookie write stays without `Secure` (server re-set owns Secure-in-prod; the redesign MUST NOT add `Secure` client-side); R12 — only unprefixed paths into `withLocale`, no new dynamic href prefixing without a guard.
 
 ## 5. Message architecture
 
-- Extend `apps/web/messages/ar.json` + `en.json` with namespaces: `landing`, `auth`, `dashboard`, `validate`, `history`, `assistant`, `plans`, `memories`, `invite`, `admin`, `shared`. Estimated ~450–550 new keys total (landing ~60, validate ~90, dashboard ~45, history ~45, login ~25, assistant ~40, plans/request ~35, memories ~20, invite ~8, admin ~150, shared/components ~30).
+- Extend `apps/web/messages/ar.json` + `en.json` with namespaces: `landing`, `auth`, `dashboard`, `validate`, `history`, `assistant`, `plans`, `memories`, `invite`, `admin`, `shared`. Estimated ~500–650 new keys total (landing ~60, validate ~90, dashboard ~45, history ~45, login ~25, assistant ~40, plans/request ~35, memories ~20, invite ~8, admin ~150–180 for 8 pages + 10 components, shared/components ~30; +10–20% headroom for ICU splits of concatenated strings). Method: Oct 2026 source audit; counts are planning guides, not caps.
 - Both files MUST keep identical key shape (parity test per namespace). Shared strings (`Cancel`, `Close`, `Search`, `Apply`, `Confirm`, network-error texts, verdict/stage/confidence enums, pagination `"Page X of Y"`) live once in `shared.*`.
 - Dynamic values use next-intl ICU placeholders (counts, dates, names) — no string concatenation in components.
 
@@ -36,19 +36,21 @@ Pill toggle matching the dark glass header: `glass rounded-full` container, `ع 
 - Arabic: simplified plain style, Egyptian spirit, no hard terms (same bar as the prior Arabic review).
 - English: match the site's current tone; admin/assistant EN mirrors translate meaning, not word-for-word.
 - Machine-English tokens, API field names, and route paths stay English in both locales.
-- Legal consent text (`consent-checkbox.tsx`) stays Arabic verbatim in both locales — translating legal text is a risk, explicitly accepted.
-- Numbers/dates via `Intl` per locale (extend the existing `formatNumber` pattern); paywall `dir="rtl"` hardcode becomes locale-driven.
+- Legal consent text (`consent-checkbox.tsx`) stays Arabic verbatim in both locales — translating legal text is a risk, explicitly accepted — and is path-exempted in the source-scan gate (§7) so the gate does not flag it.
+- Numbers/dates via `Intl` per locale (extend the existing `formatNumber` pattern; hardcoded `en-US` dates become locale-driven); paywall `dir="rtl"` hardcodes become locale-driven.
 
 ## 7. Quality gates (every phase)
 
 - `tsc --noEmit` clean; eslint clean on touched files; full vitest green.
-- Parity test per touched namespace (identical ar/en key shape, no empty/`TODO` values).
-- Extend the existing `no-mixed-language` gate so new hardcoded literals fail.
+- Parity test per touched namespace (identical ar/en key shape, no empty/`TODO` values; the existing recursive parity test auto-extends).
+- New source-scan gate: the existing `no-mixed-language` test scans messages JSON only — each phase adds a source scan failing on new hardcoded UI literals in touched files, with an explicit exemption list (starting with `consent-checkbox.tsx`).
+- Per-file next-intl mapping: `"use client"` files use `useTranslations`; server files use `getTranslations`; nested client-in-server (e.g. `RequestForm` inside `plans/page.tsx`) resolves translations at the client boundary.
 - No dev server, no Live-pointed tests (Live project; CI owns e2e). `next build` green before each phase merge.
 - Each phase: implement → self-review → independent reviewer → merge to `main` → push (redeploys Live).
 
 ## 8. Risks
 
-- Review burden: ~500 Arabic strings need human spot-checks; mitigation: per-phase diffs, reviewer reads AR values.
+- Review burden: ~500+ Arabic strings need human spot-checks; mitigation: per-phase diffs, reviewer reads AR values.
 - Admin AR mirrors for dense operational vocabulary; mitigation: shared glossary in `shared.*`, reviewer flags awkward terms.
-- Scope creep into behavior refactors while wiring translations; mitigation: translation-only diffs, any behavior fix split out.
+- Scope creep into behavior refactors while wiring translations; mitigation: translation-only diffs except two allowlisted touches (paywall `dir` locale-driven; client-side `MEMORY_COPY` mirror) — any other behavior fix split out.
+- No global `error.tsx`/`not-found.tsx`/`loading.tsx` boundaries exist (verified by glob) — no action required; inline loaders are covered by their pages' phases.
