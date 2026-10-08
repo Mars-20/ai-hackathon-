@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveOrder, stagePosition, TRACKS } from "@/lib/progress/tracks";
+import {
+  normalizeIntakeStage,
+  resolveOrder,
+  stagePosition,
+  TRACKS,
+} from "@/lib/progress/tracks";
 
 describe("progress-tracks", () => {
   it("null track resolves to general legacy order", () => {
@@ -31,5 +36,18 @@ describe("progress-tracks", () => {
   it("TRACKS carries version + thresholds per template", () => {
     expect(TRACKS.general.version).toBe(1);
     expect(TRACKS.general.thresholds.idea).toBeGreaterThan(0);
+  });
+
+  it("normalizeIntakeStage keeps general stages, normalizes case", () => {
+    expect(normalizeIntakeStage("prototype")).toBe("prototype");
+    expect(normalizeIntakeStage("  LIVE ")).toBe("live");
+  });
+
+  it("normalizeIntakeStage falls back to idea for anything off-track", () => {
+    expect(normalizeIntakeStage("beta")).toBe("idea");
+    expect(normalizeIntakeStage("tfge")).toBe("idea");
+    expect(normalizeIntakeStage("")).toBe("idea");
+    expect(normalizeIntakeStage(null)).toBe("idea");
+    expect(normalizeIntakeStage(undefined)).toBe("idea");
   });
 });

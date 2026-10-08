@@ -250,4 +250,27 @@ test.describe.serial("project progress journey (real backend)", () => {
       "dismissed suggestion stays hidden after reload",
     ).toHaveCount(0, { timeout: 15_000 });
   });
+
+  test("switching track preserves the row and re-renders the stepper", async ({ page }) => {
+    if (!progUser) throw new Error("progress user not created (beforeAll failed)");
+    await loginAs(page, progUser.email, progUser.password);
+    await page.goto(`/validate?startup_id=${startupId}`);
+    const picker = page.locator('[data-testid="track-picker"]');
+    await expect(picker).toBeVisible({ timeout: 15_000 });
+    // Stage is prototype by now (confirmed in the earlier test): switching to
+    // saas_tech moves it off-track — the stepper must re-render the new
+    // template without losing the row.
+    await picker.selectOption("saas_tech");
+    const stepper = page.locator(`[data-stage-stepper="${startupId}"]`);
+    await expect(stepper).toContainText("منتج أولي", { timeout: 15_000 });
+    await expect(stepper).toContainText("خارج المسار", { timeout: 15_000 });
+    // The narrow track endpoint must not clobber the row: dashboard card
+    // keeps its one_liner inside the seed workspace.
+    await ensureSeedWorkspace(page);
+    const card = page.locator(`[data-stage-stepper="${startupId}"]`).first();
+    await expect(card).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.locator("text=widgets for testing").first()).toBeVisible({
+      timeout: 15_000,
+    });
+  });
 });

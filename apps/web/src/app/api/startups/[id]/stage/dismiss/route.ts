@@ -11,6 +11,7 @@ import {
   canWriteStartup,
   computeStageBasis,
   fetchStageRow,
+  frozenResponse,
 } from "@/lib/progress/stage-context";
 
 export async function POST(
@@ -43,6 +44,9 @@ export async function POST(
   }
   if (!(await canWriteStartup(supabase, row, user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (row.is_frozen) {
+    return frozenResponse();
   }
 
   if (

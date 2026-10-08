@@ -53,6 +53,7 @@ import { evaluateTrialStart } from "@/lib/trial-claims";
 import type { ClaimsDb } from "@/lib/trial-claims";
 import { composePrompt } from "@/lib/companion/prompt";
 import type { PostSessionCapture } from "@/lib/companion/hook";
+import { normalizeIntakeStage } from "@/lib/progress/tracks";
 
 // ── Provider setup ────────────────────────────────────────────────────────────
 // Best practice: single source of truth for model IDs (spec §6.3 + §21-B).
@@ -851,6 +852,7 @@ async function runIntakeSkill(
       target_customer: { type: SchemaType.STRING },
       stage: {
         type: SchemaType.STRING,
+        enum: ["idea", "prototype", "live", "scaling"],
       },
       business_model: { type: SchemaType.STRING },
       clarifying_questions: {
@@ -870,7 +872,7 @@ Extract:
 - one_liner: Clear, concise value proposition (max 15 words)
 - domain: Industry/vertical (e.g. "edtech", "B2B SaaS", "food-tech", "health & wellness")
 - target_customer: Who specifically benefits
-- stage: Current stage (one of idea/prototype/live/scaling, or a custom stage name when the project uses its own track)
+- stage: Current stage — EXACTLY one of idea/prototype/live/scaling (the intake project always starts on the general track; never invent another value). Default to "idea" unless the text clearly shows a built prototype or a launched product
 - business_model: How it makes money (subscription, marketplace, transaction fee, etc.)
 
 Then list AT MOST 3 clarifying_questions: short questions about fields that
@@ -896,7 +898,10 @@ instead of inventing. If nothing is ambiguous, return an empty list.`;
     one_liner: (parsed.one_liner as string) || idea.slice(0, 80),
     domain: (parsed.domain as string) || "general",
     target_customer: parsed.target_customer as string | undefined,
-    stage: (parsed.stage as Startup["stage"]) || "idea",
+    // Intake projects start track-less (general template): anything the model
+    // emits outside the general order falls back to "idea" so the result is
+    // always savable under the save route's strict stage check.
+    stage: normalizeIntakeStage(parsed.stage) as Startup["stage"],
     business_model: parsed.business_model as string | undefined,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

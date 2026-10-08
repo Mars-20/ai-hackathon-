@@ -1,4 +1,4 @@
-import { normalizeKey, stagePosition, type StageStep } from "./tracks";
+import { compareTs, normalizeKey, stagePosition, type StageStep } from "./tracks";
 
 export interface SuggestDecision {
   id: string;
@@ -47,16 +47,16 @@ export function suggestNextStage(input: SuggestInput): StageSuggestion | null {
         normalizeKey(d.from) === normalizeKey(input.stage) &&
         normalizeKey(d.to) === normalizeKey(next.key),
     )
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+    .sort((a, b) => compareTs(b.created_at, a.created_at))[0];
 
   const gos = input.decisions
     .filter((d) => d.verdict === "go")
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    .sort((a, b) => compareTs(b.created_at, a.created_at));
   const latestGo = gos[0];
 
   if (
     latestGo &&
-    (!dismissal || latestGo.created_at > dismissal.created_at)
+    (!dismissal || compareTs(latestGo.created_at, dismissal.created_at) > 0)
   ) {
     return {
       to: next.key,

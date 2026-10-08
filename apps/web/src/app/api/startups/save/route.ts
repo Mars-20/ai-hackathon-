@@ -162,31 +162,25 @@ export async function POST(request: NextRequest) {
 
   // Track-aware stage check: the stage must belong to the project's track
   // order (existing row's track, or the client-supplied track on creation).
-  // Unknown creation track → 400 INVALID (no silent fallback). A track
-  // switch keeps an unchanged current stage even when off the new track
-  // (position -1: stepper shows it, suggestions pause until manual advance).
+  // Unknown track → 400 INVALID, on creation and on update alike.
+  // Track switches go through PATCH .../stage/track (narrow update): the
+  // full-row upsert here must never apply a track to an existing row, since
+  // absent fields resolve to defaults and would clobber it. An unchanged
+  // stage on an existing row always passes (it may sit off-track at
+  // position -1: stepper shows it, suggestions pause until manual advance).
   const suppliedTrack = parsed.data.track ?? null;
-  if (suppliedTrack && !TRACKS[normalizeKey(suppliedTrack)] && !existingStartup) {
+  if (suppliedTrack && TRACKS[normalizeKey(suppliedTrack)] === undefined) {
     return NextResponse.json(
       { error: "Unknown stage track", code: "INVALID" },
       { status: 400 },
     );
   }
-  const trackSwitch =
-    !!existingStartup &&
-    !!suppliedTrack &&
-    TRACKS[normalizeKey(suppliedTrack)] !== undefined &&
-    normalizeKey(suppliedTrack) !== normalizeKey(existingTrack ?? "general");
   const stageChanged =
     !existingStartup ||
     normalizeKey(parsed.data.stage) !== normalizeKey(existingStartup.stage);
-  const effectiveTrack = existingStartup
-    ? trackSwitch
-      ? suppliedTrack
-      : existingTrack
-    : (suppliedTrack ?? null);
-  const effectiveOrder = existingStartup && !trackSwitch ? existingOrder : null;
-  if ((stageChanged || !trackSwitch) && !isStageInOrder(effectiveTrack, effectiveOrder, parsed.data.stage)) {
+  const effectiveTrack = existingStartup ? existingTrack : (suppliedTrack ?? null);
+  const effectiveOrder = existingStartup ? existingOrder : null;
+  if ((!existingStartup || stageChanged) && !isStageInOrder(effectiveTrack, effectiveOrder, parsed.data.stage)) {
     return NextResponse.json(
       { error: "Invalid stage for this project's track", code: "INVALID" },
       { status: 400 },
@@ -257,11 +251,11 @@ export async function POST(request: NextRequest) {
         ? s.target_customer
         : null,
     stage: parsed.data.stage,
-    // stage_track only when explicitly (re)set: on creation with a track,
-    // or on a track switch. Legacy saves omit the key so they keep working
-    // before migration 0016 is applied.
-    ...((!existingStartup && suppliedTrack) || trackSwitch
-      ? { stage_track: normalizeKey(suppliedTrack as string) }
+    // stage_track only on creation with an explicit track. Updates never
+    // carry a track here (switches use the narrow PATCH endpoint) — legacy
+    // saves omit the key so they keep working before migration 0016.
+    ...(!existingStartup && suppliedTrack
+      ? { stage_track: normalizeKey(suppliedTrack) }
       : {}),
     business_model:
       typeof s.business_model === "string" && s.business_model.trim()

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { resolveOrder, TRACKS, type StageStep } from "./tracks";
+import { NextResponse } from "next/server";
+import { compareTs, resolveOrder, TRACKS, type StageStep } from "./tracks";
 import { suggestNextStage, type StageSuggestion } from "./suggest";
 
 export interface StageRow {
@@ -9,6 +10,8 @@ export interface StageRow {
   stage: string;
   stage_track: string | null;
   stage_order: StageStep[] | null;
+  /** Trial-exhaustion freeze — mirrors the save route's is_frozen gate. */
+  is_frozen: boolean;
 }
 
 export interface StageBasis {
@@ -33,7 +36,7 @@ export async function fetchStageRow(
   try {
     const { data, error } = await db
       .from("startups")
-      .select("id, owner_id, workspace_id, stage, stage_track, stage_order")
+      .select("id, owner_id, workspace_id, stage, stage_track, stage_order, is_frozen")
       .eq("id", startupId)
       .maybeSingle();
     if (error) throw error;
@@ -49,6 +52,7 @@ export async function fetchStageRow(
       stage: String(r.stage ?? "idea"),
       stage_track: track,
       stage_order: order,
+      is_frozen: r.is_frozen === true,
     };
   } catch {
     // Pre-migration-0016 fallback: no track columns yet.
@@ -68,6 +72,7 @@ export async function fetchStageRow(
         stage: String(r.stage ?? "idea"),
         stage_track: null,
         stage_order: null,
+        is_frozen: false,
       };
     } catch {
       return null;
@@ -75,8 +80,7 @@ export async function fetchStageRow(
   }
 }
 
-/** Owner or workspace member. Tables may be absent pre-migration → false. */
-export async function canWriteStartup(
+/** Owner or workspace member. Tables may be absent pre-migration → false. */export async function canWriteStartup(
   db: Db,
   row: StageRow,
   userId: string,
@@ -94,6 +98,14 @@ export async function canWriteStartup(
   } catch {
     return false;
   }
+}
+
+/** 403 for frozen startups — identical shape across all stage endpoints. */
+export function frozenResponse(): NextResponse {
+  return NextResponse.json(
+    { error: "Startup is frozen", code: "FROZEN" },
+    { status: 403 },
+  );
 }
 
 export async function computeStageBasis(
@@ -178,7 +190,7 @@ export async function computeStageBasis(
     if (Array.isArray(data)) {
       for (const h of data as unknown as Record<string, unknown>[]) {
         const at = String(h.created_at ?? "");
-        if (at && (lastAdvanceAt === null || at > lastAdvanceAt)) {
+        if (at && (lastAdvanceAt === null || compareTs(at, lastAdvanceAt) > 0)) {
           lastAdvanceAt = at;
         }
       }
@@ -187,7 +199,8 @@ export async function computeStageBasis(
     lastAdvanceAt = null;
   }
   if (lastAdvanceAt !== null) {
-    decisions = decisions.filter((d) => d.created_at > (lastAdvanceAt as string));
+    const cutoff = lastAdvanceAt;
+    decisions = decisions.filter((d) => compareTs(d.created_at, cutoff) > 0);
   }
 
   const suggestion = suggestNextStage({

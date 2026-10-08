@@ -17,6 +17,7 @@ import {
   canWriteStartup,
   computeStageBasis,
   fetchStageRow,
+  frozenResponse,
 } from "@/lib/progress/stage-context";
 
 export async function GET(
@@ -80,6 +81,9 @@ export async function PUT(
   if (!(await canWriteStartup(supabase, row, user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  if (row.is_frozen) {
+    return frozenResponse();
+  }
 
   const basis = await computeStageBasis(supabase, row);
   if (
@@ -120,6 +124,10 @@ export async function PUT(
     .select("id")
     .single();
   if (historyError || !historyRow) {
+    // Compensating revert: a stage move without its history row would leave
+    // the project advanced with no audit — and the consumed Go would fire
+    // again. Roll back so the client can retry cleanly.
+    await supabase.from("startups").update({ stage: row.stage }).eq("id", id);
     return NextResponse.json({ error: "Failed to record stage history" }, { status: 500 });
   }
 

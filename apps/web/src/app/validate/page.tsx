@@ -1150,7 +1150,6 @@ function ValidateDashboard() {
               {startup?.id && (
                 <StageProgressSection
                   startupId={startup.id}
-                  name={startup.name}
                   stage={startup.stage}
                   track={startup.stage_track ?? null}
                   customOrder={startup.stage_order ?? null}

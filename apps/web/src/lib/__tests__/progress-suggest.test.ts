@@ -123,4 +123,39 @@ describe("suggestNextStage", () => {
       }),
     ).toBeNull();
   });
+
+  it("timestamps compare chronologically across mixed offsets", () => {
+    // Dismissal at 12:00+03:00 (=09:00Z) sorts AFTER the 09:00:01Z Go under
+    // naive string comparison — chronologically the Go is newer and re-arms.
+    const r = suggestNextStage({
+      ...base,
+      decisions: [{ id: "d1", verdict: "go", created_at: "2026-10-08T09:00:01Z" }],
+      dismissals: [
+        {
+          from: "idea",
+          to: "prototype",
+          rung4_count: 0,
+          created_at: "2026-10-08T12:00:00+03:00",
+        },
+      ],
+    });
+    expect(r?.to).toBe("prototype");
+    expect(r?.refs.decisionIds).toEqual(["d1"]);
+  });
+
+  it("dismissal matching ignores key casing", () => {
+    const r = suggestNextStage({
+      ...base,
+      decisions: [{ id: "d1", verdict: "go", created_at: "2026-10-08T00:00:00Z" }],
+      dismissals: [
+        {
+          from: "Idea",
+          to: "Prototype",
+          rung4_count: 0,
+          created_at: "2026-10-09T00:00:00Z",
+        },
+      ],
+    });
+    expect(r).toBeNull();
+  });
 });

@@ -20,7 +20,6 @@ interface ProgressPayload {
 
 interface StageProgressSectionProps {
   startupId: string;
-  name: string;
   stage: string;
   track?: string | null;
   customOrder?: StageStep[] | null;
@@ -31,7 +30,6 @@ interface StageProgressSectionProps {
 /** Stepper + hybrid suggestion card + track picker (self-contained). */
 export function StageProgressSection({
   startupId,
-  name,
   stage,
   track,
   customOrder,
@@ -110,13 +108,17 @@ export function StageProgressSection({
     setBusy("track");
     setError(null);
     try {
-      const res = await fetch("/api/startups/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startup: { id: startupId, name, stage, track: next },
-        }),
-      });
+      // Narrow track endpoint: updates ONLY stage_track/stage_order. The
+      // full-save upsert must not be used here — absent fields there resolve
+      // to defaults and would clobber the row (one_liner, domain, workspace).
+      const res = await fetch(
+        `/api/startups/${encodeURIComponent(startupId)}/stage/track`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track: next }),
+        },
+      );
       if (!res.ok) throw new Error(`track ${res.status}`);
       onTrackChange?.(next === "general" ? null : next);
       await load();
