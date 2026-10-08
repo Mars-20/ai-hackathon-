@@ -66,7 +66,10 @@ export const ROLE_PERMISSIONS: Record<MemberRole, {
   viewer: { canEdit: false, canInvite: false, canDelete: false, canApproveExperiments: false },
 };
 
-export type Stage = "idea" | "prototype" | "live" | "scaling";
+// Track-aware: projects may define custom stage keys; the four legacy values
+// below are the default ("general") track, not an exhaustive union.
+export type Stage = string;
+export const LEGACY_STAGES = ["idea", "prototype", "live", "scaling"] as const;
 export type Category = "desirability" | "viability" | "feasibility";
 export type RiskLevel = "critical" | "high" | "medium" | "low";
 export type AssumptionStatus = "untested" | "testing" | "validated" | "invalidated";

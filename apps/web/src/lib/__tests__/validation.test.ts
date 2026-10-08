@@ -26,8 +26,12 @@ describe("inviteSchema", () => {
     });
     expect(r.success).toBe(true);
   });
-  test("startup rejects bad stage", () => {
+  test("startup accepts custom stage at shape level (track check is the route's job)", () => {
     const r = startupSaveSchema.safeParse({ name: "X", stage: "foobar" });
+    expect(r.success).toBe(true);
+  });
+  test("startup rejects empty stage", () => {
+    const r = startupSaveSchema.safeParse({ name: "X", stage: "   " });
     expect(r.success).toBe(false);
   });
   test("startup rejects invalid workspace_id uuid", () => {

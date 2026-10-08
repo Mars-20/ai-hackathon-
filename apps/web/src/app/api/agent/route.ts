@@ -851,8 +851,6 @@ async function runIntakeSkill(
       target_customer: { type: SchemaType.STRING },
       stage: {
         type: SchemaType.STRING,
-        format: "enum",
-        enum: ["idea", "prototype", "live", "scaling"],
       },
       business_model: { type: SchemaType.STRING },
       clarifying_questions: {
@@ -872,7 +870,7 @@ Extract:
 - one_liner: Clear, concise value proposition (max 15 words)
 - domain: Industry/vertical (e.g. "edtech", "B2B SaaS", "food-tech", "health & wellness")
 - target_customer: Who specifically benefits
-- stage: Current stage (idea/prototype/live/scaling)
+- stage: Current stage (one of idea/prototype/live/scaling, or a custom stage name when the project uses its own track)
 - business_model: How it makes money (subscription, marketplace, transaction fee, etc.)
 
 Then list AT MOST 3 clarifying_questions: short questions about fields that

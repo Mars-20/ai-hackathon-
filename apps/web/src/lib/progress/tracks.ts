@@ -74,3 +74,12 @@ export function stagePosition(order: StageStep[], key: string): number {
   const want = normalizeKey(key);
   return order.findIndex((s) => normalizeKey(s.key) === want);
 }
+
+/** True when stage belongs to the project's track order. */
+export function isStageInOrder(
+  track: string | null,
+  custom: StageStep[] | null,
+  stage: string,
+): boolean {
+  return stagePosition(resolveOrder(track, custom), stage) >= 0;
+}

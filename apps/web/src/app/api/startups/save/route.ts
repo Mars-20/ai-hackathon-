@@ -11,6 +11,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { resolveSaveGate, type EntitlementStatus } from "@/lib/entitlements";
 import { startupSaveSchema } from "@/lib/validation";
+import {
+  isStageInOrder,
+  normalizeKey,
+  TRACKS,
+  type StageStep,
+} from "@/lib/progress/tracks";
 
 function normId(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -70,11 +76,14 @@ export async function POST(request: NextRequest) {
   const rawWorkspaceInput = normId(s.workspace_id);
   const rawStageInput = normId(s.stage);
   const rawDomainInput = typeof s.domain === "string" ? s.domain : undefined;
+  const rawTrackInput =
+    typeof s.track === "string" && s.track.trim() ? s.track.trim() : undefined;
 
   const parsed = startupSaveSchema.safeParse({
     id: rawIdInput,
     name: s.name,
     stage: rawStageInput,
+    track: rawTrackInput,
     domain: rawDomainInput,
     workspace_id: rawWorkspaceInput,
   });
@@ -106,6 +115,11 @@ export async function POST(request: NextRequest) {
   // (Trial paywall: the fetched row is reused below — isNew = !existing,
   // and the update path enforces is_frozen. Hijack guards unchanged.)
   let existingStartup: { owner_id: string; workspace_id: string | null; is_frozen: boolean } | null = null;
+  // Track info for the in-order stage check. Fetched separately so rows
+  // created before migration 0016 (no stage_track/stage_order columns) keep
+  // the legacy select working — a missing-column error falls back to nulls.
+  let existingTrack: string | null = null;
+  let existingOrder: StageStep[] | null = null;
   if (clientSuppliedId) {
     const { data: existing } = await supabase
       .from("startups")
@@ -129,7 +143,40 @@ export async function POST(request: NextRequest) {
         }
       }
       existingStartup = typed;
+      try {
+        const { data: trackRow, error: trackError } = await supabase
+          .from("startups")
+          .select("stage_track, stage_order")
+          .eq("id", rawId)
+          .maybeSingle();
+        if (trackError) throw trackError;
+        const t = trackRow as { stage_track?: unknown; stage_order?: unknown } | null;
+        existingTrack = typeof t?.stage_track === "string" ? t.stage_track : null;
+        existingOrder = Array.isArray(t?.stage_order) ? (t.stage_order as StageStep[]) : null;
+      } catch {
+        existingTrack = null;
+        existingOrder = null;
+      }
     }
+  }
+
+  // Track-aware stage check: the stage must belong to the project's track
+  // order (existing row's track, or the client-supplied track on creation).
+  // Unknown creation track → 400 INVALID (no silent fallback).
+  const suppliedTrack = parsed.data.track ?? null;
+  if (suppliedTrack && !TRACKS[normalizeKey(suppliedTrack)] && !existingStartup) {
+    return NextResponse.json(
+      { error: "Unknown stage track", code: "INVALID" },
+      { status: 400 },
+    );
+  }
+  const effectiveTrack = existingStartup ? existingTrack : (suppliedTrack ?? null);
+  const effectiveOrder = existingStartup ? existingOrder : null;
+  if (!isStageInOrder(effectiveTrack, effectiveOrder, parsed.data.stage)) {
+    return NextResponse.json(
+      { error: "Invalid stage for this project's track", code: "INVALID" },
+      { status: 400 },
+    );
   }
 
   // Trial-paywall gate (402). Creation of a second startup consumes the
@@ -196,6 +243,11 @@ export async function POST(request: NextRequest) {
         ? s.target_customer
         : null,
     stage: parsed.data.stage,
+    // stage_track only on creation with an explicit track: legacy saves omit
+    // the key so they keep working before migration 0016 is applied.
+    ...(!existingStartup && suppliedTrack
+      ? { stage_track: normalizeKey(suppliedTrack) }
+      : {}),
     business_model:
       typeof s.business_model === "string" && s.business_model.trim()
         ? s.business_model

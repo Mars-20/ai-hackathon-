@@ -29,7 +29,11 @@ export const inviteListQuerySchema = z.object({
 export const startupSaveSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(200),
-  stage: z.enum(["idea", "prototype", "live", "scaling"]).default("idea"),
+  // Track-aware: any non-empty stage string passes the shape check; the
+  // route validates membership against the project's track order (400
+  // INVALID when out-of-track). Legacy rows keep working unchanged.
+  stage: z.string().trim().min(1).max(100).default("idea"),
+  track: z.string().trim().min(1).max(60).optional(),
   domain: z.string().max(100).optional(),
   // workspace_id stays OPTIONAL: personal startups without a workspace are
   // allowed and fall back to owner_id isolation (save route enforces
@@ -51,7 +55,7 @@ export const searchQuerySchema = z.object({
 
 export const historyVerdictSchema = z.enum(["go", "iterate", "stop", "test_more"]);
 export const historyConfidenceSchema = z.enum(["low", "medium", "high"]);
-export const historyStageSchema = z.enum(["idea", "prototype", "live", "scaling"]);
+export const historyStageSchema = z.string().trim().min(1).max(100);
 export const historySortSchema = z.enum(["created_at", "name", "updated_at"]);
 export const historyOrderSchema = z.enum(["asc", "desc"]);
 
