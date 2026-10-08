@@ -58,6 +58,8 @@ export interface StartupBrief {
   one_liner: string | null;
   domain: string | null;
   stage: string | null;
+  stage_track?: string | null;
+  stage_order?: Array<{ key: string; label: string }> | null;
 }
 
 export interface AssistantTools {
@@ -207,6 +209,14 @@ async function defaultGrounding(userId: string, db: SupabaseClient): Promise<Ass
   return {
     compiled: (uid, message) => getCompiledContext(uid, message).catch(() => ""),
     startups: async (uid) => {
+      // Extended select first; pre-migration-0016 fallback to legacy
+      // columns so grounding never degrades on old schemas.
+      const extended = (await db
+        .from("startups")
+        .select("id,name,one_liner,domain,stage,stage_track,stage_order")
+        .eq("owner_id", uid)
+        .limit(50)) as unknown as { data: StartupBrief[] | null };
+      if (extended.data) return extended.data;
       const { data } = await db
         .from("startups")
         .select("id,name,one_liner,domain,stage")
