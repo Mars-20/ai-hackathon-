@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { FlaskConical, ArrowRight, Brain, BookmarkPlus, AlertTriangle } from "lucide-react";
+import { stripLocale, withLocale } from "@/lib/i18n-path";
 import type { ToolCard } from "@/lib/assistant/types";
 
 // Action cards (§8) built from SSE `tool` events / persisted tool rows:
@@ -25,6 +27,11 @@ export function toolCardFromRow(
 }
 
 export default function ActionCards({ cards }: { cards: ToolCard[] }) {
+  // Same dual-context constraint as AssistantPanel (page + root float
+  // widget): locale comes from the pathname, never useLocale().
+  // Hooks before the empty early-return (rules-of-hooks).
+  const pathname = usePathname();
+  const cardLocale = stripLocale(pathname ?? "/").locale ?? "en";
   if (cards.length === 0) return null;
   return (
     <div className="assistant-cards flex flex-col gap-2 mt-2">
@@ -49,7 +56,7 @@ export default function ActionCards({ cards }: { cards: ToolCard[] }) {
             ? "glass border-yellow-500/20"
             : "glass glass-hover border-white/5");
         return card.url ? (
-          <Link key={`${card.tool}-${i}`} href={card.url} className={cls}>
+          <Link key={`${card.tool}-${i}`} href={card.url.startsWith("/") ? withLocale(card.url, cardLocale) : card.url} className={cls}>
             {inner}
           </Link>
         ) : (

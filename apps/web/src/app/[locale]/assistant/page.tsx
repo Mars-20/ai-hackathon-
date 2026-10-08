@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ArrowLeft, Brain } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import AssistantView from "./AssistantView";
 import "./assistant.css";
 
@@ -11,7 +14,13 @@ export const metadata = {
   title: "المساعد | Validation Copilot",
 };
 
-export default async function AssistantPage() {
+export default async function AssistantPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
   let initialThreads: Array<{ id: string; title: string | null; created_at: string }> = [];
   try {
     const supabase = await createServerSupabaseClient();
@@ -39,13 +48,18 @@ export default async function AssistantPage() {
     <div dir="rtl" className="min-h-dvh flex flex-col">
       <header className="glass border-b border-white/5 sticky top-0 z-40 safe-top">
         <div className="container-app h-14 flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
+          <Link href={withLocale("/dashboard", appLocale)} className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
             <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
             <Brain className="w-5 h-5 text-brand-400" />
             <span className="font-bold text-sm">
               المساعد <span className="gradient-text">الذكي</span>
             </span>
           </Link>
+          <div className="ms-auto">
+            <Suspense>
+              <LanguageSwitcher locale={appLocale} />
+            </Suspense>
+          </div>
         </div>
       </header>
       <main className="container-app flex-1 py-6">

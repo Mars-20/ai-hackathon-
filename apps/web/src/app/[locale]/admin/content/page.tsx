@@ -16,6 +16,7 @@ import {
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   queryContentDetails,
   queryContentStartups,
@@ -69,9 +70,14 @@ function sortHref(
 
 export default async function AdminContentPage({
   searchParams,
+  params: routeParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+  params: Promise<{ locale: string }>;
 }) {
+  const { locale } = await routeParams;
+  const appLocale = locale as AppLocale;
+  const contentBase = withLocale("/admin/content", appLocale);
   const raw = await searchParams;
   const params = parseAdminTableParams(
     raw,
@@ -188,7 +194,7 @@ export default async function AdminContentPage({
   if (confidence !== null) extraParts.push(`confidence=${confidence}`);
   const extra = extraParts.join("&");
   const extraSuffix = extra.length > 0 ? `&${extra}` : "";
-  const pageBase = `/admin/content?sort=${params.sort}&order=${params.order}&limit=${params.limit}${params.q !== null ? `&q=${encodeURIComponent(params.q)}` : ""}${extraSuffix}`;
+  const pageBase = `${contentBase}?sort=${params.sort}&order=${params.order}&limit=${params.limit}${params.q !== null ? `&q=${encodeURIComponent(params.q)}` : ""}${extraSuffix}`;
 
   return (
     <div>
@@ -204,7 +210,7 @@ export default async function AdminContentPage({
 
       <form
         method="get"
-        action="/admin/content"
+        action={contentBase}
         className="flex flex-wrap gap-3 mb-4 items-end"
       >
         <input type="hidden" name="sort" value={params.sort} />
@@ -347,7 +353,7 @@ export default async function AdminContentPage({
                 <tr className="border-b border-white/5">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     <Link
-                      href={sortHref("/admin/content", current, extra, "name", params.sort, params.order)}
+                      href={sortHref(contentBase, current, extra, "name", params.sort, params.order)}
                       className="hover:text-brand-400 transition-colors"
                     >
                       Startup
@@ -363,7 +369,7 @@ export default async function AdminContentPage({
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     <Link
-                      href={sortHref("/admin/content", current, extra, "flagged", params.sort, params.order)}
+                      href={sortHref(contentBase, current, extra, "flagged", params.sort, params.order)}
                       className="hover:text-brand-400 transition-colors"
                     >
                       Flag

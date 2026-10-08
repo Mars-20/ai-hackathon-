@@ -11,7 +11,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 import { getCachedAdminContext } from "@/lib/admin-dal";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 
 interface NavItem {
   href: string;
@@ -28,40 +31,49 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/ops", label: "Ops", platformOnly: true },
 ];
 
-async function resolveTier(): Promise<"platform" | "workspace"> {
+async function resolveTier(locale: AppLocale): Promise<"platform" | "workspace"> {
   try {
     const ctx = await getCachedAdminContext();
     return ctx.tier === "platform" ? "platform" : "workspace";
   } catch {
-    redirect("/login");
+    redirect(withLocale("/login", locale));
   }
 }
 
 export default async function AdminLayout({
   children,
+  params,
 }: {
   children: ReactNode;
+  params: Promise<{ locale: string }>;
 }) {
-  const tier = await resolveTier();
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
+  const tier = await resolveTier(appLocale);
 
   const items = NAV_ITEMS.filter(
     (item) => !item.platformOnly || tier === "platform",
-  );
+  ).map((item) => ({ ...item, href: withLocale(item.href, appLocale) }));
 
   return (
     <div className="min-h-dvh">
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="font-bold text-sm tracking-tight">
+            <Link href={withLocale("/dashboard", appLocale)} className="font-bold text-sm tracking-tight">
               Validation <span className="gradient-text">Copilot</span>
             </Link>
             <span className="text-slate-600 text-sm hidden sm:block">/</span>
             <span className="text-slate-400 text-sm font-medium">Admin</span>
           </div>
-          <span className="text-xs px-2 py-0.5 rounded-full border border-white/10 text-slate-400">
-            {tier === "platform" ? "Platform admin" : "Workspace admin"}
-          </span>
+          <div className="flex items-center gap-3">
+            <Suspense>
+              <LanguageSwitcher locale={appLocale} />
+            </Suspense>
+            <span className="text-xs px-2 py-0.5 rounded-full border border-white/10 text-slate-400">
+              {tier === "platform" ? "Platform admin" : "Workspace admin"}
+            </span>
+          </div>
         </div>
       </header>
 

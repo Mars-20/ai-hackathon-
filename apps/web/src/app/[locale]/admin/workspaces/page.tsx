@@ -21,6 +21,7 @@ import {
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   queryWorkspacesList,
   type WorkspaceUsageRow,
@@ -64,9 +65,14 @@ function readSingle(
 
 export default async function AdminWorkspacesPage({
   searchParams,
+  params: routeParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+  params: Promise<{ locale: string }>;
 }) {
+  const { locale } = await routeParams;
+  const appLocale = locale as AppLocale;
+  const wsBase = withLocale("/admin/workspaces", appLocale);
   const raw = await searchParams;
   const params = parseAdminTableParams(
     raw,
@@ -125,7 +131,7 @@ export default async function AdminWorkspacesPage({
       cells: {
         name: (
           <Link
-            href={`/admin/workspaces/${encodeURIComponent(w.id)}`}
+            href={withLocale(`/admin/workspaces/${encodeURIComponent(w.id)}`, appLocale)}
             className="text-brand-400 hover:text-brand-300"
           >
             {w.name.length > 0 ? w.name : w.slug}
@@ -182,7 +188,7 @@ export default async function AdminWorkspacesPage({
 
       <form
         method="get"
-        action="/admin/workspaces"
+        action={wsBase}
         className="flex flex-wrap gap-3 mb-4 items-end"
       >
         <input type="hidden" name="q" value={params.q ?? ""} />
@@ -227,7 +233,7 @@ export default async function AdminWorkspacesPage({
         </button>
         {(plan !== null || status !== null) && (
           <Link
-            href={`/admin/workspaces${baseQuery.length > 0 ? `?${baseQuery}` : ""}`}
+            href={withLocale(`/admin/workspaces${baseQuery.length > 0 ? `?${baseQuery}` : ""}`, appLocale)}
             className="text-sm text-slate-500 hover:text-slate-300 px-2 py-2"
           >
             Clear
@@ -243,7 +249,7 @@ export default async function AdminWorkspacesPage({
         </div>
       ) : (
         <AdminTable
-          basePath="/admin/workspaces"
+          basePath={wsBase}
           columns={WS_COLUMNS}
           rows={rows}
           page={data.page}

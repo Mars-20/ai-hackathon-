@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactElement } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, type ReactElement } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   Brain, Search, X, ChevronDown, ChevronLeft, ChevronRight,
   ArrowRight, Calendar, BarChart2, FlaskConical, Target, Clock,
@@ -97,6 +100,8 @@ function useDebounce<T>(value: T, delay: number): T {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HistoryPage() {
+  const locale = useLocale() as AppLocale;
+  const t = useTranslations("nav");
   // ── Filter state ────────────────────────────────────────────────────────────
   const [searchQ, setSearchQ] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<Set<Verdict>>(new Set());
@@ -228,7 +233,7 @@ export default function HistoryPage() {
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href={withLocale("/dashboard", locale)} className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center">
                 <Brain className="w-4 h-4 text-white" />
               </div>
@@ -237,7 +242,7 @@ export default function HistoryPage() {
               </span>
             </Link>
             <span className="text-slate-600 text-sm hidden sm:block">/</span>
-            <span className="text-slate-400 text-sm font-medium">History</span>
+            <span className="text-slate-400 text-sm font-medium">{t("history")}</span>
           </div>
 
           {/* Global search bar */}
@@ -282,7 +287,7 @@ export default function HistoryPage() {
                         startup; startups link to themselves. */}
                     {(result._type === "startup" ? result.id : result.startup_id) && (
                       <Link
-                        href={`/validate?startup_id=${result._type === "startup" ? result.id : result.startup_id}`}
+                        href={withLocale(`/validate?startup_id=${result._type === "startup" ? result.id : result.startup_id}`, locale)}
                         onClick={() => setShowSearchDropdown(false)}
                         title={result._type === "startup" ? "Open startup" : `Open parent startup${result.startup_name ? ` (${result.startup_name})` : ""}`}
                         aria-label={result._type === "startup" ? "Open startup" : "Open parent startup"}
@@ -300,14 +305,17 @@ export default function HistoryPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link href="/assistant" className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Assistant" aria-label="Assistant" id="history-assistant-link">
-              <MessageCircle className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Assistant</span>
+            <Suspense>
+              <LanguageSwitcher locale={locale} />
+            </Suspense>
+            <Link href={withLocale("/assistant", locale)} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={t("assistant")} aria-label={t("assistant")} id="history-assistant-link">
+              <MessageCircle className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("assistant")}</span>
             </Link>
             <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Export CSV" aria-label="Export CSV">
               <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span>
             </button>
-            <Link href="/validate" className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-              + New
+            <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              + {t("validate")}
             </Link>
           </div>
         </div>
@@ -522,7 +530,7 @@ export default function HistoryPage() {
                   Clear filters
                 </button>
               ) : (
-                <Link href="/validate" className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5 mt-2">
+                <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5 mt-2">
                   Start Validating <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               )}
@@ -541,7 +549,7 @@ export default function HistoryPage() {
                         <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{record.one_liner}</p>
                       </div>
                       <Link
-                        href={`/validate?startup_id=${record.id}`}
+                        href={withLocale(`/validate?startup_id=${record.id}`, locale)}
                         className="flex-shrink-0 text-slate-600 group-hover:text-brand-400 transition-colors"
                       >
                         <ArrowRight className="w-4 h-4" />

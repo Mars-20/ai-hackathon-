@@ -12,7 +12,7 @@ import { MessageCircle, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAssistantFloatPref } from "./useAssistantFloatPref";
 
-const EmbeddedPanel = dynamic(() => import("@/app/assistant/AssistantPanel"), {
+const EmbeddedPanel = dynamic(() => import("@/app/[locale]/assistant/AssistantPanel"), {
   ssr: false,
   loading: () => (
     <p className="text-slate-500 text-xs shimmer p-4">جارٍ تحميل المساعد…</p>

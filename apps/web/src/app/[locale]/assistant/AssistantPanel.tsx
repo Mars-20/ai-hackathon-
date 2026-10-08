@@ -10,8 +10,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Send, Square, Plus, Trash2, Pencil, MessageCircle, X } from "lucide-react";
 import { createSseParser } from "@/lib/sse-client";
+import { stripLocale, withLocale } from "@/lib/i18n-path";
 import {
   MESSAGE_MAX,
   formatSseError,
@@ -77,6 +79,11 @@ export default function AssistantPanel({
   const [quota, setQuota] = useState<AssistantQuota | null>(null);
   const [prefs, setPrefs] = useState<AssistantPrefs | null>(null);
   const [showThreads, setShowThreads] = useState(false);
+  // Locale for hrefs: this panel renders both inside [locale] pages AND in
+  // the root-level float widget (no NextIntl provider there), so derive it
+  // from the pathname (Task 2 stripLocale) instead of useLocale().
+  const pathname = usePathname();
+  const panelLocale = stripLocale(pathname ?? "/").locale ?? "en";
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -485,7 +492,7 @@ export default function AssistantPanel({
             </label>
           )}
           {embedded && (
-            <Link href="/assistant" className="text-[11px] text-brand-400 hover:underline">
+            <Link href={withLocale("/assistant", panelLocale)} className="text-[11px] text-brand-400 hover:underline">
               فتح الصفحة الكاملة
             </Link>
           )}
@@ -496,7 +503,7 @@ export default function AssistantPanel({
           <div className="glass rounded-xl p-3 border border-red-500/20 text-xs text-red-300 flex items-start gap-2">
             <span className="flex-1">{error}</span>
             {plansUrl && (
-              <Link href={plansUrl} className="text-brand-400 hover:underline shrink-0">
+              <Link href={plansUrl.startsWith("/") ? withLocale(plansUrl, panelLocale) : plansUrl} className="text-brand-400 hover:underline shrink-0">
                 عرض الخطط
               </Link>
             )}

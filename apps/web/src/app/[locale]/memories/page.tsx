@@ -5,23 +5,26 @@
 
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
 import { Brain } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { CompanionError, getCompanionProfile, listMemories } from "@/lib/companion/dal";
 import { MEMORY_COPY } from "@/lib/companion/copy";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import MemoriesClient, { type MemoryItem } from "./memories-client";
 
 // Paywall denials render the plans CTA instead of the console (review #11):
 // previously every non-401 (including 402s) fell through to an empty queue.
 const PAYWALL_CODES = new Set(["TRIAL_CONSUMED", "SUBSCRIPTION_REQUIRED", "ACCOUNT_PAUSED"]);
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, locale }: { children: React.ReactNode; locale: AppLocale }) {
   return (
     <div dir="rtl" className="min-h-dvh safe-top">
       <header className="glass border-b border-white/5 sticky top-0 z-40 safe-top">
         <div className="container-app h-14 flex items-center gap-4">
           <Link
-            href="/dashboard"
+            href={withLocale("/dashboard", locale)}
             aria-label="Back to dashboard"
             className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
           >
@@ -31,6 +34,11 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Brain className="w-4 h-4 text-brand-400" />
             {MEMORY_COPY.page_title}
           </h1>
+          <div className="ms-auto">
+            <Suspense>
+              <LanguageSwitcher locale={locale} />
+            </Suspense>
+          </div>
         </div>
       </header>
       <main className="pt-8 pb-16 px-6">
@@ -40,10 +48,16 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default async function MemoriesPage() {
+export default async function MemoriesPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) redirect("/login");
+  if (!data.user) redirect(withLocale("/login", appLocale));
   const userId = data.user.id;
 
   try {
@@ -61,18 +75,18 @@ export default async function MemoriesPage() {
       created_at: r.created_at,
     }));
     return (
-      <Shell>
+      <Shell locale={appLocale}>
         <MemoriesClient initialItems={items} initialEnabled={profile.memory_enabled} />
       </Shell>
     );
   } catch (e) {
     if (e instanceof CompanionError && PAYWALL_CODES.has(e.code)) {
       return (
-        <Shell>
+        <Shell locale={appLocale}>
           <div className="glass rounded-xl p-8 text-center border border-white/5">
             <p className="text-slate-300 text-sm mb-4">Memory is part of a paid plan.</p>
             <Link
-              href="/plans"
+              href={withLocale("/plans", appLocale)}
               className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-brand-500 text-white hover:bg-brand-400"
             >
               View plans

@@ -21,6 +21,7 @@ import {
   parseAdminTableParams,
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   queryUsersList,
   type AdminUserRow,
@@ -50,10 +51,15 @@ function formatDate(iso: string): string {
 
 export default async function AdminUsersPage({
   searchParams,
+  params,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+  params: Promise<{ locale: string }>;
 }) {
-  const params = parseAdminTableParams(
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
+  const usersBase = withLocale("/admin/users", appLocale);
+  const params_ = parseAdminTableParams(
     await searchParams,
     USERS_SORT_ALLOWLIST,
     USERS_DEFAULT_SORT,
@@ -70,11 +76,11 @@ export default async function AdminUsersPage({
   const [usersResult, pickerResult] = await Promise.all([
     runAdminQuery((deps) =>
       queryUsersList(deps, {
-        page: params.page,
-        limit: params.limit,
-        sort: params.sort,
-        order: params.order,
-        q: params.q,
+        page: params_.page,
+        limit: params_.limit,
+        sort: params_.sort,
+        order: params_.order,
+        q: params_.q,
       }),
     ),
     runAdminQuery((deps) =>
@@ -165,16 +171,16 @@ export default async function AdminUsersPage({
         </div>
       ) : (
         <AdminTable
-          basePath="/admin/users"
+          basePath={usersBase}
           columns={USERS_COLUMNS}
           rows={rows}
           page={data.page}
           limit={data.limit}
           total={data.total}
           pages={data.pages}
-          q={params.q}
-          sort={params.sort}
-          order={params.order}
+          q={params_.q}
+          sort={params_.sort}
+          order={params_.order}
           searchPlaceholder="Search email prefix (min 2 chars)..."
         />
       )}

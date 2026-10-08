@@ -4,6 +4,9 @@ import { Suspense, useState, useEffect } from "react";
 import { Brain, ArrowRight, Mail, Lock, User, Eye, EyeOff, Chrome } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useLocale } from "next-intl";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   ConsentCheckbox,
   DEFAULT_CONSENT_CHECKED,
@@ -15,7 +18,8 @@ type AuthMode = "login" | "signup";
 function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const locale = useLocale() as AppLocale;
+  const nextPath = searchParams.get("next") || withLocale("/dashboard", locale);
 
   const [mode, setMode] = useState<AuthMode>("login");
   const [fullName, setFullName] = useState("");
@@ -120,6 +124,11 @@ function AuthForm() {
               ? "Welcome back. Your startups are waiting."
               : "Join thousands of founders validating smarter."}
           </p>
+          <div className="mt-4 flex justify-center">
+            <Suspense>
+              <LanguageSwitcher locale={locale} />
+            </Suspense>
+          </div>
         </div>
 
         {/* Card */}

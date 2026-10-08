@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale } from "next-intl";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 
 type Entitlement = {
   status?: string;
@@ -18,6 +20,7 @@ const GENERIC_ERROR = "حدث خطأ — حاول مجددًا";
 const REQUIRED_LOGIN = "سجّل الدخول أولًا لتقديم طلب اشتراك";
 
 export default function RequestForm() {
+  const locale = useLocale() as AppLocale;
   const [ent, setEnt] = useState<Entitlement | null>(null);
   const [entChecked, setEntChecked] = useState(false);
   const [plan, setPlan] = useState<Plan>("pro");
@@ -115,7 +118,7 @@ export default function RequestForm() {
           أنت مشترك حاليًا في خطة {ent.plan === "team" ? "Team" : "Pro"}
         </p>
         <Link
-          href="/dashboard"
+          href={withLocale("/dashboard", locale)}
           className="inline-block mt-3 text-xs text-brand-400 hover:text-brand-300"
         >
           العودة إلى لوحة التحكم
@@ -235,7 +238,7 @@ export default function RequestForm() {
             {errors.form === REQUIRED_LOGIN && (
               <>
                 {" — "}
-                <Link href="/login" className="underline text-brand-400">
+                <Link href={withLocale("/login", locale)} className="underline text-brand-400">
                   تسجيل الدخول
                 </Link>
               </>

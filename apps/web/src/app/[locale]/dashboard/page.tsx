@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   Brain, Plus, LogOut, Users, ChevronDown,
   ArrowRight, FlaskConical, Target, CheckCircle2, Clock,
@@ -35,6 +38,8 @@ const ROLE_BADGE_STYLE: Record<MemberRole, string> = {
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
+  const locale = useLocale() as AppLocale;
+  const t = useTranslations("nav");
 
   const [data, setData] = useState<DashboardData>({
     user: null,
@@ -75,7 +80,7 @@ export default function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setIsLoading(true);
     const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) { router.replace("/login"); return; }
+    if (!authUser) { router.replace(withLocale("/login", locale)); return; }
 
     // Admin entry point: show the /admin link only when the admin gate passes.
     // The gate itself stays server-side (requireAdmin); this is UX-only.
@@ -145,7 +150,7 @@ export default function DashboardPage() {
       if (activeWorkspace) localStorage.setItem("active_workspace_id", activeWorkspace.id);
     } catch {}
     setIsLoading(false);
-  }, [supabase, router]);
+  }, [supabase, router, locale]);
 
   // ── Load user + workspace data ─────────────────────────────────────────────
   useEffect(() => {
@@ -166,7 +171,7 @@ export default function DashboardPage() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace(withLocale("/login", locale));
   }
 
   // Trial paywall (Task 7): fresh entitlement check on "New validation".
@@ -179,7 +184,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch("/api/entitlements/me", { cache: "no-store" });
       if (!res.ok) {
-        router.push("/validate");
+        router.push(withLocale("/validate", locale));
         return;
       }
       const ent = (await res.json()) as { status?: string };
@@ -190,7 +195,7 @@ export default function DashboardPage() {
     } catch {
       /* fail-open: fall through to /validate */
     }
-    router.push("/validate");
+    router.push(withLocale("/validate", locale));
   }
 
   async function sendInvite() {
@@ -266,6 +271,10 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+            {/* Language switch (i18n Task 3) */}
+            <Suspense>
+              <LanguageSwitcher locale={locale} />
+            </Suspense>
             {/* Workspace Switcher */}
             <div className="relative">
               <button
@@ -320,7 +329,7 @@ export default function DashboardPage() {
             {/* Admin entry (gate-checked, UX-only) */}
             {isAdmin && (
               <Link
-                href="/admin"
+                href={withLocale("/admin", locale)}
                 className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
                 id="admin-link"
                 title="Admin"
@@ -333,31 +342,31 @@ export default function DashboardPage() {
 
             {/* Assistant entry */}
             <Link
-              href="/assistant"
+              href={withLocale("/assistant", locale)}
               className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
               id="assistant-link"
-              title="Assistant"
-              aria-label="Assistant"
+              title={t("assistant")}
+              aria-label={t("assistant")}
             >
               <MessageCircle className="w-3.5 h-3.5 text-brand-400" />
-              <span className="hidden sm:inline">Assistant</span>
+              <span className="hidden sm:inline">{t("assistant")}</span>
             </Link>
 
             {/* History entry */}
             <Link
-              href="/history"
+              href={withLocale("/history", locale)}
               className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
               id="history-link"
-              title="History"
-              aria-label="History"
+              title={t("history")}
+              aria-label={t("history")}
             >
               <History className="w-3.5 h-3.5 text-brand-400" />
-              <span className="hidden sm:inline">History</span>
+              <span className="hidden sm:inline">{t("history")}</span>
             </Link>
 
             {/* Memories console entry (companion Task 9) */}
             <Link
-              href="/memories"
+              href={withLocale("/memories", locale)}
               className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
               id="memories-link"
               title={MEMORY_COPY.page_title}
@@ -421,7 +430,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-bold text-slate-200 text-sm">Your Startups</h2>
                 <Link
-                  href="/validate"
+                  href={withLocale("/validate", locale)}
                   onClick={handleNewValidation}
                   className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                   id="new-startup-btn"
@@ -434,7 +443,7 @@ export default function DashboardPage() {
                 <div className="glass rounded-2xl p-10 text-center border border-dashed border-white/10">
                   <Brain className="w-8 h-8 text-slate-600 mx-auto mb-3" />
                   <p className="text-slate-400 text-sm mb-4">No startups yet in this workspace.</p>
-                  <Link href="/validate" className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5">
+                  <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5">
                     <Zap className="w-3.5 h-3.5" /> Validate Your First Idea
                   </Link>
                 </div>
@@ -456,7 +465,7 @@ export default function DashboardPage() {
                         />
                       </div>
                       <Link
-                        href={`/validate?startup_id=${s.id}`}
+                        href={withLocale(`/validate?startup_id=${s.id}`, locale)}
                         className="text-slate-500 group-hover:text-brand-400 transition-colors flex-shrink-0"
                       >
                         <ArrowRight className="w-4 h-4" />
@@ -512,8 +521,8 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">Quick Actions</p>
                 {[
                   { label: "Invite Members", icon: <Users className="w-3.5 h-3.5" />, action: () => setShowInviteModal(true), disabled: !canInvite },
-                  { label: "Validation History", icon: <History className="w-3.5 h-3.5" />, href: "/history" },
-                  { label: "All Experiments", icon: <FlaskConical className="w-3.5 h-3.5" />, href: "/validate" },
+                  { label: t("history"), icon: <History className="w-3.5 h-3.5" />, href: withLocale("/history", locale) },
+                  { label: t("validate"), icon: <FlaskConical className="w-3.5 h-3.5" />, href: withLocale("/validate", locale) },
                 ].map((action, i) => (
                   action.href ? (
                     <Link key={i} href={action.href} className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200 py-1.5 transition-colors">
@@ -617,7 +626,7 @@ export default function DashboardPage() {
             </p>
             <div className="flex gap-3">
               <Link
-                href="/plans"
+                href={withLocale("/plans", locale)}
                 id="paywall-modal-cta"
                 className="flex-1 btn-glow text-white font-bold py-3 rounded-xl text-sm text-center"
               >

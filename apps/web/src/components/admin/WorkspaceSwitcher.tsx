@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { stripLocale, withLocale } from "@/lib/i18n-path";
 
 export interface SwitcherWorkspace {
   id: string;
@@ -26,6 +27,10 @@ export default function WorkspaceSwitcher({
   currentId,
 }: WorkspaceSwitcherProps) {
   const router = useRouter();
+  // i18n Task 3: locale from pathname (this island renders under [locale]
+  // pages; stripLocale falls back to "en" for unprefixed paths).
+  const pathname = usePathname();
+  const wsLocale = stripLocale(pathname ?? "/").locale ?? "en";
 
   if (workspaces.length === 0) return null;
 
@@ -38,7 +43,7 @@ export default function WorkspaceSwitcher({
         value={currentId ?? ""}
         onChange={(e) => {
           const id = e.target.value;
-          if (id.length > 0) router.push(`/admin/workspaces/${encodeURIComponent(id)}`);
+          if (id.length > 0) router.push(withLocale(`/admin/workspaces/${encodeURIComponent(id)}`, wsLocale));
         }}
         className="glass rounded-xl px-3 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent max-w-64"
         aria-label="Switch workspace"

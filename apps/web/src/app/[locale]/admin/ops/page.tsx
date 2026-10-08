@@ -23,6 +23,7 @@ import PlatformAdminGrantForm from "@/components/admin/PlatformAdminGrantForm";
 import PlatformAdminRevokeButton from "@/components/admin/PlatformAdminRevokeButton";
 import KpiCard from "@/components/admin/KpiCard";
 import { getCachedAdminContext, runAdminQuery } from "@/lib/admin-dal";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   queryAgentSettings,
   queryOpsAdmins,
@@ -114,19 +115,19 @@ function asAuditEntries(value: unknown): AuditEntry[] {
 }
 
 /** Run-detail link for an audit entry: startup → content detail panel. */
-function runDetailHref(entry: AuditEntry): string | null {
+function runDetailHref(entry: AuditEntry, locale: AppLocale): string | null {
   if (isRecord(entry.target)) {
     const sid = entry.target["startup_id"];
     if (typeof sid === "string" && sid.length > 0) {
-      return `/admin/content?startup_id=${encodeURIComponent(sid)}`;
+      return withLocale(`/admin/content?startup_id=${encodeURIComponent(sid)}`, locale);
     }
     const ws = entry.target["workspace_id"];
     if (typeof ws === "string" && ws.length > 0) {
-      return `/admin/workspaces/${encodeURIComponent(ws)}`;
+      return withLocale(`/admin/workspaces/${encodeURIComponent(ws)}`, locale);
     }
   }
   if (entry.workspace_id !== null) {
-    return `/admin/workspaces/${encodeURIComponent(entry.workspace_id)}`;
+    return withLocale(`/admin/workspaces/${encodeURIComponent(entry.workspace_id)}`, locale);
   }
   return null;
 }
@@ -258,9 +259,14 @@ function formatDateTime(iso: string): string {
 
 export default async function AdminOpsPage({
   searchParams,
+  params,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+  params: Promise<{ locale: string }>;
 }) {
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
+  const opsBase = withLocale("/admin/ops", appLocale);
   const raw = await searchParams;
   const actorFilter = readSingle(raw, "actor");
   const actionFilter = readSingle(raw, "action");
@@ -339,7 +345,7 @@ export default async function AdminOpsPage({
     platformAdmins = asPlatformAdmins(adminsResult.data.admins);
 
   const auditBase =
-    `/admin/ops?` +
+    `${opsBase}?` +
     `${actorFilter !== null ? `actor=${encodeURIComponent(actorFilter)}&` : ""}` +
     `${actionFilter !== null ? `action=${encodeURIComponent(actionFilter)}&` : ""}`;
 
@@ -440,7 +446,7 @@ export default async function AdminOpsPage({
       <h2 className="text-lg font-bold text-slate-200 mb-3">Audit log</h2>
       <form
         method="get"
-        action="/admin/ops"
+        action={opsBase}
         className="flex flex-wrap gap-3 mb-4 items-end"
       >
         <label className="text-xs text-slate-400 space-y-1">
@@ -471,7 +477,7 @@ export default async function AdminOpsPage({
         </button>
         {(actorFilter !== null || actionFilter !== null) && (
           <Link
-            href="/admin/ops"
+            href={opsBase}
             className="text-sm text-slate-500 hover:text-slate-300 px-2 py-2"
           >
             Clear
@@ -522,7 +528,7 @@ export default async function AdminOpsPage({
                 ) : (
                   entries.map((entry) => {
                     const sev = auditSeverity(entry.action, entry.result);
-                    const href = runDetailHref(entry);
+                    const href = runDetailHref(entry, appLocale);
                     return (
                       <tr
                         key={entry.id}

@@ -1,4 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import RequestForm from "./request-form";
 
 export const metadata = {
@@ -16,24 +20,34 @@ const TEAM_QUOTA = process.env.NEXT_PUBLIC_PLAN_TEAM_QUOTA;
 
 export default async function PlansPage({
   searchParams,
+  params,
 }: {
   searchParams: Promise<{ reason?: string }>;
+  params: Promise<{ locale: string }>;
 }) {
   const { reason } = await searchParams;
+  const { locale } = await params;
+  const appLocale = locale as AppLocale;
+  const t = await getTranslations("nav");
   const showQuotaBanner = reason === "assistant_quota";
   return (
     <div dir="rtl" className="min-h-dvh flex flex-col">
       <header className="glass border-b border-white/5">
         <div className="px-4 sm:px-6 h-14 flex items-center justify-between max-w-5xl mx-auto w-full">
-          <Link href="/dashboard" className="font-bold text-sm">
+          <Link href={withLocale("/dashboard", appLocale)} className="font-bold text-sm">
             Validation <span className="gradient-text">Copilot</span>
           </Link>
-          <Link
-            href="/login"
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            تسجيل الدخول
-          </Link>
+          <div className="flex items-center gap-3">
+            <Suspense>
+              <LanguageSwitcher locale={appLocale} />
+            </Suspense>
+            <Link
+              href={withLocale("/login", appLocale)}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              {t("login")}
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -57,10 +71,10 @@ export default async function PlansPage({
               <p className="text-xs text-slate-500 mb-4">{FREE_QUOTA}</p>
             )}
             <Link
-              href="/login"
+              href={withLocale("/login", appLocale)}
               className="mt-auto glass glass-hover text-center text-sm font-semibold px-4 py-2.5 rounded-xl text-slate-200 border border-white/5"
             >
-              ابدأ مجانًا
+              {t("login")}
             </Link>
           </div>
 

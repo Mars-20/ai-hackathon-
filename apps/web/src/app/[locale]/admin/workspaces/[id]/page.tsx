@@ -12,6 +12,7 @@ import Link from "next/link";
 import KpiCard from "@/components/admin/KpiCard";
 import WorkspaceSwitcher from "@/components/admin/WorkspaceSwitcher";
 import { runAdminQuery } from "@/lib/admin-dal";
+import { withLocale, type AppLocale } from "@/lib/i18n-path";
 import {
   queryWorkspacesList,
   queryWorkspaceDetail,
@@ -96,9 +97,11 @@ function narrowDetail(body: unknown): WorkspaceDetail | null {
 export default async function AdminWorkspaceDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string; locale: string }>;
 }) {
-  const { id } = await params;
+  const { id, locale } = await params;
+  const appLocale = locale as AppLocale;
+  const backHref = withLocale("/admin/workspaces", appLocale);
 
   // Detail and sibling switcher list are independent — one concurrent
   // DAL round (same helpers the routes delegate to). DAL data failures
@@ -142,7 +145,7 @@ export default async function AdminWorkspaceDetailPage({
     return (
       <div>
         <Link
-          href="/admin/workspaces"
+          href={backHref}
           className="text-sm text-brand-400 hover:text-brand-300"
         >
           ← Workspaces
@@ -161,7 +164,7 @@ export default async function AdminWorkspaceDetailPage({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Link
-            href="/admin/workspaces"
+            href={backHref}
             className="text-sm text-brand-400 hover:text-brand-300"
           >
             ← Workspaces
