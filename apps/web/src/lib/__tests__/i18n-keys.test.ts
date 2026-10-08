@@ -16,7 +16,15 @@ describe("i18n key parity", () => {
   });
   it("no empty values", () => {
     for (const v of keys(en)) {
-      const val = v.split(".").reduce((a: any, k) => a?.[k], en as any);
+      const val = v
+        .split(".")
+        .reduce<unknown>(
+          (a, k) =>
+            typeof a === "object" && a !== null
+              ? (a as Record<string, unknown>)[k]
+              : undefined,
+          en as unknown
+        );
       expect(typeof val === "string" ? val.trim().length : 1).toBeGreaterThan(0);
     }
   });
