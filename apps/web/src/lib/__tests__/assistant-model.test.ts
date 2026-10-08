@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adaptCitedRows,
+  buildAssistantSystemInstruction,
   criticScan,
   parseAssistantToolCall,
   TOOL_NAMES,
@@ -108,6 +109,16 @@ describe("assistant-model", () => {
     // No [S#] provenance → still a bare numeric claim.
     const r = criticScan("مشروعك في المرحلة 2 من 5", []);
     expect(r.blocked).toBe(true);
+  });
+
+  it("system instruction tells the model when to call save_memory", () => {
+    // Live gap (2026-10-07): save_memory was proposed once in all of prod
+    // history — the prompt never instructs the model to save on "remember
+    // X" requests, and the no-rows rule suppresses tool proposals. The
+    // instruction must name the trigger explicitly.
+    const s = buildAssistantSystemInstruction("base prompt", "");
+    expect(s).toContain("save_memory");
+    expect(s).toMatch(/remember|store/i);
   });
 
   it("adaptCitedRows maps startup+evidence rows", () => {

@@ -29,6 +29,7 @@ interface FakeDb {
   prefs: Row[];
   startups: Row[];
   evidence: Row[];
+  memories: Row[];
   rpcImpl: (name: string, params: Row) => unknown;
   spent: Array<{ key: string; usd: number }>;
   quota: { used: number; max: number };
@@ -82,7 +83,9 @@ class FQ {
             ? this.db.startups
             : this.table === "evidence"
               ? this.db.evidence
-              : this.db.prefs;
+              : this.table === "companion_memory"
+                ? this.db.memories
+                : this.db.prefs;
     let out = src.filter((r) =>
       this.filters.every((f) => r[f.col] === f.val)
     );
@@ -209,6 +212,7 @@ function makeCtx(over: Partial<FakeDb & { entitlement: unknown }> = {}): {
     prefs: [],
     startups: [],
     evidence: [],
+    memories: [],
     rpcImpl: (name: string) => {
       if (name === "consume_assistant_message") {
         if (db.quota.used >= db.quota.max) {
@@ -489,6 +493,39 @@ describe("assistant-chat handlers", () => {
       expect(tokens).toMatch(/can't find supporting data/);
       expect(tokens).not.toContain("87 terawatt");
     }
+  });
+
+  it("critic accepts memory-backed replies citing [M1]", async () => {
+    // Live regression (2026-10-07): a just-saved memory cited as [M1] was
+    // critic-blocked because the critic's adapted rows excluded memories
+    // entirely — saved memories could never be quoted back.
+    const { ctx } = makeCtx({
+      memories: [
+        {
+          user_id: UID,
+          status: "approved",
+          value: "Acme landing page converts at 12 percent",
+        },
+      ],
+    });
+    ctx.modelCaller = async () => ({
+      reply: "Acme converts at 12 percent [M1].",
+      citations: [],
+      toolCalls: [],
+      usage: [{ totalTokenCount: 10 }],
+      dispatched: true,
+    });
+    const res = await handleAssistantPost(ctx, {
+      client_message_id: MSG_NEW,
+      message: "how does Acme convert?",
+    });
+    const text = (await readSse(res)).map((e) => JSON.parse(e));
+    const tokens = text
+      .filter((e) => e.type === "token")
+      .map((e) => e.text)
+      .join("");
+    expect(tokens).toContain("12 percent");
+    expect(tokens).not.toMatch(/can't find supporting data/);
   });
 
   it("tool SSE events carry redacted args per spec §5", async () => {

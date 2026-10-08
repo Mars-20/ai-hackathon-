@@ -186,6 +186,32 @@ async function ownedEvidenceRows(
   }
 }
 
+/** Approved memory values for the critic. Memories carry no URL, so they
+ * are keyed with source "memory" — claimHasUrlSupport only needs a truthy
+ * source plus token overlap. Live regression 2026-10-07: a just-saved
+ * memory cited as [M1] was critic-blocked because the adapted rows
+ * excluded memories entirely, so saved memories could never be quoted. */
+async function ownedMemoryRows(
+  ctx: AssistantHttpContext
+): Promise<Array<{ claim: string; source_url: string }>> {
+  try {
+    const { data: rows } = (await ctx.db
+      .from("companion_memory")
+      .select("value")
+      .eq("user_id", ctx.userId)
+      .eq("status", "approved")
+      .order("created_at", { ascending: false })
+      .limit(200)) as unknown as {
+      data: Array<{ value: unknown }> | null;
+    };
+    return (rows ?? [])
+      .filter((r) => typeof r.value === "string" && r.value.length > 0)
+      .map((r) => ({ claim: r.value as string, source_url: "memory" }));
+  } catch {
+    return [];
+  }
+}
+
 interface Row {
   [k: string]: unknown;
 }
@@ -684,6 +710,7 @@ export async function handleAssistantPost(
   const adapted = adaptCitedRows([
     ...startups.map((s) => ({ claim: `${s.name}: ${s.one_liner ?? ""}` })),
     ...(await ownedEvidenceRows(ctx)),
+    ...(await ownedMemoryRows(ctx)),
   ]);
   const verdict = criticScan(reply, adapted);
   if (verdict.blocked) {
