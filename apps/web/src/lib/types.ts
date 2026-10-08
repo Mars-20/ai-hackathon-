@@ -183,6 +183,35 @@ export interface Decision {
   created_at: string;
 }
 
+// ── ICP & market sizing (skill:icp-sizing) ──────────────────────────────
+export interface IcpProfile {
+  role_title: string;
+  context: string;
+  pain: string;
+  workaround: string;
+  buying_authority: string;
+  tam: { value: string; source_url?: string };
+  sam: { value: string; source_note?: string };
+  som: { value: string; basis?: string };
+  preliminary: boolean; // true until research synthesis confirms numbers
+}
+
+// ── Investor readiness (skill:investor-readiness) ───────────────────────
+export type InvestorSignalKey =
+  | "team" | "market" | "product" | "business_model"
+  | "brand" | "traction" | "plan" | "persuasion";
+export interface InvestorSignal {
+  key: InvestorSignalKey;
+  score_1_10: number;
+  note: string;
+}
+export interface InvestorScorecard {
+  signals: InvestorSignal[];
+  overall_1_10: number;
+  verdict_fit: "fundable" | "not_yet" | "unfit";
+  top_gaps: string[];
+}
+
 // ── Trace Event ───────────────────────────────────────────────────────────────
 export type TraceActor = "router" | "planner" | "executor" | "verifier" | "companion" | `skill:${string}` | "tool";
 export type TraceEventType = "tool_call" | "tool_result" | "verification" | "decision" | "error" | "skill_start" | "skill_end" | "companion_inject" | "companion_infer" | "companion_decide";
@@ -215,6 +244,8 @@ export interface AgentOutput {
   evidence: Evidence[];
   experiment?: Experiment;
   decision?: Decision;
+  icp_profile: IcpProfile | null;                 // NEW
+  investor_scorecard: InvestorScorecard | null;   // NEW
   trace: TraceEvent[];
   error?: string;
 }
@@ -250,12 +281,14 @@ export type SessionPhase =
   | "idle"
   | "intake"
   | "mapping"
+  | "icp_sizing"        // NEW
   | "research"
   | "experiment"
   | "leads"
   | "evidence"
   | "verifying"
   | "memo"
+  | "investor_readiness" // NEW
   | "done"
   | "error";
 
@@ -271,6 +304,8 @@ export interface SessionState {
   evidence: Evidence[];
   experiment?: Experiment;
   decision?: Decision;
+  icp_profile?: IcpProfile | null;                // NEW
+  investor_scorecard?: InvestorScorecard | null;  // NEW
   trace: TraceEvent[];
   isLoading: boolean;
   error?: string;
