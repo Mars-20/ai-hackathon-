@@ -1,0 +1,24 @@
+{
+  "id": "at-006",
+  "label": "Progress question: cited position answer survives the critic",
+  "user_seed": {
+    "note": "Local-dev re-record seed: one startup (Acme, widgets, stage prototype on the general track) owned by the test user.",
+    "startups": [{ "name": "Acme", "one_liner": "widgets", "stage": "prototype" }]
+  },
+  "turns": [
+    {
+      "ask": "وين وصل مشروعي؟",
+      "expect": {
+        "must_cite_labels": ["S1"],
+        "must_contain": "المرحلة 2 من 5"
+      },
+      "recorded": {
+        "reply": "مشروعك في المرحلة 2 من 5 [S1].",
+        "citations": [
+          { "kind": "startup", "id": "33333333-3333-4333-8333-333333333333", "label": "S1" }
+        ],
+        "done": { "conversation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "deduped": false }
+      }
+    }
+  ]
+}

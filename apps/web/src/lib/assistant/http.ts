@@ -14,6 +14,7 @@ import { extractUsageCost, recordSpendAsync } from "@/lib/cost";
 import { createManualMemory, getCompiledContext } from "@/lib/companion/dal";
 import { containsBlockedSecret } from "@/lib/companion/scans";
 import { resolveEffectiveWorkspaceId } from "@/lib/agent-workspace";
+import { resolveOrder, stagePosition } from "@/lib/progress/tracks";
 import {
   adaptCitedRows,
   AssistantOutageError,
@@ -560,7 +561,15 @@ export async function handleAssistantPost(
     .slice(-HISTORY_TURNS)
     .map((r) => ({ role: r.role as "user" | "assistant", content: r.content }));
   const startupBrief = startups
-    .map((s) => `- ${s.name} (${s.stage ?? "idea"}): ${s.one_liner ?? ""} [startup:${s.id}]`)
+    .map((s) => {
+      const order = resolveOrder(
+        s.stage_track ?? null,
+        (s.stage_order ?? null) as Array<{ key: string; label: string }> | null,
+      );
+      const pos = stagePosition(order, s.stage ?? "idea");
+      const position = pos >= 0 ? ` stage ${pos + 1}/${order.length}` : "";
+      return `- ${s.name} (${s.stage ?? "idea"}${position}): ${s.one_liner ?? ""} [startup:${s.id}]`;
+    })
     .join("\n");
   const context = `Startups:\n${startupBrief}\n\nMemory:\n${compiled}`;
 

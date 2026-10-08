@@ -84,6 +84,32 @@ describe("assistant-model", () => {
     expect(r.unsupported.length).toBeGreaterThan(0);
   });
 
+  it("critic exempts [S#]-backed structural position statements", () => {
+    // Progress answers are inherently numeric ("stage 2 of 5") — the same
+    // bug class as the 2026-10-07 marker block. A position claim backed by
+    // an [S#] marker is structural, not factual, and must pass.
+    expect(
+      criticScan("مشروعك في المرحلة 2 من 5 [S1]", [])
+    ).toEqual({ blocked: false, unsupported: [] });
+    expect(
+      criticScan("Your project is at stage 2 of 5 [S1]", [])
+    ).toEqual({ blocked: false, unsupported: [] });
+  });
+
+  it("critic still blocks position-shaped lines carrying real figures", () => {
+    // The exemption covers ONLY the ordinal pattern: extra numbers, money,
+    // or market-sizing words in the same line stay blocked.
+    const r = criticScan("المرحلة 2 من 5 بميزانية $50B [S1]", []);
+    expect(r.blocked).toBe(true);
+    expect(r.unsupported.length).toBeGreaterThan(0);
+  });
+
+  it("critic still blocks unmarked position statements", () => {
+    // No [S#] provenance → still a bare numeric claim.
+    const r = criticScan("مشروعك في المرحلة 2 من 5", []);
+    expect(r.blocked).toBe(true);
+  });
+
   it("adaptCitedRows maps startup+evidence rows", () => {
     const out = adaptCitedRows([
       { claim: "CAC < LTV", source_url: "https://x/1" },

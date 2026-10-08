@@ -267,6 +267,24 @@ export function claimHasUrlSupport(
 // source_url). Bare numbers/URLs elsewhere in the line are still checked.
 const CITATION_MARKER_RE = /\[[SAEDMW]\d+\]/g;
 
+// Structural position statements ("stage 2 of 5" / "المرحلة 2 من 5") are
+// inherently numeric but carry no factual payload beyond an ordinal backed
+// by an [S#] provenance marker. Exempt ONLY lines whose sole numeric
+// content is the position pattern: any extra digit, $, %, URL, or
+// market-sizing word in the same line stays blocked.
+const POSITION_RE = /(?:stage\s*\d+\s*of\s*\d+|المرحلة\s*\d+\s*من\s*\d+)/i;
+const FACTUAL_HINT_RE = /(\d|%|\$|http|million|billion|market worth)/i;
+
+function isStructuralPositionClaim(line: string): boolean {
+  if (!/\[S\d+\]/.test(line)) return false;
+  const m = line.match(POSITION_RE);
+  if (!m || m.index === undefined) return false;
+  const rest = (
+    line.slice(0, m.index) + line.slice(m.index + m[0].length)
+  ).replace(CITATION_MARKER_RE, "");
+  return !FACTUAL_HINT_RE.test(rest);
+}
+
 // Deterministic safety net: factual lines (numbers / $ / % / URLs / market
 // sizing words) with no per-claim URL support are ungrounded.
 export function findUnsupportedFactualClaims(
@@ -275,10 +293,11 @@ export function findUnsupportedFactualClaims(
 ): string[] {
   const out: string[] = [];
   const factualLines = text
-    .replace(CITATION_MARKER_RE, "")
     .split(/[\n;.]/)
     .map((l) => l.trim())
-    .filter((l) => /(\d|%|\$|http|million|billion|market worth)/i.test(l));
+    .filter((l) => !isStructuralPositionClaim(l))
+    .map((l) => l.replace(CITATION_MARKER_RE, "").trim())
+    .filter((l) => FACTUAL_HINT_RE.test(l));
   for (const line of factualLines) {
     if (line.length > 12 && !claimHasUrlSupport(line, evidence) && !out.includes(line)) {
       out.push(line);
