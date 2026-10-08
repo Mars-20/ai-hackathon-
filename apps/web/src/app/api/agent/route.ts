@@ -22,6 +22,7 @@ import {
   buildMarketCtx,
   fallbackIcpProfile,
   marketBlock,
+  normalizeVerdict,
   parseIcpProfile,
   parseInvestorScorecard,
   shouldRunInvestorReadiness,
@@ -178,13 +179,14 @@ function assertPhaseBudget(totalCost: number, toolCalls: number): void {
   }
 }
 
-// Timeout/budget discriminator for fail-soft skills: timeout throws
-// "Budget: hard timeout 90s exceeded"; budget throws carry status 429.
-// Everything else (provider/model/parse) is fail-soft.
+// Timeout/budget discriminator for fail-soft skills: only OUR two budget
+// signals count — assertPhaseBudget throws Error("Budget exceeded") and the
+// executor deadline throws "Budget: hard timeout 90s exceeded". Provider 429s
+// (Groq/Gemini quota, which carry status 429 with retryAfter) are transient
+// provider errors and must degrade via fail-soft, not abort the run.
 function isBudgetError(e: unknown): boolean {
   if (!(e instanceof Error)) return false;
-  if (/Budget: hard timeout/.test(e.message)) return true;
-  return (e as { status?: unknown }).status === 429;
+  return /Budget exceeded|Budget: hard timeout/.test(e.message);
 }
 
 // Groq fetch with exponential backoff (3 attempts) + multi-key rotation.
@@ -1250,7 +1252,13 @@ Rules: anchor on SOM, never present TAM as the relevant market; drop any number 
     });
     const parsed = parseJsonSafely<(MarketNumbers & { competitors?: string[] }) | null>(synthText, null);
     if (parsed && (parsed.tam?.value || parsed.sam?.value || parsed.som?.value)) {
-      marketSizing = { tam: parsed.tam, sam: parsed.sam, som: parsed.som };
+      // Normalize with defaults: a partial object (missing tam/sam/som) must
+      // degrade, never throw downstream in buildMarketCtx (fail-soft §3.2).
+      marketSizing = {
+        tam: parsed.tam ?? { value: "" },
+        sam: parsed.sam ?? { value: "" },
+        som: parsed.som ?? { value: "" },
+      };
       trace.push(makeTrace("tool", "tool_result", { market_sizing: marketSizing, competitors: (parsed.competitors ?? []).slice(0, 8) }));
     } else {
       trace.push(makeTrace("skill:market-research", "verification", { warning: "synthesis_unparseable" }));
@@ -1724,8 +1732,11 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
     { verdict: "test_more", rationale: "Further primary evidence collection needed", next_experiment: "Conduct 15 customer discovery interviews" }
   );
 
-  // Final guard: if model tries to sneak in "go" without threshold met, override
-  let verdict = (parsed.verdict as Decision["verdict"]) || "test_more";
+  // Final guard: if model tries to sneak in "go" without threshold met, override.
+  // Canonicalize through normalizeVerdict: the fallback path ignores
+  // responseSchema, so "GO"/"Go " must become "go" — never stored verbatim
+  // (decisions.verdict CHECK + downstream verdict guards expect canonical).
+  let verdict = normalizeVerdict(parsed.verdict) ?? "test_more";
   if (verdict === "go" && !allowGo) {
     verdict = "test_more";
     trace.push(
@@ -2459,9 +2470,16 @@ export async function POST(req: NextRequest) {
       const marketSizingPayload = [...trace].reverse().find(
         (t) => typeof t.payload?.market_sizing === "object" && t.payload?.market_sizing !== null
       )?.payload?.market_sizing as MarketNumbers | undefined;
-      const marketCtx = marketSizingPayload
-        ? buildMarketCtx(marketSizingPayload, truncateField(icpSummary, 120))
-        : "";
+      // buildMarketCtx is defensive (partial synthesis → ""), but a
+      // corrupt trace payload must still never abort the run (fail-soft).
+      let marketCtx = "";
+      try {
+        marketCtx = marketSizingPayload
+          ? buildMarketCtx(marketSizingPayload, truncateField(icpSummary, 120))
+          : "";
+      } catch {
+        trace.push(makeTrace("skill:market-research", "verification", { warning: "market_ctx_build_failed" }));
+      }
       await send({ type: "evidence", evidence: secondaryEvidence, trace: [...trace] });
 
       // ── Phase 5: Experiment Design ──────────────────────────────────────────

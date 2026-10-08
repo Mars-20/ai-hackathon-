@@ -59,6 +59,14 @@ describe("builders + caps", () => {
     expect(marketBlock("")).toBe("");
     expect(marketBlock("TAM: $2.1B")).toContain("MARKET:");
   });
+  test("marketBlock wraps content as untrusted (prompt-injection hardening)", () => {
+    expect(marketBlock("TAM: $2.1B")).toContain("<untrusted>TAM: $2.1B</untrusted>");
+  });
+  test("buildMarketCtx tolerates partial synthesis (no throw, degrades to known parts)", () => {
+    const partial = { tam: undefined, sam: { value: "2,340 firms" }, som: undefined };
+    expect(buildMarketCtx(partial as unknown as Parameters<typeof buildMarketCtx>[0], "ops heads")).toContain("2,340 firms");
+    expect(buildMarketCtx({} as unknown as Parameters<typeof buildMarketCtx>[0], "ops heads")).toBe("");
+  });
 });
 
 describe("parsers are fail-soft", () => {
@@ -66,6 +74,11 @@ describe("parsers are fail-soft", () => {
     expect(parseIcpProfile(JSON.stringify({ ...ICP, extra: 1 }))?.role_title).toBe("Head of Operations");
     expect(parseIcpProfile("not json{{")).toBeNull();
     expect(parseIcpProfile(JSON.stringify({ role_title: 42 }))).toBeNull();
+  });
+  test("parseIcpProfile tolerates fenced JSON (Groq fallback wraps in ```json)", () => {
+    const fenced = "```json\n" + JSON.stringify(ICP) + "\n```";
+    expect(parseIcpProfile(fenced)?.role_title).toBe("Head of Operations");
+    expect(parseIcpProfile("Here is the profile:\n" + JSON.stringify(ICP))?.role_title).toBe("Head of Operations");
   });
   test("parseInvestorScorecard clamps + whitelists", () => {
     const good = parseInvestorScorecard(JSON.stringify({
@@ -77,6 +90,11 @@ describe("parsers are fail-soft", () => {
     expect(good?.overall_1_10).toBe(1);
     expect(parseInvestorScorecard("{{bad")).toBeNull();
     expect(parseInvestorScorecard(JSON.stringify({ verdict_fit: "maybe" }))).toBeNull();
+    const fenced = "```json\n" + JSON.stringify({
+      signals: [{ key: "team", score_1_10: 7, note: "strong" }],
+      overall_1_10: 7, verdict_fit: "fundable", top_gaps: [],
+    }) + "\n```";
+    expect(parseInvestorScorecard(fenced)?.verdict_fit).toBe("fundable");
   });
 });
 

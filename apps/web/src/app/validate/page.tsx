@@ -756,6 +756,10 @@ function ValidateDashboard() {
     setLeads([]);
     setLeadsMessage(null);
     setDecision(null);
+    // Reset skill cards: a skip path (verdict stop/test_more) emits no new
+    // scorecard, so a previous run's card must not linger on screen.
+    setIcpProfile(null);
+    setScorecard(null);
     setTrace([]);
     setPhase("intake");
     setStats({});
@@ -897,8 +901,10 @@ function ValidateDashboard() {
                 if (Array.isArray(data.leads)) setLeads(data.leads);
                 if (typeof data.message === "string") setLeadsMessage(data.message);
                 setDecision(data.decision ?? null);
-                if (data.icp_profile) setIcpProfile(data.icp_profile);
-                if (data.investor_scorecard) setScorecard(data.investor_scorecard);
+                // Explicit hydration: a skip path sends no scorecard, so clear
+                // any state rather than leaving a stale card from a prior run.
+                setIcpProfile(data.icp_profile ?? null);
+                setScorecard(data.investor_scorecard ?? null);
                 if (data.trace) setTrace(data.trace);
                 setStats(data.stats || {});
                 setPhase("done");

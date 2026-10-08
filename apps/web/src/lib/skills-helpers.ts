@@ -36,17 +36,24 @@ export interface MarketNumbers {
 }
 
 export function buildMarketCtx(m: MarketNumbers, icpOneLiner: string): string {
-  if (!m.tam.value && !m.sam.value && !m.som.value) return "";
+  // Defensive: synthesis may return partial objects (missing tam/sam/som);
+  // degrade to the known parts instead of throwing (fail-soft, spec §3.2).
+  const tam = m?.tam?.value ?? "";
+  const sam = m?.sam?.value ?? "";
+  const som = m?.som?.value ?? "";
+  if (!tam && !sam && !som) return "";
   return clip(
-    `TAM: ${m.tam.value}${m.tam.source_url ? ` (${m.tam.source_url})` : ""}; ` +
-      `SAM: ${m.sam.value}${m.sam.source_note ? ` (${m.sam.source_note})` : ""}; ` +
-      `SOM: ${m.som.value}${m.som.basis ? ` (${m.som.basis})` : ""}; ICP: ${icpOneLiner}`,
+    `TAM: ${tam}${m.tam?.source_url ? ` (${m.tam.source_url})` : ""}; ` +
+      `SAM: ${sam}${m.sam?.source_note ? ` (${m.sam.source_note})` : ""}; ` +
+      `SOM: ${som}${m.som?.basis ? ` (${m.som.basis})` : ""}; ICP: ${icpOneLiner}`,
     800,
   );
 }
 
 export function marketBlock(marketCtx: string): string {
-  return marketCtx ? `MARKET:\n${marketCtx}` : "";
+  // Synthesis output is model text: mark it untrusted so downstream prompts
+  // never render it as instructions (same pattern as route toUntrusted).
+  return marketCtx ? `MARKET:\n<untrusted>${marketCtx}</untrusted>` : "";
 }
 
 export function fallbackIcpProfile(targetCustomer: string): IcpProfile {
@@ -63,9 +70,16 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+// Groq fallback commonly wraps JSON in ```json fences or prose: extract the
+// payload with the same match used by route parseJsonSafely.
+function extractJson(text: string): unknown {
+  const raw = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)?.[0] ?? text;
+  return JSON.parse(raw) as unknown;
+}
+
 export function parseIcpProfile(text: string): IcpProfile | null {
   try {
-    const o = JSON.parse(text) as unknown;
+    const o = extractJson(text);
     if (!isRecord(o)) return null;
     for (const k of ["role_title", "context", "pain", "workaround", "buying_authority"])
       if (typeof o[k] !== "string") return null;
@@ -90,7 +104,7 @@ const FITS = new Set(["fundable", "not_yet", "unfit"]);
 
 export function parseInvestorScorecard(text: string): InvestorScorecard | null {
   try {
-    const o = JSON.parse(text) as unknown;
+    const o = extractJson(text);
     if (!isRecord(o) || !Array.isArray(o.signals)) return null;
     const signals: InvestorSignal[] = [];
     for (const s of o.signals) {
