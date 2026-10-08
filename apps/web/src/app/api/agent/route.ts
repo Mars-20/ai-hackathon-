@@ -14,7 +14,13 @@ import type {
   Startup,
   Experiment,
   Decision,
+  IcpProfile,
 } from "@/lib/types";
+import {
+  buildIcpSummary,
+  fallbackIcpProfile,
+  parseIcpProfile,
+} from "@/lib/skills-helpers";
 import {
   validateQuestion,
   meetsGoThreshold,
@@ -163,6 +169,15 @@ function assertPhaseBudget(totalCost: number, toolCalls: number): void {
   if (isBudgetExceeded(totalCost, toolCalls)) {
     throw Object.assign(new Error("Budget exceeded"), { status: 429, retryAfter: 60 });
   }
+}
+
+// Timeout/budget discriminator for fail-soft skills: timeout throws
+// "Budget: hard timeout 90s exceeded"; budget throws carry status 429.
+// Everything else (provider/model/parse) is fail-soft.
+function isBudgetError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  if (/Budget: hard timeout/.test(e.message)) return true;
+  return (e as { status?: unknown }).status === 429;
 }
 
 // Groq fetch with exponential backoff (3 attempts) + multi-key rotation.
@@ -1023,6 +1038,78 @@ Return assumptions sorted by risk_level: critical first, then high, medium, low.
     )
   );
   return assumptions;
+}
+
+// ── ICP & Market Sizing (skill:icp-sizing — synthesis, no web tools) ────
+// Always runs, right after mapping: its output grounds research + leads.
+// Fail-soft on provider/model/parse errors (fallback profile + warning
+// trace); timeout/budget errors propagate.
+async function runIcpSizingSkill(
+  startup: Startup,
+  assumptions: Assumption[],
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
+): Promise<IcpProfile> {
+  const t0 = Date.now();
+  trace.push(makeTrace("skill:icp-sizing", "skill_start", { startup_id: startup.id }));
+
+  const schema = {
+    type: SchemaType.OBJECT,
+    properties: {
+      role_title: { type: SchemaType.STRING },
+      context: { type: SchemaType.STRING },
+      pain: { type: SchemaType.STRING },
+      workaround: { type: SchemaType.STRING },
+      buying_authority: { type: SchemaType.STRING },
+      tam: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING } } },
+      sam: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING } } },
+      som: { type: SchemaType.OBJECT, properties: { value: { type: SchemaType.STRING } } },
+    },
+    required: ["role_title", "context", "pain", "workaround", "buying_authority", "tam", "sam", "som"],
+  };
+
+  const prompt = `Define the Ideal Customer Profile and preliminary market size for this startup.
+
+STARTUP:
+- Name: ${toUntrusted(sanitizeStartupField(startup.name))}
+- Idea: ${toUntrusted(sanitizeStartupField(startup.one_liner))}
+- Domain: ${toUntrusted(sanitizeStartupField(startup.domain))}
+- Stated customer: ${toUntrusted(sanitizeStartupField(startup.target_customer || "not specified"))}
+- Riskiest assumption: ${toUntrusted(truncateField(assumptions[0]?.statement ?? "", 300))}
+
+RULES (icp-market-sizing):
+- ICP is valid ONLY with all five dimensions: precise role/title (never "business owners"), company context (size/geo/stack), hair-on-fire pain, current workaround, buying authority.
+- Specificity test: the description must single out ~5-10 people in a crowd of 1000, not "most of the room".
+- TAM/SAM/SOM are PRELIMINARY estimates (research confirms them later): TAM = category demand at 100% share; SAM = reachable given channels/geography/language; SOM = SAM x realistic Y1 conversion from stated GTM capacity. Never present TAM as the relevant market.
+- B2C: ICP and persona collapse into one (the individual consumer).
+
+Return ONLY the profile as JSON (preliminary is set by code, not the model).`;
+
+  let profile: IcpProfile;
+  try {
+    const rawText = await callAIWithFallback({
+      prompt: composePrompt(prompt, companionCtx),
+      systemPrompt: "You are the icp-sizing skill for a Validation Copilot. Respond ONLY with valid JSON.",
+      responseSchema: schema,
+      trace,
+      skillName: "icp-sizing",
+      usageAcc,
+    });
+    const parsed = parseIcpProfile(rawText);
+    if (!parsed) throw new Error("icp-sizing returned unparseable JSON");
+    profile = parsed;
+  } catch (err) {
+    if (isBudgetError(err)) throw err; // timeout/budget carve-out: abort, never limp on
+    trace.push(makeTrace("skill:icp-sizing", "verification", {
+      warning: "icp_fallback", detail: err instanceof Error ? err.message : String(err),
+    }));
+    profile = fallbackIcpProfile(startup.target_customer || "");
+  }
+
+  const latency = Date.now() - t0;
+  trace.push(makeTrace("skill:icp-sizing", "skill_end", { preliminary: profile.preliminary }, { latency_ms: latency }));
+  return profile;
 }
 
 // ── Market Research (skill: market-research + grounded_search tool) ───────────
@@ -2181,6 +2268,18 @@ export async function POST(req: NextRequest) {
       totalCost += costFromUsage(mappingUsage, "gemini_call");
       checkTimeout();
       assertPhaseBudget(totalCost, toolCalls);
+
+      // ── Phase 3b: ICP & Market Sizing (always runs) ────────────────────
+      await send({ type: "phase", phase: "icp_sizing", trace: [...trace] });
+      const icpUsage: AiUsage[] = [];
+      const icpProfile = await runIcpSizingSkill(startup, assumptions, trace, icpUsage, companionCtx);
+      toolCalls++;
+      totalCost += costFromUsage(icpUsage, "gemini_call");
+      checkTimeout();
+      assertPhaseBudget(totalCost, toolCalls);
+      const icpSummary = buildIcpSummary(icpProfile);
+      startup.target_customer = truncateField(icpSummary, 500); // flattened, persisted later
+      await send({ type: "icp_profile", icp_profile: icpProfile, trace: [...trace] });
 
       // ── Phase 4: Market Research ────────────────────────────────────────────
       await send({ type: "phase", phase: "research", trace: [...trace] });
