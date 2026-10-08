@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
   // so one user cannot hijack another's startup via guessed UUID.
   // (Trial paywall: the fetched row is reused below — isNew = !existing,
   // and the update path enforces is_frozen. Hijack guards unchanged.)
-  let existingStartup: { owner_id: string; workspace_id: string | null; is_frozen: boolean } | null = null;
+  let existingStartup: { owner_id: string; workspace_id: string | null; is_frozen: boolean; stage: string } | null = null;
   // Track info for the in-order stage check. Fetched separately so rows
   // created before migration 0016 (no stage_track/stage_order columns) keep
   // the legacy select working — a missing-column error falls back to nulls.
@@ -123,11 +123,11 @@ export async function POST(request: NextRequest) {
   if (clientSuppliedId) {
     const { data: existing } = await supabase
       .from("startups")
-      .select("id, owner_id, workspace_id, is_frozen")
+      .select("id, owner_id, workspace_id, is_frozen, stage")
       .eq("id", rawId)
       .maybeSingle();
     if (existing) {
-      const typed = existing as { owner_id: string; workspace_id: string | null; is_frozen: boolean };
+      const typed = existing as { owner_id: string; workspace_id: string | null; is_frozen: boolean; stage: string };
       if (typed.owner_id !== user.id) {
         if (!typed.workspace_id) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -162,7 +162,9 @@ export async function POST(request: NextRequest) {
 
   // Track-aware stage check: the stage must belong to the project's track
   // order (existing row's track, or the client-supplied track on creation).
-  // Unknown creation track → 400 INVALID (no silent fallback).
+  // Unknown creation track → 400 INVALID (no silent fallback). A track
+  // switch keeps an unchanged current stage even when off the new track
+  // (position -1: stepper shows it, suggestions pause until manual advance).
   const suppliedTrack = parsed.data.track ?? null;
   if (suppliedTrack && !TRACKS[normalizeKey(suppliedTrack)] && !existingStartup) {
     return NextResponse.json(
@@ -170,9 +172,21 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  const effectiveTrack = existingStartup ? existingTrack : (suppliedTrack ?? null);
-  const effectiveOrder = existingStartup ? existingOrder : null;
-  if (!isStageInOrder(effectiveTrack, effectiveOrder, parsed.data.stage)) {
+  const trackSwitch =
+    !!existingStartup &&
+    !!suppliedTrack &&
+    TRACKS[normalizeKey(suppliedTrack)] !== undefined &&
+    normalizeKey(suppliedTrack) !== normalizeKey(existingTrack ?? "general");
+  const stageChanged =
+    !existingStartup ||
+    normalizeKey(parsed.data.stage) !== normalizeKey(existingStartup.stage);
+  const effectiveTrack = existingStartup
+    ? trackSwitch
+      ? suppliedTrack
+      : existingTrack
+    : (suppliedTrack ?? null);
+  const effectiveOrder = existingStartup && !trackSwitch ? existingOrder : null;
+  if ((stageChanged || !trackSwitch) && !isStageInOrder(effectiveTrack, effectiveOrder, parsed.data.stage)) {
     return NextResponse.json(
       { error: "Invalid stage for this project's track", code: "INVALID" },
       { status: 400 },
@@ -243,10 +257,11 @@ export async function POST(request: NextRequest) {
         ? s.target_customer
         : null,
     stage: parsed.data.stage,
-    // stage_track only on creation with an explicit track: legacy saves omit
-    // the key so they keep working before migration 0016 is applied.
-    ...(!existingStartup && suppliedTrack
-      ? { stage_track: normalizeKey(suppliedTrack) }
+    // stage_track only when explicitly (re)set: on creation with a track,
+    // or on a track switch. Legacy saves omit the key so they keep working
+    // before migration 0016 is applied.
+    ...((!existingStartup && suppliedTrack) || trackSwitch
+      ? { stage_track: normalizeKey(suppliedTrack as string) }
       : {}),
     business_model:
       typeof s.business_model === "string" && s.business_model.trim()

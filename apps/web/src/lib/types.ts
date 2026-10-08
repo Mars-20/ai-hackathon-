@@ -86,7 +86,9 @@ export type MessageStatus = "queued" | "sent" | "delivered" | "replied" | "bounc
 // Autonomy levels per spec Section 10
 export type AutonomyLevel = "L0" | "L1" | "L2" | "L3";
 
-// ── Startup ──────────────────────────────────────────────────────────────────
+// ── Startup ────────────────────────────────────────────────────────────────
+import type { StageStep } from "./progress/tracks";
+
 export interface Startup {
   id: string;
   workspace_id: string;  // ← isolates data per workspace
@@ -96,6 +98,10 @@ export interface Startup {
   domain: string;
   target_customer?: string;
   stage: Stage;
+  /** Stage track template key (NULL = general legacy). Requires migration 0016. */
+  stage_track?: string | null;
+  /** Custom order override (NULL = template order). Requires migration 0016. */
+  stage_order?: StageStep[] | null;
   business_model?: string;
   created_at: string;
   updated_at: string;

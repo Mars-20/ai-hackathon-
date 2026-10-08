@@ -34,6 +34,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { createSseParser } from "@/lib/sse-client";
 import { describeResearchCoverage } from "@/lib/research-label";
+import { StageProgressSection } from "@/components/StageProgressSection";
 import type {
   Startup,
   Assumption,
@@ -1143,6 +1144,23 @@ function ValidateDashboard() {
                     </div>
                   </div>
                 </section>
+              )}
+
+              {/* Project progress: stepper + hybrid suggestion + track picker */}
+              {startup?.id && (
+                <StageProgressSection
+                  startupId={startup.id}
+                  name={startup.name}
+                  stage={startup.stage}
+                  track={startup.stage_track ?? null}
+                  customOrder={startup.stage_order ?? null}
+                  onStageChange={(to) =>
+                    setStartup((prev) => (prev ? { ...prev, stage: to } : prev))
+                  }
+                  onTrackChange={(t) =>
+                    setStartup((prev) => (prev ? { ...prev, stage_track: t } : prev))
+                  }
+                />
               )}
 
               {/* Task 7: intake clarifying_questions frame (<=3, never guessed) */}

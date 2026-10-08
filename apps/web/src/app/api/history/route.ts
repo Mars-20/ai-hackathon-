@@ -6,7 +6,8 @@
 // Query params:
 //   q          — full-text search across name, domain, one_liner
 //   verdict    — go | iterate | stop | test_more (comma-separated)
-//   stage      — idea | prototype | live | scaling (comma-separated)
+//   stage      — free-form stage key (comma-separated; legacy keys are
+//               idea | prototype | live | scaling, tracks add their own)
 //   confidence — low | medium | high (comma-separated)
 //   from       — ISO date string (created_at >=)
 //   to         — ISO date string (created_at <=)
@@ -78,20 +79,37 @@ export async function GET(request: NextRequest) {
 
   // ── Detail mode for resume (?startup_id=): single startup + relations ──────
   // Used by /validate?page resume. Workspace scoping stays in the DB query.
+  // stage_track/stage_order ride along when migration 0016 is applied;
+  // pre-0016 the with-track select fails and we fall back to legacy columns.
   if (startupIdParam) {
-    const { data: startup, error: detailError } = await supabase
-      .from("startups")
-      .select(`
-        id, name, one_liner, domain, target_customer, stage, business_model,
-        created_at, updated_at, workspace_id, owner_id,
-        decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
+    const detailChildSelect = `decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
         experiments(id, type, status, design, created_at),
         assumptions(id, statement, category, risk_level, status, reasoning, created_at),
-        evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at)
-      `)
-      .eq("id", startupIdParam)
-      .in("workspace_id", workspaceIds)
-      .maybeSingle();
+        evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at)`;
+    let startup: unknown = null;
+    let detailError: unknown = null;
+    {
+      const attempt = await supabase
+        .from("startups")
+        .select(`id, name, one_liner, domain, target_customer, stage, stage_track, stage_order, business_model,
+          created_at, updated_at, workspace_id, owner_id, ${detailChildSelect}`)
+        .eq("id", startupIdParam)
+        .in("workspace_id", workspaceIds)
+        .maybeSingle();
+      startup = attempt.data;
+      detailError = attempt.error;
+    }
+    if (detailError) {
+      const legacy = await supabase
+        .from("startups")
+        .select(`id, name, one_liner, domain, target_customer, stage, business_model,
+          created_at, updated_at, workspace_id, owner_id, ${detailChildSelect}`)
+        .eq("id", startupIdParam)
+        .in("workspace_id", workspaceIds)
+        .maybeSingle();
+      startup = legacy.data;
+      detailError = legacy.error;
+    }
     if (detailError) {
       console.error("[History API] Detail error:", detailError);
       return NextResponse.json({ error: "Failed to fetch startup" }, { status: 500 });

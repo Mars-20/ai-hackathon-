@@ -115,6 +115,10 @@ export async function computeStageBasis(
     rung4_count: number;
     created_at: string;
   }[] = [];
+  // A Go is consumed by the advancement it triggered: only decisions newer
+  // than the last recorded advancement (any actor) can fire R1 again.
+  // Pre-migration-0016 the history table is absent → no consumption.
+  let lastAdvanceAt: string | null = null;
   try {
     const { data } = await db
       .from("decisions")
@@ -164,6 +168,26 @@ export async function computeStageBasis(
     }
   } catch {
     dismissals = [];
+  }
+
+  try {
+    const { data } = await db
+      .from("startup_stage_history")
+      .select("actor, created_at")
+      .eq("startup_id", row.id);
+    if (Array.isArray(data)) {
+      for (const h of data as unknown as Record<string, unknown>[]) {
+        const at = String(h.created_at ?? "");
+        if (at && (lastAdvanceAt === null || at > lastAdvanceAt)) {
+          lastAdvanceAt = at;
+        }
+      }
+    }
+  } catch {
+    lastAdvanceAt = null;
+  }
+  if (lastAdvanceAt !== null) {
+    decisions = decisions.filter((d) => d.created_at > (lastAdvanceAt as string));
   }
 
   const suggestion = suggestNextStage({

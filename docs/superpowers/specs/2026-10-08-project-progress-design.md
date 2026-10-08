@@ -56,7 +56,10 @@ returns one suggestion or null:
   `verdict='go'` for this startup. Note: `decisions` has NO approved/status
   column, so "approved" is meaningless here — the verdict row itself IS the
   decision (written by the agent/admin flows). Any confidence qualifies.
-  The suggestion cites the decision (`[D#]`).
+  The suggestion cites the decision (`[D#]`). A Go is consumed by the
+  advancement it triggered: only decisions newer than the last
+  `startup_stage_history` row (any actor) can fire R1 again — otherwise one
+  Go would re-suggest forever after every confirm.
 - **R2 — evidence threshold:** count of evidence rows for this startup with
   `strength IN ('contact_shared','commitment')` (commitment-ladder rung 4+,
   the platform's own bar for a `Go` — see landing page). The `evidence`

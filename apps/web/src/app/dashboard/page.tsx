@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { MEMORY_COPY } from "@/lib/companion/copy";
+import { StageStepper } from "@/components/StageStepper";
 import type { AuthUser, Workspace, WorkspaceMember, MemberRole, Startup } from "@/lib/types";
 
 interface WorkspaceWithRole extends Workspace {
@@ -445,11 +446,14 @@ export default function DashboardPage() {
                         <div className="font-bold text-slate-200 mb-1">{s.name}</div>
                         <p className="text-xs text-slate-400 line-clamp-2">{s.one_liner}</p>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 border border-brand-500/20">
-                            {s.stage}
-                          </span>
                           <span className="text-xs text-slate-500">{s.domain}</span>
                         </div>
+                        <StageStepper
+                          startupId={s.id}
+                          stage={s.stage}
+                          track={s.stage_track ?? null}
+                          customOrder={s.stage_order ?? null}
+                        />
                       </div>
                       <Link
                         href={`/validate?startup_id=${s.id}`}

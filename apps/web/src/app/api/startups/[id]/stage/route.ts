@@ -4,16 +4,50 @@
 // Body: { to }
 // The server recomputes the live suggestion at confirm time and stores its
 // basis in the history row (client refs are never trusted).
+//
+// GET /api/startups/[id]/stage
+// Progress payload for the suggestion card: { stage, track, order,
+// position, suggestion }. Suggestions are computed, never stored.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isStageInOrder, normalizeKey } from "@/lib/progress/tracks";
+import { isStageInOrder, normalizeKey, resolveOrder, stagePosition } from "@/lib/progress/tracks";
 import {
   canWriteStartup,
   computeStageBasis,
   fetchStageRow,
 } from "@/lib/progress/stage-context";
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const row = await fetchStageRow(supabase, id);
+  if (!row) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (!(await canWriteStartup(supabase, row, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const basis = await computeStageBasis(supabase, row);
+  const order = resolveOrder(row.stage_track, row.stage_order);
+  return NextResponse.json({
+    stage: row.stage,
+    track: row.stage_track,
+    order,
+    position: stagePosition(order, row.stage),
+    suggestion: basis.suggestion,
+  });
+}
 
 export async function PUT(
   request: NextRequest,

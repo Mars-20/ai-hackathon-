@@ -8,6 +8,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { PUT as stagePUT } from "@/app/api/startups/[id]/stage/route";
+import { GET as stageGET } from "@/app/api/startups/[id]/stage/route";
 import { POST as dismissPOST } from "@/app/api/startups/[id]/stage/dismiss/route";
 
 const mockedClient = vi.mocked(createServerSupabaseClient);
@@ -244,6 +245,30 @@ describe("PUT /api/startups/[id]/stage", () => {
     const res = await stagePUT(reqWithBody({ to: "prototype" }), params);
     expect(res.status).toBe(200);
     expect(db.history[0]).toMatchObject({ actor: "user" });
+  });
+
+  test("a Go older than the last advancement does not re-fire", async () => {
+    const db = seedDb({
+      decisions: [
+        { id: "d1", startup_id: SID, verdict: "go", created_at: "2026-10-07T00:00:00Z" },
+      ],
+      history: [
+        {
+          id: "h1",
+          startup_id: SID,
+          from_stage: "idea",
+          to_stage: "prototype",
+          actor: "suggestion",
+          created_at: "2026-10-08T00:00:00Z",
+        },
+      ],
+    });
+    // Startup already sits at prototype after the recorded advancement.
+    db.startups[0].stage = "prototype";
+    wire(db);
+    const res = await stageGET(reqWithBody({}), params);
+    expect(res.status).toBe(200);
+    expect((await res.json()).suggestion).toBeNull();
   });
 });
 

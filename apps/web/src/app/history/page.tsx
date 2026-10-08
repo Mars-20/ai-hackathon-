@@ -11,7 +11,9 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Verdict = "go" | "iterate" | "stop" | "test_more";
-type Stage = "idea" | "prototype" | "live" | "scaling";
+// Stage is a free-form key: legacy rows use idea/prototype/live/scaling,
+// track templates and custom orders add their own keys.
+type Stage = string;
 type Confidence = "low" | "medium" | "high";
 type SortKey = "created_at" | "name" | "updated_at";
 
@@ -76,9 +78,13 @@ const CONFIDENCE_COLOR: Record<Confidence, string> = {
   high: "#51cf66", medium: "#ffd43b", low: "#ff6b6b",
 };
 
-const STAGE_COLOR: Record<Stage, string> = {
+const STAGE_COLOR_BASE: Record<string, string> = {
   idea: "#7950f2", prototype: "#5c7cfa", live: "#51cf66", scaling: "#ffd43b",
 };
+
+function stageColor(stage: string): string {
+  return STAGE_COLOR_BASE[stage] ?? "#94a3b8";
+}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -413,15 +419,15 @@ export default function HistoryPage() {
                 <div>
                   <p className="text-xs text-slate-500 mb-2 font-medium">Stage</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(["idea", "prototype", "live", "scaling"] as Stage[]).map(s => (
+                    {Array.from(new Set(records.map((r) => r.stage))).map(s => (
                       <button
                         key={s}
                         onClick={() => toggleFilter(stageFilter, s, setStageFilter)}
                         className="px-2 py-1 rounded-lg text-xs font-medium border capitalize transition-all"
                         style={{
-                          background: stageFilter.has(s) ? STAGE_COLOR[s] + "22" : "transparent",
-                          color: stageFilter.has(s) ? STAGE_COLOR[s] : "#64748b",
-                          borderColor: stageFilter.has(s) ? STAGE_COLOR[s] + "50" : "rgba(255,255,255,0.08)",
+                          background: stageFilter.has(s) ? stageColor(s) + "22" : "transparent",
+                          color: stageFilter.has(s) ? stageColor(s) : "#64748b",
+                          borderColor: stageFilter.has(s) ? stageColor(s) + "50" : "rgba(255,255,255,0.08)",
                         }}
                       >
                         {s}
@@ -545,7 +551,7 @@ export default function HistoryPage() {
                     {/* Tags */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-xs px-2 py-0.5 rounded-full border capitalize"
-                        style={{ color: STAGE_COLOR[record.stage], borderColor: STAGE_COLOR[record.stage] + "40", background: STAGE_COLOR[record.stage] + "15" }}>
+                        style={{ color: stageColor(record.stage), borderColor: stageColor(record.stage) + "40", background: stageColor(record.stage) + "15" }}>
                         {record.stage}
                       </span>
                       <span className="text-xs text-slate-500 px-2 py-0.5 rounded-full border border-white/5">
