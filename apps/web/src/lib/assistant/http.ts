@@ -314,8 +314,8 @@ function systemPrompt(locale: AiLocale = "en"): string {
   ].join(" ");
 }
 
-function refusalFor(message: string): string {
-  return /[\u0600-\u06FF]/.test(message)
+function refusalFor(locale: AiLocale = "en"): string {
+  return locale === "ar"
     ? "لا أجد بيانات في مساحات عملك تدعم الإجابة عن هذا — أخبرني باسم المشروع أو أضف البيانات أولا."
     : "I can't find supporting data in your workspaces for this — tell me the project name or add the data first.";
 }
@@ -725,7 +725,7 @@ export async function handleAssistantPost(
   ]);
   const verdict = criticScan(reply, adapted);
   if (verdict.blocked) {
-    reply = refusalFor(message);
+    reply = refusalFor(effectiveLocale);
     await traceTool(ctx.admin, "tool_result", {
       critic: "blocked",
       unsupported: verdict.unsupported.slice(0, 10),
