@@ -15,6 +15,7 @@ import type {
   Experiment,
   Decision,
   IcpProfile,
+  InvestorScorecard,
 } from "@/lib/types";
 import {
   buildIcpSummary,
@@ -22,6 +23,9 @@ import {
   fallbackIcpProfile,
   marketBlock,
   parseIcpProfile,
+  parseInvestorScorecard,
+  shouldRunInvestorReadiness,
+  sliceTraceForPersist,
   type MarketNumbers,
 } from "@/lib/skills-helpers";
 import {
@@ -1816,6 +1820,88 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
   return decision;
 }
 
+// ── Investor Readiness (skill:investor-readiness — gated: go/iterate only) ─
+// Scores the memo against the 8 readiness signals. Returns null (with an
+// explicit skip trace) unless the normalized verdict is go/iterate —
+// scoring a stop/test_more memo for investors is incoherent. Throws on
+// unparseable model JSON (the executor treats that as fail-soft);
+// timeout/budget errors propagate.
+async function runInvestorReadinessSkill(
+  startup: Startup,
+  decision: Decision,
+  marketCtx: string,
+  trace: TraceEvent[],
+  usageAcc?: AiUsage[],
+  companionCtx: string = ""
+): Promise<InvestorScorecard | null> {
+  if (!shouldRunInvestorReadiness(decision.verdict)) return null;
+  const t0 = Date.now();
+  trace.push(makeTrace("skill:investor-readiness", "skill_start", { startup_id: startup.id }));
+
+  const schema = {
+    type: SchemaType.OBJECT,
+    properties: {
+      signals: {
+        type: SchemaType.ARRAY,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            key: {
+              type: SchemaType.STRING,
+              format: "enum",
+              enum: ["team", "market", "product", "business_model", "brand", "traction", "plan", "persuasion"],
+            },
+            score_1_10: { type: SchemaType.NUMBER },
+            note: { type: SchemaType.STRING },
+          },
+          required: ["key", "score_1_10", "note"],
+        },
+      },
+      overall_1_10: { type: SchemaType.NUMBER },
+      verdict_fit: { type: SchemaType.STRING, format: "enum", enum: ["fundable", "not_yet", "unfit"] },
+      top_gaps: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    },
+    required: ["signals", "overall_1_10", "verdict_fit", "top_gaps"],
+  };
+
+  const prompt = `Score this startup's investor readiness against the 8 signals.
+
+STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
+MEMO VERDICT: ${toUntrusted(String(decision.verdict))} — ${toUntrusted(decision.rationale)}
+${marketBlock(marketCtx)}
+
+SIGNALS (weight in the overall judgment):
+- team (30): founder-market fit, complementary skills, velocity
+- market (25): size, growth, timing — frame on SOM, never TAM alone
+- product (20): differentiation, defensibility, demo-ability
+- business_model (10): clear path to revenue and margins
+- brand (5): narrative, positioning, trust signals
+- traction (5): LOIs, pilots, waitlist, revenue — commitment-ladder evidence only
+- plan (3): credible next milestones and experiment discipline
+- persuasion (2): memo clarity, honest numbers, no hype
+
+RULES (investor-pitch-coach): score ONLY what the evidence supports —
+absence of evidence is a low score, never an average one. top_gaps names
+the 3 weakest signals with the single cheapest fix each.
+
+Return ONLY the scorecard as JSON.`;
+
+  const rawText = await callAIWithFallback({
+    prompt: composePrompt(prompt, companionCtx),
+    systemPrompt: "You are the investor-readiness skill for a Validation Copilot. Respond ONLY with valid JSON.",
+    responseSchema: schema,
+    trace,
+    skillName: "investor-readiness",
+    usageAcc,
+  });
+  const parsed = parseInvestorScorecard(rawText);
+  if (!parsed) throw new Error("investor-readiness returned unparseable JSON");
+
+  const latency = Date.now() - t0;
+  trace.push(makeTrace("skill:investor-readiness", "skill_end", { overall_1_10: parsed.overall_1_10, verdict_fit: parsed.verdict_fit }, { latency_ms: latency }));
+  return parsed;
+}
+
 // ── Verifier Pass ────────────────────────────────────────────────────────────
 async function runVerifier(
   plannerOutput: string,
@@ -2461,6 +2547,29 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
       checkTimeout();
       assertPhaseBudget(totalCost, toolCalls);
 
+      // ── Phase 7b: Investor Readiness (gated: go/iterate only) ───────────
+      let investorScorecard: InvestorScorecard | null = null;
+      if (shouldRunInvestorReadiness(decision.verdict)) {
+        await send({ type: "phase", phase: "investor_readiness", trace: [...trace] });
+        try {
+          const invUsage: AiUsage[] = [];
+          investorScorecard = await runInvestorReadinessSkill(startup, decision, marketCtx, trace, invUsage, companionCtx);
+          toolCalls++;
+          totalCost += costFromUsage(invUsage, "gemini_call");
+          checkTimeout();
+          assertPhaseBudget(totalCost, toolCalls);
+        } catch (err) {
+          if (isBudgetError(err)) throw err; // budget gate stays alive
+          trace.push(makeTrace("executor", "tool_result", { investor_readiness: "failed_soft", detail: err instanceof Error ? err.message : String(err) }));
+          investorScorecard = null;
+        }
+      } else {
+        trace.push(makeTrace("executor", "tool_result", { investor_readiness: "skipped", reason: `verdict=${String(decision.verdict)}` }));
+      }
+      if (investorScorecard) {
+        await send({ type: "investor_scorecard", investor_scorecard: investorScorecard, trace: [...trace] });
+      }
+
       // ── Persist (best-effort; never breaks streaming) ─────────────────────
       // workspaceId is guaranteed non-empty here (resolved above); the empty
       // case skips explicitly so no NULL write ever reaches the DB.
@@ -2560,7 +2669,7 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
             trace.push(makeTrace("executor", "error", { persist_warning: `experiments insert failed: ${msg}` }));
           }
           await supabase.from("trace_events").insert(
-            trace.slice(0, 50).map((t) => ({
+            sliceTraceForPersist(trace).map((t) => ({
               startup_id: startup.id, workspace_id: workspaceId || null,
               actor: t.actor, event_type: t.event_type, payload: t.payload,
               cost_usd: t.cost_usd ?? null, latency_ms: t.latency_ms ?? null,
@@ -2593,6 +2702,8 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
         experiment,
         leads,
         decision,
+        icp_profile: icpProfile ?? null,
+        investor_scorecard: investorScorecard,
         trace,
         stats: {
           tool_calls: toolCalls,
