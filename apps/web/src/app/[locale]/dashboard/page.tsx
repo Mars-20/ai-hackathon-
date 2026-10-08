@@ -157,6 +157,21 @@ export default function DashboardPage() {
     loadDashboard();
   }, [loadDashboard]);
 
+  // ── Task 5: persist account locale ─────────────────────────────────────────
+  // LanguageSwitcher writes the NEXT_LOCALE cookie; this effect writes
+  // profiles.locale so the account locale follows the switch ("switch writes
+  // both", plan Task 5). DB wins at login (login page + auth callback read
+  // it back into the cookie). Fail-open: persistence never blocks the UI
+  // (the RLS update policy lands with the Task 5 migration; until then the
+  // write is a silent no-op).
+  const lastPersistedLocale = useRef<AppLocale | null>(null);
+  const accountId = data.user?.id;
+  useEffect(() => {
+    if (!accountId || lastPersistedLocale.current === locale) return;
+    lastPersistedLocale.current = locale;
+    void supabase.from("profiles").update({ locale }).eq("user_id", accountId);
+  }, [supabase, accountId, locale]);
+
   async function switchWorkspace(ws: WorkspaceWithRole) {
     setShowWorkspaceSwitcher(false);
     try { localStorage.setItem("active_workspace_id", ws.id); } catch {}

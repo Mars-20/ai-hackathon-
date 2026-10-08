@@ -98,6 +98,12 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
+// Task 5: locale-aware number formatting for the CSV export — Arabic UI
+// uses latin digits (ar-EG-u-nu-latn), English UI uses en-US.
+function formatNumber(n: number, locale: "ar" | "en") {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US").format(n);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HistoryPage() {
   const locale = useLocale() as AppLocale;
@@ -213,12 +219,14 @@ export default function HistoryPage() {
     + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   const exportCSV = () => {
-    const header = ["Name", "Domain", "Stage", "Verdict", "Confidence", "Created At"];
+    const header = ["Name", "Domain", "Stage", "Verdict", "Confidence", "Experiments", "Assumptions", "Created At"];
     const rows = records.map(r => [
       r.name, r.domain, r.stage,
       r.latest_decision?.verdict || "—",
       r.latest_decision?.confidence || "—",
-      new Date(r.created_at).toLocaleDateString(),
+      formatNumber(r.experiment_count, locale),
+      formatNumber(r.assumption_stats.total, locale),
+      new Date(r.created_at).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US"),
     ]);
     const csv = [header, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

@@ -6,6 +6,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+type AccountLocale = "ar" | "en";
+
+function asAccountLocale(value: unknown): AccountLocale | null {
+  return value === "ar" || value === "en" ? value : null;
+}
+
+// Task 5: (re-)prefix the post-login destination with the effective locale.
+// Handles both unprefixed ("/dashboard") and already-prefixed ("/en/...") input.
+function withEffectivePrefix(next: string, eff: AccountLocale): string {
+  const m = next.match(/^\/(ar|en)(?=\/|$)/);
+  if (m) return `/${eff}${next.slice(3) || "/"}`;
+  const clean = next.startsWith("/") ? next : `/${next}`;
+  return `/${eff}${clean === "/" ? "" : clean}`;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
@@ -20,6 +35,26 @@ export async function GET(request: NextRequest) {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        // Task 5: DB wins at login — profiles.locale (if set) is written
+        // back to the NEXT_LOCALE cookie and the redirect target is
+        // (re-)prefixed with it; otherwise the cookie-derived locale is
+        // saved to the profile. Fail-open: persistence never blocks login
+        // (the RLS update policy lands with the Task 5 migration; until
+        // then the write is a silent no-op).
+        const cookieLocale = asAccountLocale(request.cookies.get("NEXT_LOCALE")?.value) ?? "en";
+        const { data: profileRow } = await supabase
+          .from("profiles")
+          .select("locale")
+          .eq("user_id", user.id)
+          .single();
+        const dbLocale = asAccountLocale(
+          (profileRow as { locale?: unknown } | null)?.locale,
+        );
+        const effective = dbLocale ?? cookieLocale;
+        if (!dbLocale) {
+          await supabase.from("profiles").update({ locale: cookieLocale }).eq("user_id", user.id);
+        }
+
         // Check if user already has a workspace
         const { data: existingMembership } = await supabase
           .from("workspace_members")
@@ -51,8 +86,20 @@ export async function GET(request: NextRequest) {
             });
           }
         }
+
+        // Task 5 locale-aware redirect (DB locale wins over the `next` prefix).
+        const dest = withEffectivePrefix(next, effective);
+        const res = NextResponse.redirect(`${origin}${dest}`);
+        res.cookies.set("NEXT_LOCALE", effective, {
+          path: "/",
+          maxAge: 31536000,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+        });
+        return res;
       }
 
+      // Exchange succeeded but no user resolved — legacy behavior.
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

@@ -15,6 +15,23 @@ import {
 
 type AuthMode = "login" | "signup";
 
+// Task 5: account locale sync — DB wins at login. If profiles.locale is set
+// it is written back to the NEXT_LOCALE cookie and navigation uses it;
+// otherwise the current (cookie-derived) locale is saved to the profile.
+// Fail-open: auth navigation never waits on / fails from persistence (the
+// RLS update policy lands with the Task 5 migration; until then the write
+// is a silent no-op).
+function readDbLocale(row: unknown): AppLocale | null {
+  const raw = (row as { locale?: unknown } | null)?.locale;
+  return raw === "ar" || raw === "en" ? raw : null;
+}
+
+function nextForLocale(base: string, eff: AppLocale): string {
+  const m = base.match(/^\/(ar|en)(?=\/|$)/);
+  if (m) return `/${eff}${base.slice(3) || "/"}`;
+  return withLocale(base, eff);
+}
+
 function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,12 +51,41 @@ function AuthForm() {
 
   const supabase = createClient();
 
+  async function syncAccountLocale(current: AppLocale): Promise<AppLocale> {
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) return current;
+      const { data: row } = await supabase
+        .from("profiles")
+        .select("locale")
+        .eq("user_id", u.id)
+        .single();
+      const dbLocale = readDbLocale(row);
+      if (dbLocale) {
+        document.cookie = `NEXT_LOCALE=${dbLocale}; Path=/; Max-Age=31536000; SameSite=Lax`;
+        return dbLocale;
+      }
+      void supabase.from("profiles").update({ locale: current }).eq("user_id", u.id);
+      return current;
+    } catch {
+      return current;
+    }
+  }
+
   // Check if user is already logged in
   useEffect(() => {
+    let cancelled = false;
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) router.replace(nextPath);
+      if (!user || cancelled) return;
+      // OAuth logins sync in the auth callback route; this covers the
+      // already-logged-in visit (DB locale wins over the URL prefix).
+      void syncAccountLocale(locale).then((eff) => {
+        if (!cancelled) router.replace(nextForLocale(nextPath, eff));
+      });
     });
-  }, [supabase.auth, router, nextPath]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase.auth, router, nextPath, locale]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +121,8 @@ function AuthForm() {
           password,
         });
         if (signInError) throw signInError;
-        router.push(nextPath);
+        const eff = await syncAccountLocale(locale);
+        router.push(nextForLocale(nextPath, eff));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Authentication failed";
