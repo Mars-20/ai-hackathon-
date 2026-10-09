@@ -127,6 +127,7 @@ export interface Evidence {
   evidence_type: EvidenceType;
   source_type?: SourceType;
   source_url?: string;
+  grounding_status?: string | null;
   claim: string;
   strength: EvidenceStrength;
   sample_size?: number;

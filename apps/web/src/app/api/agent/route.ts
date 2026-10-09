@@ -27,6 +27,9 @@ import {
   parseInvestorScorecard,
   shouldRunInvestorReadiness,
   sliceTraceForPersist,
+  isGroundedEvidence,
+  splitEvidenceByGrounding,
+  claimHasNumericContent,
   type MarketNumbers,
 } from "@/lib/skills-helpers";
 import {
@@ -1195,6 +1198,7 @@ async function runMarketResearchSkill(
             evidence_type: "secondary",
             source_type: "web_search",
             source_url: r.url,
+            grounding_status: "grounded",
             claim: r.claim,
             strength: "opinion", // secondary evidence max is opinion in the ladder
             collected_at: new Date().toISOString(),
@@ -1205,6 +1209,7 @@ async function runMarketResearchSkill(
             startup_id: startup.id,
             assumption_id: criticalAssumption?.id,
             evidence_type: "secondary",
+            grounding_status: "unverified",
             claim: r.claim,
             strength: "opinion",
             collected_at: new Date().toISOString(),
@@ -1214,6 +1219,7 @@ async function runMarketResearchSkill(
               warning: "ungrounded",
               query,
               claim: r.claim.slice(0, 120),
+              numeric: claimHasNumericContent(r.claim),
             })
           );
         }
@@ -2638,11 +2644,20 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
             );
           }
           if (allEvidence.length > 0) {
+            const gate = splitEvidenceByGrounding(allEvidence);
+            trace.push(
+              makeTrace("skill:market-research", "verification", {
+                action: "persistence_gate",
+                grounded: gate.grounded.length,
+                unverified: gate.ungrounded.length,
+              })
+            );
             await supabase.from("evidence").insert(
               allEvidence.map((e) => ({
                 id: e.id, startup_id: startup.id, workspace_id: workspaceId || null,
                 assumption_id: e.assumption_id ?? null, evidence_type: e.evidence_type,
                 source_type: e.source_type ?? null, source_url: e.source_url ?? null,
+                grounding_status: isGroundedEvidence(e) ? "grounded" : "unverified",
                 claim: e.claim, strength: e.strength, sample_size: e.sample_size ?? null,
               }))
             );
