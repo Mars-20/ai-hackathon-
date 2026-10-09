@@ -286,7 +286,9 @@ function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
             {e.sample_size && e.sample_size > 1 && (
               <span className="text-xs text-slate-500">n={e.sample_size}</span>
             )}
-            {(e.grounding_status === "unverified" || e.grounding_status === "quarantined") ? (
+            {(e.grounding_status === "unverified" ||
+              e.grounding_status === "quarantined" ||
+              (typeof e.grounding_status === "string" && e.grounding_status.trim() === "")) ? (
               <span className="badge text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 ms-auto">
                 Unverified — not evidence
               </span>

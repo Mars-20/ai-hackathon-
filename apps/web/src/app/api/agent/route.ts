@@ -1697,7 +1697,7 @@ async function runDecisionMemoSkill(
 
   const evidenceSummary = groundedEvidence
     .slice(0, 10)
-    .map((e) => `[${e.evidence_type}/${e.strength}] ${toUntrusted(e.claim)} (${e.source_url})`)
+    .map((e) => `[${e.evidence_type}/${e.strength}] ${toUntrusted(e.claim)}${e.source_url ? ` (${toUntrusted(e.source_url)})` : ""}`)
     .join("\n");
 
   const withheldLine =
@@ -1709,7 +1709,7 @@ async function runDecisionMemoSkill(
 
 STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
 
-GROUNDED EVIDENCE (${groundedEvidence.length} items, all URL-backed):
+GROUNDED EVIDENCE (${groundedEvidence.length} items: secondary URL-backed, primary by provenance):
 ${evidenceSummary}
 ${withheldLine ? `${withheldLine}\n` : ""}${marketBlock(marketCtx)}
 THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go threshold: ${thresholdReason}`}
@@ -1950,7 +1950,7 @@ async function runVerifier(
 
   const evidenceList = evidence
     .slice(0, 8)
-    .map((e) => `- [${e.source_type ?? "internal"}] ${toUntrusted(e.claim)} (${e.source_url ?? "no URL"})`)
+    .map((e) => `- [${e.source_type ?? "internal"}] ${toUntrusted(e.claim)} (${toUntrusted(e.source_url ?? "no URL")})`)
     .join("\n");
 
   const prompt = `Check if the output claims are supported by the actual evidence retrieved.

@@ -135,18 +135,26 @@ export interface Groundable {
   grounding_status?: string | null;
 }
 
-function isHttpUrlLocal(url: unknown): url is string {
+// Canonical strict URL validator (single source of truth): only http(s)
+// URLs returned by a tool may be emitted as citations. Rejects non-strings,
+// blank input, and non-http(s) schemes via URL parsing (no regex allowlist).
+export function isHttpUrlStrict(url: string | null | undefined): boolean {
   if (typeof url !== "string") return false;
-  const t = url.trim();
-  return /^https?:\/\/\S/i.test(t);
+  try {
+    const u = new URL(url.trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
-export function isGroundedEvidence(e: Groundable): boolean {
-  if (e.evidence_type === "primary") return true;
+export function isGroundedEvidence(e: Groundable | null | undefined): boolean {
+  if (!e) return false;
+  if (e?.evidence_type === "primary") return true;
   const gs = e?.grounding_status;
   if (gs !== undefined && gs !== null && gs !== "grounded") return false;
   if (typeof e?.source_type !== "string" || e.source_type.trim().length === 0) return false;
-  return isHttpUrlLocal(e?.source_url);
+  return isHttpUrlStrict(e?.source_url);
 }
 
 export function splitEvidenceByGrounding<T extends Groundable>(rows: T[]): { grounded: T[]; ungrounded: T[] } {

@@ -113,6 +113,7 @@ export function validateQuestion(question: string): QuestionValidationResult {
 
 import type { EvidenceStrength, Confidence, Verdict } from "./types";
 import type { Groundable } from "./skills-helpers";
+import { isHttpUrlStrict } from "./skills-helpers";
 
 export const STRENGTH_RUNG: Record<EvidenceStrength, number> = {
   opinion: 1,
@@ -254,7 +255,9 @@ export function claimHasUrlSupport(
   const numbers = line.match(/\d[\d.,%]*/g) ?? [];
   return evidence.some((e) => {
     if (e.grounding_status !== undefined && e.grounding_status !== null && e.grounding_status !== "grounded") return false;
-    if (!e.source_url || !e.claim) return false;
+    if (typeof e.source_type !== "string" || e.source_type.trim().length === 0) return false;
+    if (!isHttpUrlStrict(e.source_url)) return false;
+    if (!e.claim) return false;
     const claimLower = e.claim.toLowerCase();
     const claimTokens = claimLower.split(/[^a-z0-9\u0600-\u06ff]+/u).filter((t) => t.length >= 4);
     if (claimTokens.some((t) => tokens.has(t))) return true;

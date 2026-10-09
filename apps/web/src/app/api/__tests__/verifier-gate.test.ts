@@ -42,6 +42,7 @@ describe("I3: deterministic verifier is per-claim (claim↔evidence URL), not gl
     {
       claim: "Competitor pricing starts at $49 per seat per month",
       source_url: "https://pricing.example/vendor-page",
+      source_type: "web_search",
     },
   ];
 
@@ -156,7 +157,7 @@ it("ignores ungrounded rows in URL support even when the claim text matches", ()
 it("treats NULL grounding_status with URL as legacy grounded", () => {
   const line = "The market is worth $216.5B according to analysts";
   const rows = [
-    { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: null },
+    { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: null, source_type: "web_search" },
   ];
   expect(claimHasUrlSupport(line, rows)).toBe(true);
 });
@@ -164,17 +165,31 @@ it("ignores URL-bearing rows whose grounding_status is not grounded", () => {
   const line = "The market is worth $216.5B according to analysts";
   expect(
     claimHasUrlSupport(line, [
-      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "unverified" },
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "unverified", source_type: "web_search" },
     ])
   ).toBe(false);
   expect(
     claimHasUrlSupport(line, [
-      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "quarantined" },
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "quarantined", source_type: "web_search" },
     ])
   ).toBe(false);
   expect(
     claimHasUrlSupport(line, [
-      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "grounded" },
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "grounded", source_type: "web_search" },
     ])
   ).toBe(true);
+});
+it("requires non-empty source_type and strict http(s) URL (partition alignment)", () => {
+  const line = "The market is worth $216.5B according to analysts";
+  const base = {
+    claim: "Global market valued at $216.5B in 2024",
+    source_url: "https://example.com/r",
+    grounding_status: "grounded",
+    source_type: "web_search",
+  };
+  expect(claimHasUrlSupport(line, [base])).toBe(true);
+  expect(claimHasUrlSupport(line, [{ ...base, source_type: "" }])).toBe(false);
+  expect(claimHasUrlSupport(line, [{ ...base, source_type: null }])).toBe(false);
+  expect(claimHasUrlSupport(line, [{ ...base, source_url: "ftp://example.com/r" }])).toBe(false);
+  expect(claimHasUrlSupport(line, [{ ...base, source_url: "not a url" }])).toBe(false);
 });

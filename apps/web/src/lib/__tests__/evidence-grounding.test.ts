@@ -28,6 +28,10 @@ describe("isGroundedEvidence", () => {
       isGroundedEvidence({ source_type: "web_search", source_url: "https://example.com/report", grounding_status: "quarantined" })
     ).toBe(false);
   });
+  it("returns false for null/undefined input (null guard)", () => {
+    expect(isGroundedEvidence(null)).toBe(false);
+    expect(isGroundedEvidence(undefined)).toBe(false);
+  });
 });
 
 describe("claimHasNumericContent", () => {

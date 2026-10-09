@@ -42,7 +42,7 @@
 
 ## File structure
 
-- Modify: `apps/web/src/lib/skills-helpers.ts` — add `isGroundedEvidence`, `splitEvidenceByGrounding`, `claimHasNumericContent`, `withGroundingStatus` (pure, unit-tested).
+- Modify: `apps/web/src/lib/skills-helpers.ts` — add `isGroundedEvidence`, `splitEvidenceByGrounding`, `claimHasNumericContent` (pure, unit-tested).
 - Test: `apps/web/src/lib/__tests__/evidence-grounding.test.ts` — new, covers the four helpers.
 - Modify: `apps/web/src/app/api/agent/route.ts` — creation tagging (`runMarketResearchSkill` else-branch), memo `evidenceSummary` + verifier support set (`runDecisionMemoSkill`), persistence safety net (insert block), per-run trace counts.
 - Modify: `apps/web/src/lib/utils.ts` — `VerifierEvidence` input type gains optional `grounding_status`; `claimHasUrlSupport` skips `grounding_status !== 'grounded'` rows (NULL = legacy grounded).
