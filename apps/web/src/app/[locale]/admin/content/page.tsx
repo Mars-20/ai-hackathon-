@@ -11,6 +11,7 @@
 // traces) — the same run-detail target linked from the ops audit table.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import ContentActions from "@/components/admin/ContentActions";
 import {
   parseAdminTableParams,
@@ -78,6 +79,8 @@ export default async function AdminContentPage({
   const { locale } = await routeParams;
   const appLocale = locale as AppLocale;
   const contentBase = withLocale("/admin/content", appLocale);
+  const t = await getTranslations("admin.content");
+  const tShared = await getTranslations("shared");
   const raw = await searchParams;
   const params = parseAdminTableParams(
     raw,
@@ -200,11 +203,10 @@ export default async function AdminContentPage({
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-black mb-1">
-          Admin <span className="gradient-text">Content</span>
+          {t("titlePrefix")} <span className="gradient-text">{t("titleAccent")}</span>
         </h1>
         <p className="text-slate-400 text-sm">
-          Decision review queue · flag hides from the unflagged filter only
-          (no effect on agent output) · screening requires admin/owner
+          {t("sub")}
         </p>
       </div>
 
@@ -217,36 +219,36 @@ export default async function AdminContentPage({
         <input type="hidden" name="order" value={params.order} />
         <input type="hidden" name="limit" value={String(params.limit)} />
         <label className="text-xs text-slate-400 space-y-1">
-          Search
+          {t("filters.search")}
           <input
             type="text"
             name="q"
             defaultValue={params.q ?? ""}
             minLength={2}
-            placeholder="Name, claim, lead email…"
+            placeholder={t("filters.searchPlaceholder")}
             className="block glass rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent w-56"
           />
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Flagged
+          {t("filters.flagged")}
           <select
             name="flagged"
             defaultValue={flagged ?? ""}
             className="block glass rounded-lg px-2 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent"
           >
-            <option value="">All</option>
-            <option value="true">Flagged</option>
-            <option value="false">Unflagged</option>
+            <option value="">{t("filters.allOpt")}</option>
+            <option value="true">{t("filters.flaggedOpt")}</option>
+            <option value="false">{t("filters.unflaggedOpt")}</option>
           </select>
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Verdict
+          {t("filters.verdict")}
           <select
             name="verdict"
             defaultValue={verdict ?? ""}
             className="block glass rounded-lg px-2 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent"
           >
-            <option value="">Any verdict</option>
+            <option value="">{t("filters.anyVerdict")}</option>
             {VALID_VERDICTS.map((v) => (
               <option key={v} value={v}>
                 {v}
@@ -255,13 +257,13 @@ export default async function AdminContentPage({
           </select>
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Confidence
+          {t("filters.confidence")}
           <select
             name="confidence"
             defaultValue={confidence ?? ""}
             className="block glass rounded-lg px-2 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent"
           >
-            <option value="">Any confidence</option>
+            <option value="">{t("filters.anyConfidence")}</option>
             {VALID_CONFIDENCE.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -273,7 +275,7 @@ export default async function AdminContentPage({
           type="submit"
           className="glass glass-hover px-4 py-2 rounded-xl text-sm border border-white/5 text-slate-300"
         >
-          Apply
+          {tShared("actions.apply")}
         </button>
       </form>
 
@@ -281,31 +283,33 @@ export default async function AdminContentPage({
         <div className="glass rounded-2xl p-5 border border-white/10 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-slate-200">
-              {details !== null ? details.startupName : "Startup detail"}
+              {details !== null ? details.startupName : t("detailFallback")}
             </h2>
             <Link
               href={pageBase}
               className="text-xs text-slate-500 hover:text-slate-300"
             >
-              Close ✕
+              {tShared("actions.close")} ✕
             </Link>
           </div>
           {details === null ? (
             <p className="text-sm text-slate-500">
-              Detail unavailable (out of scope or not found).
+              {t("detailUnavailable")}
             </p>
           ) : (
             <div className="text-sm text-slate-300 space-y-3">
               <p className="text-xs text-slate-500">
-                {details.assumptions} assumptions · {details.traces} trace
-                events
+                {t("detailCountsPattern", {
+                  assumptions: details.assumptions,
+                  traces: details.traces,
+                })}
               </p>
               <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                  Decisions
+                  {t("detailDecisions")}
                 </p>
                 {details.decisions.length === 0 ? (
-                  <p className="text-xs text-slate-500">No decisions yet.</p>
+                  <p className="text-xs text-slate-500">{t("noDecisions")}</p>
                 ) : (
                   <ul className="space-y-1">
                     {details.decisions.map((d, i) => (
@@ -322,10 +326,10 @@ export default async function AdminContentPage({
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                  Evidence (first 10 claims)
+                  {t("detailEvidence")}
                 </p>
                 {details.evidence.length === 0 ? (
-                  <p className="text-xs text-slate-500">No evidence.</p>
+                  <p className="text-xs text-slate-500">{t("noEvidence")}</p>
                 ) : (
                   <ul className="space-y-1 list-disc list-inside text-xs text-slate-400">
                     {details.evidence.map((e, i) => (
@@ -342,7 +346,7 @@ export default async function AdminContentPage({
       {loadError !== null || data === null ? (
         <div className="glass rounded-2xl p-10 text-center border border-red-500/20">
           <p className="text-red-300 text-sm">
-            {loadError ?? "Failed to load content"}
+            {loadError ?? t("loadFailed")}
           </p>
         </div>
       ) : (
@@ -351,34 +355,34 @@ export default async function AdminContentPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     <Link
                       href={sortHref(contentBase, current, extra, "name", params.sort, params.order)}
                       className="hover:text-brand-400 transition-colors"
                     >
-                      Startup
+                      {t("cols.startup")}
                       {params.sort === "name" &&
                         (params.order === "desc" ? " ▼" : " ▲")}
                     </Link>
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Latest decision
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("cols.latestDecision")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Evidence
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("cols.evidence")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     <Link
                       href={sortHref(contentBase, current, extra, "flagged", params.sort, params.order)}
                       className="hover:text-brand-400 transition-colors"
                     >
-                      Flag
+                      {t("cols.flag")}
                       {params.sort === "flagged" &&
                         (params.order === "desc" ? " ▼" : " ▲")}
                     </Link>
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Actions
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("cols.actions")}
                   </th>
                 </tr>
               </thead>
@@ -389,7 +393,7 @@ export default async function AdminContentPage({
                       colSpan={5}
                       className="px-4 py-10 text-center text-sm text-slate-500"
                     >
-                      No startups match these filters.
+                      {t("emptyQueue")}
                     </td>
                   </tr>
                 ) : (
@@ -403,7 +407,7 @@ export default async function AdminContentPage({
                           href={`${pageBase}&startup_id=${encodeURIComponent(s.id)}`}
                           className="text-brand-400 hover:text-brand-300"
                         >
-                          {s.name.length > 0 ? s.name : "Untitled"}
+                          {s.name.length > 0 ? s.name : t("untitled")}
                         </Link>
                         {s.one_liner.length > 0 && (
                           <span className="block text-xs text-slate-500 mt-0.5">
@@ -439,7 +443,7 @@ export default async function AdminContentPage({
                         <ContentActions
                           startupId={s.id}
                           startupName={
-                            s.name.length > 0 ? s.name : "this startup"
+                            s.name.length > 0 ? s.name : t("untitledStartup")
                           }
                           flagged={s.flagged}
                         />
@@ -456,29 +460,30 @@ export default async function AdminContentPage({
               <Link
                 href={`${pageBase}&page=${data.page - 1}`}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-                aria-label="Previous page"
+                aria-label={tShared("misc.previousPage")}
               >
-                ←
+                <span className="inline-block rtl:scale-x-[-1]">←</span>
               </Link>
             ) : (
               <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-                ←
+                <span className="inline-block rtl:scale-x-[-1]">←</span>
               </span>
             )}
             <span className="text-xs text-slate-500">
-              Page {data.page} of {data.pages} · {data.total} total
+              {tShared("pagination.pageXofY", { x: data.page, y: data.pages })} ·{" "}
+              {tShared("pagination.totalOf", { total: data.total })}
             </span>
             {data.page < data.pages ? (
               <Link
                 href={`${pageBase}&page=${data.page + 1}`}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-                aria-label="Next page"
+                aria-label={tShared("misc.nextPage")}
               >
-                →
+                <span className="inline-block rtl:scale-x-[-1]">→</span>
               </Link>
             ) : (
               <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-                →
+                <span className="inline-block rtl:scale-x-[-1]">→</span>
               </span>
             )}
           </div>

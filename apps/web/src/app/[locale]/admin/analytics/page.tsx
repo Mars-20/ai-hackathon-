@@ -11,6 +11,7 @@
 // 7d/30d/90d; workspace-tier rows are scoped server-side by the helper.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import AnalyticsAutoRefresh from "@/components/admin/AnalyticsAutoRefresh";
 import KpiCard from "@/components/admin/KpiCard";
 import ReportGenerator from "@/components/admin/ReportGenerator";
@@ -131,7 +132,8 @@ function narrowExperiments(body: unknown): {
   return { experiments, total };
 }
 
-function RunsChart({ trends }: { trends: TrendPoint[] }) {
+async function RunsChart({ trends }: { trends: TrendPoint[] }) {
+  const t = await getTranslations("admin.analytics");
   const width = 640;
   const height = 180;
   const pad = 28;
@@ -144,21 +146,25 @@ function RunsChart({ trends }: { trends: TrendPoint[] }) {
       viewBox={`0 0 ${width} ${height}`}
       className="w-full h-44"
       role="img"
-      aria-label="Runs per day bar chart"
+      aria-label={t("chartAria")}
     >
-      {trends.map((t, i) => {
-        const h = ((height - pad * 2) * t.runs) / maxRuns;
+      {trends.map((p, i) => {
+        const h = ((height - pad * 2) * p.runs) / maxRuns;
         const x = pad + slot * i + (slot - barW) / 2;
         const y = height - pad - h;
         return (
-          <g key={t.day}>
+          <g key={p.day}>
             {/* NOTE: <desc>, not <title>. React 19 treats <title> as a
                 hoistable head resource even inside <svg>, so SSR streams
                 it as an empty element while Flight keeps the text — a
                 guaranteed hydration mismatch (React error #418). <desc>
                 carries the same accessible description with no hoisting. */}
             <desc>
-              {t.day}: {t.runs} runs, ${t.cost.toFixed(2)}
+              {t("chartDescPattern", {
+                day: p.day,
+                runs: p.runs,
+                cost: p.cost.toFixed(2),
+              })}
             </desc>
             <rect
               x={x}
@@ -220,7 +226,7 @@ function DistributionBars({
               style={{ width: `${(e.count / max) * 100}%` }}
             />
           </div>
-          <span className="w-10 text-right text-xs text-slate-300">
+          <span className="w-10 text-end text-xs text-slate-300">
             {e.count}
           </span>
         </div>
@@ -242,6 +248,8 @@ export default async function AdminAnalyticsPage({
   const window: string = (WINDOWS as readonly string[]).includes(windowStr)
     ? windowStr
     : "7d";
+  const t = await getTranslations("admin.analytics");
+  const tShared = await getTranslations("shared");
 
   // Snapshot and experiments table are independent — one concurrent DAL
   // round (same helpers the GET routes delegate to, so figures are
@@ -266,11 +274,11 @@ export default async function AdminAnalyticsPage({
   let loadError =
     analyticsResult.ok === true
       ? null
-      : (analyticsResult.error.message ?? "Failed to load analytics");
+      : (analyticsResult.error.message ?? t("loadFailed"));
 
   const data = body !== null ? narrowAnalytics(body) : null;
   if (data === null && loadError === null) {
-    loadError = "Unexpected analytics response shape";
+    loadError = t("badShape");
   }
 
   // Experiments table (auxiliary — never fails the analytics snapshot).
@@ -292,10 +300,10 @@ export default async function AdminAnalyticsPage({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black mb-1">
-            Admin <span className="gradient-text">Analytics</span>
+            {t("titlePrefix")} <span className="gradient-text">{t("titleAccent")}</span>
           </h1>
           <p className="text-slate-400 text-sm">
-            Costs are estimated (COST_TABLE metering, not provider billing)
+            {t("sub")}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -321,21 +329,21 @@ export default async function AdminAnalyticsPage({
       {loadError !== null || data === null ? (
         <div className="glass rounded-2xl p-10 text-center border border-red-500/20">
           <p className="text-red-300 text-sm">
-            {loadError ?? "Failed to load analytics"}
+            {loadError ?? t("loadFailed")}
           </p>
         </div>
       ) : (
         <>
           {data.truncated && (
             <p className="text-xs text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 rounded-xl px-4 py-2 mb-4">
-              Server caps bound this window — figures may be truncated.
+              {tShared("misc.truncatedNote")}
             </p>
           )}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <KpiCard label={`Runs (${window})`} value={String(totalRuns)} />
-            <KpiCard label={`Signups (${window})`} value={String(data.signups)} />
+            <KpiCard label={t("kpi.runsPattern", { window })} value={String(totalRuns)} />
+            <KpiCard label={t("kpi.signupsPattern", { window })} value={String(data.signups)} />
             <KpiCard
-              label="Cost / run"
+              label={t("kpi.costPerRun")}
               value={
                 data.costPerRun === null
                   ? "—"
@@ -344,7 +352,7 @@ export default async function AdminAnalyticsPage({
               estimated={data.costPerRun !== null}
             />
             <KpiCard
-              label="Unsupported-claim rate"
+              label={t("kpi.unsupportedRate")}
               value={
                 data.unsupportedClaimRate === null
                   ? "—"
@@ -356,11 +364,11 @@ export default async function AdminAnalyticsPage({
           <div className="grid lg:grid-cols-2 gap-4 mb-8">
             <div className="glass rounded-2xl p-5 border border-white/5">
               <h2 className="text-sm font-bold text-slate-200 mb-3">
-                Runs per day
+                {t("runsPerDay")}
               </h2>
               {data.trends.length === 0 ? (
                 <p className="text-sm text-slate-500 py-8 text-center">
-                  No runs in this window.
+                  {tShared("misc.noRunsInWindow")}
                 </p>
               ) : (
                 <RunsChart trends={data.trends} />
@@ -368,7 +376,7 @@ export default async function AdminAnalyticsPage({
             </div>
             <div className="glass rounded-2xl p-5 border border-white/5">
               <h2 className="text-sm font-bold text-slate-200 mb-3">
-                Verdict distribution ({data.distribution.total} decisions)
+                {t("verdictTitlePattern", { total: data.distribution.total })}
               </h2>
               <DistributionBars distribution={data.distribution} />
             </div>
@@ -376,19 +384,19 @@ export default async function AdminAnalyticsPage({
         </>
       )}
 
-      <h2 className="text-lg font-bold text-slate-200 mb-3">Experiments</h2>
+      <h2 className="text-lg font-bold text-slate-200 mb-3">{t("experimentsTitle")}</h2>
       <div className="glass rounded-2xl border border-white/5 overflow-x-auto mb-4">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Name
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("expCols.name")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Status
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("expCols.status")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Sample size
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("expCols.sampleSize")}
               </th>
             </tr>
           </thead>
@@ -399,7 +407,7 @@ export default async function AdminAnalyticsPage({
                   colSpan={3}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  No experiments found.
+                  {t("emptyExperiments")}
                 </td>
               </tr>
             ) : (
@@ -420,16 +428,16 @@ export default async function AdminAnalyticsPage({
         </table>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        Showing {experiments.length} of {experimentsTotal} ·{" "}
+        {t("showingPattern", { shown: experiments.length, total: experimentsTotal })}{" "}
         {experimentsTotal === 0 ? (
-          <span className="text-slate-600">No data to export yet</span>
+          <span className="text-slate-600">{t("noExport")}</span>
         ) : (
           <a
             href="/api/admin/analytics/experiments?format=csv&sort=name&order=asc"
             download
             className="text-brand-400 hover:text-brand-300"
           >
-            Download full CSV
+            {t("downloadFull")}
           </a>
         )}
       </p>

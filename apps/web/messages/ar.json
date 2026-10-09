@@ -744,6 +744,101 @@
         "runs": "التشغيلات",
         "cost": "التكلفة (تقديرية)"
       }
+    },
+    "analytics": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "التحليلات",
+      "sub": "التكاليف تقديرية (بعدّاد COST_TABLE مش بالفاتورة الفعلية)",
+      "loadFailed": "فشل تحميل التحليلات",
+      "badShape": "شكل رد التحليلات غير متوقع",
+      "chartAria": "رسم بياني للأعمدة: التشغيلات في اليوم",
+      "chartDescPattern": "{day}: {runs} تشغيل، ${cost}",
+      "kpi": {
+        "runsPattern": "التشغيلات ({window})",
+        "signupsPattern": "التسجيلات ({window})",
+        "costPerRun": "التكلفة للتشغيل الواحد",
+        "unsupportedRate": "نسبة الادعاءات غير المدعومة"
+      },
+      "runsPerDay": "التشغيلات في اليوم",
+      "verdictTitlePattern": "توزيع القرارات ({total} قرار)",
+      "experimentsTitle": "التجارب",
+      "expCols": {
+        "name": "الاسم",
+        "status": "الحالة",
+        "sampleSize": "حجم العينة"
+      },
+      "emptyExperiments": "مفيش تجارب.",
+      "showingPattern": "عرض {shown} من {total}",
+      "noExport": "مفيش بيانات للتصدير لسه",
+      "downloadFull": "حمّل CSV كامل"
+    },
+    "content": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "المحتوى",
+      "sub": "قائمة مراجعة القرارات · الفلاج بيخفي من فلتر المش متفلّج بس (مبيأثرش على شغل الوكيل) · الفرز محتاج أدمن/مالك",
+      "loadFailed": "فشل تحميل المحتوى",
+      "filters": {
+        "search": "دوّر",
+        "searchPlaceholder": "الاسم، الادعاء، إيميل العميل…",
+        "flagged": "الفلاج",
+        "allOpt": "الكل",
+        "flaggedOpt": "متفلّج",
+        "unflaggedOpt": "مش متفلّج",
+        "verdict": "القرار",
+        "anyVerdict": "أي قرار",
+        "confidence": "الثقة",
+        "anyConfidence": "أي ثقة"
+      },
+      "detailFallback": "تفاصيل الشركة",
+      "detailUnavailable": "التفاصيل مش متاحة (بره النطاق أو مش موجودة).",
+      "detailCountsPattern": "{assumptions} افتراض · {traces} حدث تتبع",
+      "detailDecisions": "القرارات",
+      "noDecisions": "مفيش قرارات لسه.",
+      "detailEvidence": "الأدلة (أول 10 ادعاءات)",
+      "noEvidence": "مفيش أدلة.",
+      "cols": {
+        "startup": "الشركة",
+        "latestDecision": "آخر قرار",
+        "evidence": "الأدلة",
+        "flag": "الفلاج",
+        "actions": "إجراءات"
+      },
+      "emptyQueue": "مفيش شركات مطابقة للفلاتر دي.",
+      "untitled": "من غير اسم",
+      "untitledStartup": "الشركة دي"
+    },
+    "tables": {
+      "noRows": "مفيش صفوف."
+    },
+    "errors": {
+      "networkError": "حصلت مشكلة في الشبكة — حاول تاني",
+      "requestFailed": "الطلب فشل"
+    },
+    "dialogs": {
+      "screenConfirmPattern": "افرز {name}؟ الاعتماد بيسجل قرار go، والرفض بيسجل stop. محتاج أدمن/مالك."
+    },
+    "contentActions": {
+      "flag": "فلاج",
+      "unflag": "شيل الفلاج",
+      "screen": "افرز",
+      "screenTitle": "شاشة السياسة — محتاجة أدمن/مالك (الـ API هو اللي بيمنع)",
+      "confidenceAria": "الثقة",
+      "rationalePlaceholder": "السبب (اختياري، بيتسجل على القرار)",
+      "approve": "اعتماد",
+      "reject": "رفض"
+    },
+    "report": {
+      "title": "مولّد التقارير",
+      "sub": "تصدير جدول التجارب (CSV بترميز RFC 4180). حسب صلاحيتك عن طريق الـ API.",
+      "sortBy": "رتّب حسب",
+      "order": "الترتيب",
+      "emptyTitle": "مفيش تجارب لسه — مفيش حاجة للتصدير"
+    },
+    "autoRefresh": {
+      "prefix": "التحديث التلقائي",
+      "pausedNote": "موقوف (التبويب مخفي)",
+      "intervalNote": "كل 60 ثانية",
+      "updatedNote": "آخر تحديث"
     }
   }
 }

@@ -744,6 +744,101 @@
         "runs": "Runs",
         "cost": "Cost (est.)"
       }
+    },
+    "analytics": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Analytics",
+      "sub": "Costs are estimated (COST_TABLE metering, not provider billing)",
+      "loadFailed": "Failed to load analytics",
+      "badShape": "Unexpected analytics response shape",
+      "chartAria": "Runs per day bar chart",
+      "chartDescPattern": "{day}: {runs} runs, ${cost}",
+      "kpi": {
+        "runsPattern": "Runs ({window})",
+        "signupsPattern": "Signups ({window})",
+        "costPerRun": "Cost / run",
+        "unsupportedRate": "Unsupported-claim rate"
+      },
+      "runsPerDay": "Runs per day",
+      "verdictTitlePattern": "Verdict distribution ({total} decisions)",
+      "experimentsTitle": "Experiments",
+      "expCols": {
+        "name": "Name",
+        "status": "Status",
+        "sampleSize": "Sample size"
+      },
+      "emptyExperiments": "No experiments found.",
+      "showingPattern": "Showing {shown} of {total}",
+      "noExport": "No data to export yet",
+      "downloadFull": "Download full CSV"
+    },
+    "content": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Content",
+      "sub": "Decision review queue · flag hides from the unflagged filter only (no effect on agent output) · screening requires admin/owner",
+      "loadFailed": "Failed to load content",
+      "filters": {
+        "search": "Search",
+        "searchPlaceholder": "Name, claim, lead email…",
+        "flagged": "Flagged",
+        "allOpt": "All",
+        "flaggedOpt": "Flagged",
+        "unflaggedOpt": "Unflagged",
+        "verdict": "Verdict",
+        "anyVerdict": "Any verdict",
+        "confidence": "Confidence",
+        "anyConfidence": "Any confidence"
+      },
+      "detailFallback": "Startup detail",
+      "detailUnavailable": "Detail unavailable (out of scope or not found).",
+      "detailCountsPattern": "{assumptions} assumptions · {traces} trace events",
+      "detailDecisions": "Decisions",
+      "noDecisions": "No decisions yet.",
+      "detailEvidence": "Evidence (first 10 claims)",
+      "noEvidence": "No evidence.",
+      "cols": {
+        "startup": "Startup",
+        "latestDecision": "Latest decision",
+        "evidence": "Evidence",
+        "flag": "Flag",
+        "actions": "Actions"
+      },
+      "emptyQueue": "No startups match these filters.",
+      "untitled": "Untitled",
+      "untitledStartup": "this startup"
+    },
+    "tables": {
+      "noRows": "No rows found."
+    },
+    "errors": {
+      "networkError": "Network error — please retry",
+      "requestFailed": "Request failed"
+    },
+    "dialogs": {
+      "screenConfirmPattern": "Screen {name}? Approve records a go decision, reject records stop. Requires admin/owner."
+    },
+    "contentActions": {
+      "flag": "Flag",
+      "unflag": "Unflag",
+      "screen": "Screen",
+      "screenTitle": "Policy screen — requires admin/owner (API-enforced)",
+      "confidenceAria": "Confidence",
+      "rationalePlaceholder": "Rationale (optional, stored on the decision)",
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "report": {
+      "title": "Report generator",
+      "sub": "Experiments table export (CSV, RFC 4180 quoting). Scoped to your tier by the API.",
+      "sortBy": "Sort by",
+      "order": "Order",
+      "emptyTitle": "No experiments yet — nothing to export"
+    },
+    "autoRefresh": {
+      "prefix": "Auto-refresh",
+      "pausedNote": "paused (tab hidden)",
+      "intervalNote": "every 60s",
+      "updatedNote": "last updated"
     }
   }
 }
