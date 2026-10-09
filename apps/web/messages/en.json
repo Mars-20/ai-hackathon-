@@ -76,7 +76,44 @@
   },
   "history": {
     "header": {
-      "subPattern": "{total, plural, =0 {0 sessions} =1 {1 session} other {# sessions}} · All your past validation runs, decisions, and experiments"
+      "title": "Validation History",
+      "subPattern": "{total, plural, =0 {0 sessions} =1 {1 session} other {# sessions}} · All your past validation runs, decisions, and experiments",
+      "searchPlaceholder": "Search startups, assumptions, evidence...",
+      "exportCta": "Export",
+      "openTitle": "Open startup",
+      "openParentTitle": "Open parent startup",
+      "noResultsFor": "No results for \"{q}\""
+    },
+    "filters": {
+      "byNamePlaceholder": "Filter by name, domain, one-liner...",
+      "filtersTitle": "Filters",
+      "sortDate": "Sort: Date Created",
+      "sortUpdated": "Sort: Last Updated",
+      "sortName": "Sort: Name",
+      "descTitle": "Descending",
+      "ascTitle": "Ascending",
+      "activeTitle": "Active Filters",
+      "verdict": "Verdict",
+      "stage": "Stage",
+      "confidence": "Confidence",
+      "dateRange": "Date Range",
+      "fromPlaceholder": "From",
+      "toPlaceholder": "To"
+    },
+    "states": {
+      "error": "Failed to load history",
+      "retry": "Retry",
+      "emptyFiltered": "No results match your filters.",
+      "emptyFresh": "No validation sessions yet.",
+      "clearCta": "Clear all",
+      "startCta": "Start Validating"
+    },
+    "cards": {
+      "assumptions": "Assumptions",
+      "validated": "Validated",
+      "experiments": "Experiments",
+      "critical": "{count} critical",
+      "confidencePattern": "{confidence} confidence"
     }
   },
   "landing": {

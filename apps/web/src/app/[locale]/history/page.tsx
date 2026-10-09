@@ -70,11 +70,11 @@ interface SearchResult {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const VERDICT_CONFIG: Record<Verdict, { label: string; icon: ReactElement; color: string; bg: string }> = {
-  go:        { label: "Go",        icon: <CheckCircle2 className="w-3.5 h-3.5" />, color: "#51cf66", bg: "rgba(81,207,102,0.12)" },
-  iterate:   { label: "Iterate",   icon: <RotateCcw className="w-3.5 h-3.5" />,    color: "#ffd43b", bg: "rgba(255,212,59,0.12)" },
-  stop:      { label: "Stop",      icon: <XCircle className="w-3.5 h-3.5" />,      color: "#ff6b6b", bg: "rgba(255,107,107,0.12)" },
-  test_more: { label: "Test More", icon: <FlaskConical className="w-3.5 h-3.5" />, color: "#74c0fc", bg: "rgba(116,192,252,0.12)" },
+const VERDICT_CONFIG: Record<Verdict, { key: "go" | "iterate" | "stop" | "testMore"; icon: ReactElement; color: string; bg: string }> = {
+  go:        { key: "go",        icon: <CheckCircle2 className="w-3.5 h-3.5" />, color: "#51cf66", bg: "rgba(81,207,102,0.12)" },
+  iterate:   { key: "iterate",   icon: <RotateCcw className="w-3.5 h-3.5" />,    color: "#ffd43b", bg: "rgba(255,212,59,0.12)" },
+  stop:      { key: "stop",      icon: <XCircle className="w-3.5 h-3.5" />,      color: "#ff6b6b", bg: "rgba(255,107,107,0.12)" },
+  test_more: { key: "testMore",  icon: <FlaskConical className="w-3.5 h-3.5" />, color: "#74c0fc", bg: "rgba(116,192,252,0.12)" },
 };
 
 const CONFIDENCE_COLOR: Record<Confidence, string> = {
@@ -108,6 +108,17 @@ function formatNumber(n: number, locale: "ar" | "en") {
 export default function HistoryPage() {
   const locale = useLocale() as AppLocale;
   const t = useTranslations("nav");
+  const tH = useTranslations("history");
+  const tShared = useTranslations("shared");
+  // Stage keys from the API resolve to shared.stages labels by id; unknown keys fall back raw.
+  const stageLabel = (key: string) => {
+    try {
+      const v = tShared(`stages.${key}`);
+      return v === `stages.${key}` ? key : v;
+    } catch {
+      return key;
+    }
+  };
   // ── Filter state ────────────────────────────────────────────────────────────
   const [searchQ, setSearchQ] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<Set<Verdict>>(new Set());
@@ -154,16 +165,16 @@ export default function HistoryPage() {
 
     try {
       const res = await fetch(`/api/history?${params}`);
-      if (!res.ok) throw new Error("Failed to load history");
+      if (!res.ok) throw new Error(tH("states.error"));
       const json = await res.json();
       setRecords(json.data || []);
       setMeta(json.meta || { total: 0, page: 1, limit: 20, pages: 0 });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : tShared("errors.unknownError"));
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedQ, verdictFilter, stageFilter, confidenceFilter, dateFrom, dateTo, sortKey, sortOrder, page]);
+  }, [debouncedQ, verdictFilter, stageFilter, confidenceFilter, dateFrom, dateTo, sortKey, sortOrder, page, tH, tShared]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
@@ -238,7 +249,7 @@ export default function HistoryPage() {
   return (
     <div className="min-h-dvh">
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
+      <header className="fixed top-0 start-0 end-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             <Link href={withLocale("/dashboard", locale)} className="flex items-center gap-2">
@@ -255,24 +266,24 @@ export default function HistoryPage() {
 
           {/* Global search bar */}
           <div className="flex-1 max-w-md mx-4 relative" ref={searchRef}>
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+            <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
             <input
               type="text"
               value={globalSearch}
               onChange={e => { setGlobalSearch(e.target.value); setShowSearchDropdown(true); }}
-              placeholder="Search startups, assumptions, evidence..."
-              className="w-full glass rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
+              placeholder={tH("header.searchPlaceholder")}
+              className="w-full glass rounded-xl ps-9 pe-4 py-2 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
               id="global-search-input"
             />
             {isSearching && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="absolute end-3 top-1/2 -translate-y-1/2">
                 <RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin" />
               </div>
             )}
 
             {/* Search dropdown */}
             {showSearchDropdown && searchResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 glass rounded-2xl border border-white/10 shadow-xl overflow-hidden z-50">
+              <div className="absolute top-full start-0 end-0 mt-2 glass rounded-2xl border border-white/10 shadow-xl overflow-hidden z-50">
                 {searchResults.map((result, i) => (
                   <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 transition-colors">
                     <div className="mt-0.5 flex-shrink-0">
@@ -297,16 +308,16 @@ export default function HistoryPage() {
                       <Link
                         href={withLocale(`/validate?startup_id=${result._type === "startup" ? result.id : result.startup_id}`, locale)}
                         onClick={() => setShowSearchDropdown(false)}
-                        title={result._type === "startup" ? "Open startup" : `Open parent startup${result.startup_name ? ` (${result.startup_name})` : ""}`}
-                        aria-label={result._type === "startup" ? "Open startup" : "Open parent startup"}
+                        title={result._type === "startup" ? tH("header.openTitle") : `${tH("header.openParentTitle")}${result.startup_name ? ` (${result.startup_name})` : ""}`}
+                        aria-label={result._type === "startup" ? tH("header.openTitle") : tH("header.openParentTitle")}
                       >
-                        <ArrowRight className="w-3.5 h-3.5 text-slate-500 hover:text-brand-400 transition-colors" />
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-500 hover:text-brand-400 transition-colors rtl:scale-x-[-1]" />
                       </Link>
                     )}
                   </div>
                 ))}
                 {searchResults.length === 0 && (
-                  <div className="px-4 py-6 text-center text-xs text-slate-500">No results for &quot;{globalSearch}&quot;</div>
+                  <div className="px-4 py-6 text-center text-xs text-slate-500">{tH("header.noResultsFor", { q: globalSearch })}</div>
                 )}
               </div>
             )}
@@ -319,8 +330,8 @@ export default function HistoryPage() {
             <Link href={withLocale("/assistant", locale)} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={t("assistant")} aria-label={t("assistant")} id="history-assistant-link">
               <MessageCircle className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("assistant")}</span>
             </Link>
-            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title="Export CSV" aria-label="Export CSV">
-              <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span>
+            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={tH("header.exportCta")} aria-label={tH("header.exportCta")}>
+              <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{tH("header.exportCta")}</span>
             </button>
             <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
               + {t("validate")}
@@ -334,9 +345,9 @@ export default function HistoryPage() {
 
           {/* ── Page title + stats ──────────────────────────────────────────── */}
           <div className="mb-6">
-            <h1 className="text-2xl font-black mb-1">Validation <span className="gradient-text">History</span></h1>
+            <h1 className="text-2xl font-black mb-1">{tH("header.title")}</h1>
             <p className="text-slate-400 text-sm">
-              {meta.total} session{meta.total !== 1 ? "s" : ""} · All your past validation runs, decisions, and experiments
+              {tH("header.subPattern", { total: meta.total })}
             </p>
           </div>
 
@@ -344,17 +355,17 @@ export default function HistoryPage() {
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
             {/* Inline search (history-specific) */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
               <input
                 type="text"
                 value={searchQ}
                 onChange={e => { setSearchQ(e.target.value); setPage(1); }}
-                placeholder="Filter by name, domain, one-liner..."
-                className="w-full glass rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
+                placeholder={tH("filters.byNamePlaceholder")}
+                className="w-full glass rounded-xl ps-9 pe-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
                 id="history-search-input"
               />
               {searchQ && (
-                <button onClick={() => setSearchQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                <button onClick={() => setSearchQ("")} aria-label={tShared("actions.clearFilters")} className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -367,7 +378,7 @@ export default function HistoryPage() {
               id="toggle-filters-btn"
             >
               <SlidersHorizontal className="w-4 h-4" />
-              Filters
+              {tH("filters.filtersTitle")}
               {activeFilterCount > 0 && (
                 <span className="w-5 h-5 rounded-full bg-brand-500 text-white text-xs flex items-center justify-center font-bold">
                   {activeFilterCount}
@@ -383,14 +394,15 @@ export default function HistoryPage() {
                 className="glass rounded-xl px-3 py-2.5 text-sm text-slate-300 outline-none border border-white/5 bg-transparent"
                 id="sort-select"
               >
-                <option value="created_at">Sort: Date Created</option>
-                <option value="updated_at">Sort: Last Updated</option>
-                <option value="name">Sort: Name</option>
+                <option value="created_at">{tH("filters.sortDate")}</option>
+                <option value="updated_at">{tH("filters.sortUpdated")}</option>
+                <option value="name">{tH("filters.sortName")}</option>
               </select>
               <button
                 onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-                title={sortOrder === "desc" ? "Descending" : "Ascending"}
+                title={sortOrder === "desc" ? tH("filters.descTitle") : tH("filters.ascTitle")}
+                aria-label={sortOrder === "desc" ? tH("filters.descTitle") : tH("filters.ascTitle")}
               >
                 <ChevronDown className={`w-4 h-4 transition-transform ${sortOrder === "asc" ? "rotate-180" : ""}`} />
               </button>
@@ -401,10 +413,10 @@ export default function HistoryPage() {
           {showFilters && (
             <div className="glass rounded-2xl p-5 mb-4 border border-white/5 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Filters</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{tH("filters.activeTitle")}</p>
                 {activeFilterCount > 0 && (
                   <button onClick={clearAllFilters} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors">
-                    <X className="w-3 h-3" /> Clear all
+                    <X className="w-3 h-3" /> {tH("states.clearCta")}
                   </button>
                 )}
               </div>
@@ -412,7 +424,7 @@ export default function HistoryPage() {
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Verdict filter */}
                 <div>
-                  <p className="text-xs text-slate-500 mb-2 font-medium">Verdict</p>
+                  <p className="text-xs text-slate-500 mb-2 font-medium">{tH("filters.verdict")}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(Object.keys(VERDICT_CONFIG) as Verdict[]).map(v => (
                       <button
@@ -425,7 +437,7 @@ export default function HistoryPage() {
                           borderColor: verdictFilter.has(v) ? VERDICT_CONFIG[v].color + "50" : "rgba(255,255,255,0.08)",
                         }}
                       >
-                        {VERDICT_CONFIG[v].icon} {VERDICT_CONFIG[v].label}
+                        {VERDICT_CONFIG[v].icon} {tShared(`verdicts.${VERDICT_CONFIG[v].key}`)}
                       </button>
                     ))}
                   </div>
@@ -433,7 +445,7 @@ export default function HistoryPage() {
 
                 {/* Stage filter */}
                 <div>
-                  <p className="text-xs text-slate-500 mb-2 font-medium">Stage</p>
+                  <p className="text-xs text-slate-500 mb-2 font-medium">{tH("filters.stage")}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {Array.from(new Set(records.map((r) => r.stage))).map(s => (
                       <button
@@ -446,7 +458,7 @@ export default function HistoryPage() {
                           borderColor: stageFilter.has(s) ? stageColor(s) + "50" : "rgba(255,255,255,0.08)",
                         }}
                       >
-                        {s}
+                        {stageLabel(s)}
                       </button>
                     ))}
                   </div>
@@ -454,7 +466,7 @@ export default function HistoryPage() {
 
                 {/* Confidence filter */}
                 <div>
-                  <p className="text-xs text-slate-500 mb-2 font-medium">Confidence</p>
+                  <p className="text-xs text-slate-500 mb-2 font-medium">{tH("filters.confidence")}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(["high", "medium", "low"] as Confidence[]).map(c => (
                       <button
@@ -467,7 +479,7 @@ export default function HistoryPage() {
                           borderColor: confidenceFilter.has(c) ? CONFIDENCE_COLOR[c] + "50" : "rgba(255,255,255,0.08)",
                         }}
                       >
-                        {c}
+                        {tShared(`confidence.${c}`)}
                       </button>
                     ))}
                   </div>
@@ -475,27 +487,29 @@ export default function HistoryPage() {
 
                 {/* Date range filter */}
                 <div>
-                  <p className="text-xs text-slate-500 mb-2 font-medium">Date Range</p>
+                  <p className="text-xs text-slate-500 mb-2 font-medium">{tH("filters.dateRange")}</p>
                   <div className="space-y-1.5">
                     <div className="relative">
-                      <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
+                      <Calendar className="absolute start-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
                       <input
                         type="date"
                         value={dateFrom}
                         onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                        className="w-full glass rounded-lg pl-7 pr-2 py-1.5 text-xs text-slate-300 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
-                        placeholder="From"
+                        className="w-full glass rounded-lg ps-7 pe-2 py-1.5 text-xs text-slate-300 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
+                        placeholder={tH("filters.fromPlaceholder")}
+                        aria-label={tH("filters.fromPlaceholder")}
                         id="date-from-input"
                       />
                     </div>
                     <div className="relative">
-                      <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
+                      <Calendar className="absolute start-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
                       <input
                         type="date"
                         value={dateTo}
                         onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                        className="w-full glass rounded-lg pl-7 pr-2 py-1.5 text-xs text-slate-300 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
-                        placeholder="To"
+                        className="w-full glass rounded-lg ps-7 pe-2 py-1.5 text-xs text-slate-300 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
+                        placeholder={tH("filters.toPlaceholder")}
+                        aria-label={tH("filters.toPlaceholder")}
                         id="date-to-input"
                       />
                     </div>
@@ -523,23 +537,23 @@ export default function HistoryPage() {
             <div className="glass rounded-2xl p-10 text-center border border-red-500/20">
               <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-3" />
               <p className="text-red-300 text-sm mb-4">{error}</p>
-              <button onClick={fetchHistory} className="text-xs text-brand-400 hover:underline">Retry</button>
+              <button onClick={fetchHistory} className="text-xs text-brand-400 hover:underline">{tH("states.retry")}</button>
             </div>
           ) : records.length === 0 ? (
             <div className="glass rounded-2xl p-16 text-center border border-dashed border-white/10">
               <Brain className="w-10 h-10 text-slate-700 mx-auto mb-4" />
               <p className="text-slate-400 text-sm mb-2">
                 {activeFilterCount > 0 || searchQ
-                  ? "No results match your filters."
-                  : "No validation sessions yet."}
+                  ? tH("states.emptyFiltered")
+                  : tH("states.emptyFresh")}
               </p>
               {activeFilterCount > 0 || searchQ ? (
                 <button onClick={clearAllFilters} className="text-xs text-brand-400 hover:underline">
-                  Clear filters
+                  {tH("states.clearCta")}
                 </button>
               ) : (
                 <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5 mt-2">
-                  Start Validating <ArrowRight className="w-3.5 h-3.5" />
+                  {tH("states.startCta")} <ArrowRight className="w-3.5 h-3.5 rtl:scale-x-[-1]" />
                 </Link>
               )}
             </div>
@@ -559,8 +573,10 @@ export default function HistoryPage() {
                       <Link
                         href={withLocale(`/validate?startup_id=${record.id}`, locale)}
                         className="flex-shrink-0 text-slate-600 group-hover:text-brand-400 transition-colors"
+                        title={tH("header.openTitle")}
+                        aria-label={tH("header.openTitle")}
                       >
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 rtl:scale-x-[-1]" />
                       </Link>
                     </div>
 
@@ -568,7 +584,7 @@ export default function HistoryPage() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-xs px-2 py-0.5 rounded-full border capitalize"
                         style={{ color: stageColor(record.stage), borderColor: stageColor(record.stage) + "40", background: stageColor(record.stage) + "15" }}>
-                        {record.stage}
+                        {stageLabel(record.stage)}
                       </span>
                       <span className="text-xs text-slate-500 px-2 py-0.5 rounded-full border border-white/5">
                         {record.domain}
@@ -576,13 +592,13 @@ export default function HistoryPage() {
                       {vc && (
                         <span className="text-xs px-2 py-0.5 rounded-full border flex items-center gap-1"
                           style={{ color: vc.color, borderColor: vc.color + "40", background: vc.bg }}>
-                          {vc.icon} {vc.label}
+                          {vc.icon} {tShared(`verdicts.${vc.key}`)}
                         </span>
                       )}
                       {dec && (
                         <span className="text-xs px-2 py-0.5 rounded-full border capitalize"
                           style={{ color: CONFIDENCE_COLOR[dec.confidence], borderColor: CONFIDENCE_COLOR[dec.confidence] + "40", background: CONFIDENCE_COLOR[dec.confidence] + "15" }}>
-                          {dec.confidence} confidence
+                          {tH("cards.confidencePattern", { confidence: tShared(`confidence.${dec.confidence}`) })}
                         </span>
                       )}
                     </div>
@@ -590,9 +606,9 @@ export default function HistoryPage() {
                     {/* Stats row */}
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { icon: <Target className="w-3 h-3" />, value: record.assumption_stats.total, label: "Assumptions", color: "#7950f2" },
-                        { icon: <CheckCircle2 className="w-3 h-3" />, value: record.assumption_stats.validated, label: "Validated", color: "#51cf66" },
-                        { icon: <FlaskConical className="w-3 h-3" />, value: record.experiment_count, label: "Experiments", color: "#74c0fc" },
+                        { icon: <Target className="w-3 h-3" />, value: record.assumption_stats.total, label: tH("cards.assumptions"), color: "#7950f2" },
+                        { icon: <CheckCircle2 className="w-3 h-3" />, value: record.assumption_stats.validated, label: tH("cards.validated"), color: "#51cf66" },
+                        { icon: <FlaskConical className="w-3 h-3" />, value: record.experiment_count, label: tH("cards.experiments"), color: "#74c0fc" },
                       ].map((stat) => (
                         <div key={stat.label} className="glass rounded-xl p-2.5 text-center">
                           <div className="flex justify-center mb-1" style={{ color: stat.color }}>{stat.icon}</div>
@@ -604,7 +620,7 @@ export default function HistoryPage() {
 
                     {/* Decision rationale snippet */}
                     {dec?.rationale && (
-                      <p className="text-xs text-slate-500 line-clamp-2 p-3 glass rounded-xl border-l-2 border-brand-500/40">
+                      <p className="text-xs text-slate-500 line-clamp-2 p-3 glass rounded-xl border-s-2 border-brand-500/40">
                         {dec.rationale}
                       </p>
                     )}
@@ -613,11 +629,11 @@ export default function HistoryPage() {
                     <div className="flex items-center justify-between text-xs text-slate-600">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {new Date(record.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                        {new Date(record.created_at).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", { year: "numeric", month: "short", day: "numeric" })}
                       </span>
                       {record.assumption_stats.critical > 0 && (
                         <span className="flex items-center gap-1 text-red-400">
-                          <AlertTriangle className="w-3 h-3" /> {record.assumption_stats.critical} critical
+                          <AlertTriangle className="w-3 h-3" /> {tH("cards.critical", { count: record.assumption_stats.critical })}
                         </span>
                       )}
                     </div>
@@ -635,8 +651,10 @@ export default function HistoryPage() {
                 disabled={page === 1}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed"
                 id="prev-page-btn"
+                title={tShared("misc.previousPage")}
+                aria-label={tShared("misc.previousPage")}
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4 rtl:scale-x-[-1]" />
               </button>
 
               {[...Array(Math.min(meta.pages, 7))].map((_, i) => {
@@ -662,12 +680,14 @@ export default function HistoryPage() {
                 disabled={page === meta.pages}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed"
                 id="next-page-btn"
+                title={tShared("misc.nextPage")}
+                aria-label={tShared("misc.nextPage")}
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
               </button>
 
-              <span className="text-xs text-slate-500 ml-2">
-                Page {page} of {meta.pages} · {meta.total} total
+              <span className="text-xs text-slate-500 ms-2">
+                {tShared("pagination.pageXofY", { x: page, y: meta.pages })} · {tShared("pagination.totalOf", { total: meta.total })}
               </span>
             </div>
           )}

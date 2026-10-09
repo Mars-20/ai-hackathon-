@@ -76,7 +76,44 @@
   },
   "history": {
     "header": {
-      "subPattern": "{total, plural, =0 {مفيش جلسات} =1 {جلسة واحدة} =2 {جلستين} few {# جلسات} many {# جلسة} other {# جلسة}} · كل جلسات التحقق والقرارات والتجارب بتاعتك"
+      "title": "سجل التحقق",
+      "subPattern": "{total, plural, =0 {مفيش جلسات} =1 {جلسة واحدة} =2 {جلستين} few {# جلسات} many {# جلسة} other {# جلسة}} · كل جلسات التحقق والقرارات والتجارب بتاعتك",
+      "searchPlaceholder": "دوّر في المشاريع والافتراضات والأدلة...",
+      "exportCta": "تصدير",
+      "openTitle": "افتح المشروع",
+      "openParentTitle": "افتح المشروع الأب",
+      "noResultsFor": "مفيش نتائج عن \"{q}\""
+    },
+    "filters": {
+      "byNamePlaceholder": "رشّح بالاسم أو المجال أو الوصف...",
+      "filtersTitle": "الفلاتر",
+      "sortDate": "ترتيب: تاريخ الإنشاء",
+      "sortUpdated": "ترتيب: آخر تحديث",
+      "sortName": "ترتيب: الاسم",
+      "descTitle": "تنازلي",
+      "ascTitle": "تصاعدي",
+      "activeTitle": "الفلاتر النشطة",
+      "verdict": "القرار",
+      "stage": "المرحلة",
+      "confidence": "الثقة",
+      "dateRange": "المدى الزمني",
+      "fromPlaceholder": "من",
+      "toPlaceholder": "إلى"
+    },
+    "states": {
+      "error": "فشل تحميل السجل",
+      "retry": "حاول تاني",
+      "emptyFiltered": "مفيش نتائج مطابقة للفلاتر بتاعتك.",
+      "emptyFresh": "لسه مفيش جلسات تحقق.",
+      "clearCta": "امسح الكل",
+      "startCta": "ابدأ التحقق"
+    },
+    "cards": {
+      "assumptions": "الافتراضات",
+      "validated": "المتحقق منها",
+      "experiments": "التجارب",
+      "critical": "{count} حرجة",
+      "confidencePattern": "{confidence} ثقة"
     }
   },
   "landing": {
