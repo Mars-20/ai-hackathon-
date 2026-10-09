@@ -179,7 +179,10 @@ it("ignores URL-bearing rows whose grounding_status is not grounded", () => {
     ])
   ).toBe(true);
 });
-it("requires non-empty source_type and strict http(s) URL (partition alignment)", () => {
+it("verifier contract is URL+overlap; source_type stays partition-level (isGroundedEvidence)", () => {
+  // source_type is enforced at partition level by isGroundedEvidence; the
+  // verifier-level contract is URL+overlap per the assistant-critic path
+  // (criticScan builds urlOnly rows as {claim, source_url} with no source_type).
   const line = "The market is worth $216.5B according to analysts";
   const base = {
     claim: "Global market valued at $216.5B in 2024",
@@ -188,8 +191,8 @@ it("requires non-empty source_type and strict http(s) URL (partition alignment)"
     source_type: "web_search",
   };
   expect(claimHasUrlSupport(line, [base])).toBe(true);
-  expect(claimHasUrlSupport(line, [{ ...base, source_type: "" }])).toBe(false);
-  expect(claimHasUrlSupport(line, [{ ...base, source_type: null }])).toBe(false);
+  expect(claimHasUrlSupport(line, [{ ...base, source_type: "" }])).toBe(true);
+  expect(claimHasUrlSupport(line, [{ ...base, source_type: null }])).toBe(true);
   expect(claimHasUrlSupport(line, [{ ...base, source_url: "ftp://example.com/r" }])).toBe(false);
   expect(claimHasUrlSupport(line, [{ ...base, source_url: "not a url" }])).toBe(false);
 });

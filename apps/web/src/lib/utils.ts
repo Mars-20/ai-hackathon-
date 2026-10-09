@@ -255,7 +255,6 @@ export function claimHasUrlSupport(
   const numbers = line.match(/\d[\d.,%]*/g) ?? [];
   return evidence.some((e) => {
     if (e.grounding_status !== undefined && e.grounding_status !== null && e.grounding_status !== "grounded") return false;
-    if (typeof e.source_type !== "string" || e.source_type.trim().length === 0) return false;
     if (!isHttpUrlStrict(e.source_url)) return false;
     if (!e.claim) return false;
     const claimLower = e.claim.toLowerCase();
