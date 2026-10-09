@@ -10,6 +10,7 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { flagPossibleConflicts } from "@/lib/companion/ranker";
 import { containsBlockedSecret } from "@/lib/companion/scans";
+import { formatProvenance } from "@/lib/companion/provenance";
 
 export interface MemoryItem {
   id: string;
@@ -23,20 +24,6 @@ export interface MemoryItem {
 }
 
 const PENDING_CAP = 20;
-
-function provenanceOf(pattern: string, locale: string, createdAt: string): string {
-  let date = createdAt;
-  try {
-    date = new Date(createdAt).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    // Keep the raw timestamp when the locale format fails.
-  }
-  return pattern.replace("{date}", date);
-}
 
 interface ApiError {
   code?: unknown;
@@ -102,6 +89,17 @@ export default function MemoriesClient({
   // Deterministic spec §5 surfacing: pending rows conflicting with an
   // approved row show the pair together (no overwrite, ever).
   const conflictFlags = useMemo(() => flagPossibleConflicts(pending, approved), [pending, approved]);
+  // Cached provenance strings: one Intl.DateTimeFormat per locale (see
+  // lib/companion/provenance.ts) + one format per row per data/locale change.
+  // Previously this ran 2x toLocaleDateString per row per render (~1ms each,
+  // 240 calls ≈ 250ms long task blocking input on this page).
+  const provenanceById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of items) {
+      if (!m.has(r.id)) m.set(r.id, formatProvenance(provenancePattern, locale, r.created_at));
+    }
+    return m;
+  }, [items, provenancePattern, locale]);
 
   function markBusy(id: string, on: boolean) {
     setBusyIds((prev) => {
@@ -248,8 +246,8 @@ export default function MemoriesClient({
           <div className="glass rounded-2xl p-6 text-sm text-slate-400">{tMem("empty_queue")}</div>
         ) : (
           <ul id="pending-queue" className="space-y-3">
-            {pending.map((item) => {
-              const conflictId = conflictFlags.get(pending.indexOf(item)) ?? item.possible_conflict_with;
+            {pending.map((item, index) => {
+              const conflictId = conflictFlags.get(index) ?? item.possible_conflict_with;
               const conflictWith = conflictId ? approvedById.get(conflictId) : undefined;
               const busy = busyIds.has(item.id);
               return (
@@ -264,14 +262,14 @@ export default function MemoriesClient({
                         {item.kind}
                       </span>
                       <p className="text-sm text-slate-200 mt-2 break-words">{item.value}</p>
-                      <p className="text-[11px] text-slate-500 mt-1">{provenanceOf(provenancePattern, locale, item.created_at)}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">{provenanceById.get(item.id) ?? item.created_at}</p>
                     </div>
                   </div>
                   {conflictWith && (
                     <div className="rounded-xl p-3 text-xs border border-amber-500/20 bg-amber-500/5 space-y-2">
                       <p className="text-amber-300">{tMem("conflict_pair")}</p>
                       <p className="text-slate-300 break-words">{conflictWith.value}</p>
-                      <p className="text-[11px] text-slate-500">{provenanceOf(provenancePattern, locale, conflictWith.created_at)}</p>
+                      <p className="text-[11px] text-slate-500">{provenanceById.get(conflictWith.id) ?? conflictWith.created_at}</p>
                     </div>
                   )}
                   {editingId === item.id ? (
@@ -365,7 +363,7 @@ export default function MemoriesClient({
                   {item.kind}
                 </span>
                 <p className="text-sm text-slate-200 mt-2 break-words">{item.value}</p>
-                <p className="text-[11px] text-slate-500 mt-1">{provenanceOf(provenancePattern, locale, item.created_at)}</p>
+                <p className="text-[11px] text-slate-500 mt-1">{provenanceById.get(item.id) ?? item.created_at}</p>
                 <div className="mt-3">
                   <button
                     onClick={() => setForgetId(item.id)}
