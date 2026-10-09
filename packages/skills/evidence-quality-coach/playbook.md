@@ -157,3 +157,10 @@ Score Interpretation:
 ---
 
 *This skill maps directly to the response-analyzer and decision-memo skills in the Validation Copilot. Reference spec Section 5.3 (Evidence Model) and Section 12 (Anti-Hallucination) for enforcement details.*
+
+## Grounding persistence rule
+Ungrounded synthesis output is NEVER evidence: rows without a tool-returned
+http(s) URL persist only as `grounding_status='unverified'`, are withheld
+from the decision memo and the verifier support set, and render as
+"Unverified — not evidence". A numeric market claim without a cited URL is
+dropped from grounding, never softened.
