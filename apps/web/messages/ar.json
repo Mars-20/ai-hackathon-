@@ -575,7 +575,7 @@
       "threadCap": "هذه المحادثة ممتلئة ({max} رسالة). ابدأ محادثة جديدة للمتابعة.",
       "sensitiveContent": "تعذر إظهار هذه الإجابة (محتوى حساس). أعد الصياغة وحاول مجدداً.",
       "rateLimited": "طلبات كثيرة — انتظر قليلاً ثم أعد المحاولة{wait}.",
-      "requestFailed": "Request failed ({status})"
+      "requestFailed": "الطلب فشل ({status})"
     },
     "samples": [
       "ما أقوى دليل يدعم فكرتي؟",
