@@ -815,6 +815,7 @@
       "requestFailed": "الطلب فشل"
     },
     "dialogs": {
+      "revokeConfirmPattern": "إلغاء صلاحية أدمن المنصة لـ {label}؟ ده بيتسجل في التدقيق.",
       "screenConfirmPattern": "افرز {name}؟ الاعتماد بيسجل قرار go، والرفض بيسجل stop. محتاج أدمن/مالك."
     },
     "contentActions": {
@@ -839,6 +840,90 @@
       "pausedNote": "موقوف (التبويب مخفي)",
       "intervalNote": "كل 60 ثانية",
       "updatedNote": "آخر تحديث"
+    },
+    "ops": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "العمليات",
+      "subPlatform": "الخطورة، سجل التدقيق، الإعدادات (قراءة بس في v1)، منح المنصة، قائمة الدعوات",
+      "subWorkspace": "عرض قراءة بس حسب صلاحيتك — التدقيق والخطورة لمساحات عملك بس",
+      "severityTitle": "الخطورة (7 أيام)",
+      "severityUnavailable": "بيانات الخطورة مش متاحة.",
+      "kpi": {
+        "errors": "أخطاء",
+        "warnings": "تحذيرات",
+        "info": "معلومات",
+        "rateLimited": "محدود المعدل (429)"
+      },
+      "hints": {
+        "rateLimited": "تقريبي — إشارات 429/تحديد المعدل الظاهرة بس"
+      },
+      "topActors": "أكتر الفاعلين في الأخطاء",
+      "noErrors": "مفيش أخطاء متسجلة.",
+      "capsTitle": "الحدود المتظبطة (مرجع للقراءة بس)",
+      "noCaps": "مفيش حدود متبلغ عنها.",
+      "auditTitle": "سجل التدقيق",
+      "auditLoadFailed": "فشل تحميل سجل التدقيق",
+      "filters": {
+        "actorLabel": "الفاعل (UUID)",
+        "actorPlaceholder": "UUID الفاعل بالظبط",
+        "actionLabel": "الإجراء",
+        "actionPlaceholder": "اسم الإجراء بالظبط"
+      },
+      "auditCols": {
+        "time": "الوقت",
+        "severity": "الخطورة",
+        "action": "الإجراء",
+        "actor": "الفاعل",
+        "result": "النتيجة",
+        "runDetail": "تفاصيل التشغيل"
+      },
+      "emptyAudit": "مفيش مدخلات تدقيق.",
+      "viewLink": "عرض",
+      "auditPageOnly": "صفحة {x}",
+      "settingsTitle": "إعدادات الوكيل",
+      "settingsNote": "(قراءة بس في v1 — مفيش تعديل)",
+      "settingsCols": {
+        "key": "المفتاح",
+        "value": "القيمة",
+        "updated": "آخر تحديث"
+      },
+      "emptySettings": "مفيش إعدادات.",
+      "platformAdminsPattern": "أدمن المنصة ({count})",
+      "adminCols": {
+        "email": "الإيميل",
+        "userId": "ID المستخدم",
+        "granted": "تاريخ المنح",
+        "actions": "إجراءات"
+      },
+      "emptyAdmins": "مفيش أدمن منصة.",
+      "pendingInvitesPattern": "الدعوات المعلقة ({count})",
+      "inviteCols": {
+        "email": "الإيميل",
+        "role": "الدور",
+        "expires": "تنتهي في",
+        "actions": "إجراءات"
+      },
+      "emptyInvites": "مفيش دعوات معلقة.",
+      "resendNote": "إعادة إرسال الدعوات بإدارة المنصة — قراءة بس لصلاحيتك."
+    },
+    "emailResend": {
+      "resend": "إعادة إرسال",
+      "resendTitlePattern": "سجّل إعادة إرسال لـ {email} (التوصيل بره نطاق v1)",
+      "done": "اتسجلت إعادة الإرسال"
+    },
+    "grantForm": {
+      "userIdLabel": "ID المستخدم للمنح",
+      "userIdPlaceholder": "UUID المستخدم بالظبط",
+      "reasonLabel": "السبب (سجل التدقيق)",
+      "reasonPlaceholder": "سبب اختياري",
+      "grant": "امنح صلاحية أدمن المنصة",
+      "granting": "جاري المنح…",
+      "userIdRequired": "اكتب ID المستخدم للمنح",
+      "done": "اتسجل المنح"
+    },
+    "revokeButton": {
+      "revoke": "إلغاء",
+      "revokeTitlePattern": "إلغاء صلاحية أدمن المنصة {label}"
     }
   }
 }

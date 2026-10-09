@@ -815,6 +815,7 @@
       "requestFailed": "Request failed"
     },
     "dialogs": {
+      "revokeConfirmPattern": "Revoke platform admin for {label}? This is audited.",
       "screenConfirmPattern": "Screen {name}? Approve records a go decision, reject records stop. Requires admin/owner."
     },
     "contentActions": {
@@ -839,6 +840,90 @@
       "pausedNote": "paused (tab hidden)",
       "intervalNote": "every 60s",
       "updatedNote": "last updated"
+    },
+    "ops": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Ops",
+      "subPlatform": "Severity, audit log, settings (read-only in v1), platform grants, invite queue",
+      "subWorkspace": "Scoped read-only view for your tier — audit and severity cover your workspaces only",
+      "severityTitle": "Severity (7d)",
+      "severityUnavailable": "Severity unavailable.",
+      "kpi": {
+        "errors": "Errors",
+        "warnings": "Warnings",
+        "info": "Info",
+        "rateLimited": "Rate-limited (429)"
+      },
+      "hints": {
+        "rateLimited": "Heuristic — surfaced 429/rate-limit signals only"
+      },
+      "topActors": "Top error actors",
+      "noErrors": "No errors recorded.",
+      "capsTitle": "Configured caps (read-only reference)",
+      "noCaps": "No caps reported.",
+      "auditTitle": "Audit log",
+      "auditLoadFailed": "Failed to load audit log",
+      "filters": {
+        "actorLabel": "Actor (UUID)",
+        "actorPlaceholder": "Exact actor UUID",
+        "actionLabel": "Action",
+        "actionPlaceholder": "Exact action name"
+      },
+      "auditCols": {
+        "time": "Time",
+        "severity": "Severity",
+        "action": "Action",
+        "actor": "Actor",
+        "result": "Result",
+        "runDetail": "Run detail"
+      },
+      "emptyAudit": "No audit entries found.",
+      "viewLink": "View",
+      "auditPageOnly": "Page {x}",
+      "settingsTitle": "Agent settings",
+      "settingsNote": "(read-only in v1 — no write path)",
+      "settingsCols": {
+        "key": "Key",
+        "value": "Value",
+        "updated": "Updated"
+      },
+      "emptySettings": "No settings found.",
+      "platformAdminsPattern": "Platform admins ({count})",
+      "adminCols": {
+        "email": "Email",
+        "userId": "User ID",
+        "granted": "Granted",
+        "actions": "Actions"
+      },
+      "emptyAdmins": "No platform admins found.",
+      "pendingInvitesPattern": "Pending invites ({count})",
+      "inviteCols": {
+        "email": "Email",
+        "role": "Role",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "emptyInvites": "No pending invites.",
+      "resendNote": "Invite resend is platform-managed — read-only for your tier."
+    },
+    "emailResend": {
+      "resend": "Resend",
+      "resendTitlePattern": "Record resend for {email} (delivery out of scope in v1)",
+      "done": "Resend recorded"
+    },
+    "grantForm": {
+      "userIdLabel": "User ID to grant",
+      "userIdPlaceholder": "Exact user UUID",
+      "reasonLabel": "Reason (audit log)",
+      "reasonPlaceholder": "Optional reason",
+      "grant": "Grant platform admin",
+      "granting": "Granting…",
+      "userIdRequired": "Enter a user ID to grant",
+      "done": "Grant recorded"
+    },
+    "revokeButton": {
+      "revoke": "Revoke",
+      "revokeTitlePattern": "Revoke platform admin {label}"
     }
   }
 }

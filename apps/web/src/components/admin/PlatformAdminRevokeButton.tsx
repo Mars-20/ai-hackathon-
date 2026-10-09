@@ -9,13 +9,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
-function errorMessage(value: unknown): string {
+function errorMessage(value: unknown, fallback: string): string {
   if (typeof value === "object" && value !== null) {
     const record = value as Record<string, unknown>;
     if (typeof record["error"] === "string") return record["error"];
   }
-  return "Request failed";
+  return fallback;
 }
 
 interface PlatformAdminRevokeButtonProps {
@@ -28,13 +29,16 @@ export default function PlatformAdminRevokeButton({
   userEmail,
 }: PlatformAdminRevokeButtonProps) {
   const router = useRouter();
+  const t = useTranslations("admin.revokeButton");
+  const tDialogs = useTranslations("admin.dialogs");
+  const tErr = useTranslations("admin.errors");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function runRevoke() {
     const label = userEmail.length > 0 ? userEmail : userId;
     if (
-      !window.confirm(`Revoke platform admin for ${label}? This is audited.`)
+      !window.confirm(tDialogs("revokeConfirmPattern", { label }))
     ) {
       return;
     }
@@ -48,12 +52,12 @@ export default function PlatformAdminRevokeButton({
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -65,10 +69,10 @@ export default function PlatformAdminRevokeButton({
         type="button"
         disabled={pending}
         onClick={() => void runRevoke()}
-        title={`Revoke platform admin ${userEmail.length > 0 ? userEmail : userId}`}
+        title={t("revokeTitlePattern", { label: userEmail.length > 0 ? userEmail : userId })}
         className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10 transition-colors disabled:opacity-50"
       >
-        {pending ? "…" : "Revoke"}
+        {pending ? "…" : t("revoke")}
       </button>
       {message !== null && (
         <span className="text-xs text-slate-400" role="status">
