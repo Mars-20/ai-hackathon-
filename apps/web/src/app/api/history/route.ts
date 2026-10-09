@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     const detailChildSelect = `decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
         experiments(id, type, status, design, created_at),
         assumptions(id, statement, category, risk_level, status, reasoning, created_at),
-        evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at)`;
+        evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at, grounding_status, quarantined_at)`;
     let startup: unknown = null;
     let detailError: unknown = null;
     {

@@ -286,16 +286,22 @@ function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
             {e.sample_size && e.sample_size > 1 && (
               <span className="text-xs text-slate-500">n={e.sample_size}</span>
             )}
-            {e.source_url && (
-              <a
-                href={e.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="cite-link ms-auto"
-              >
-                <ExternalLink className="w-3 h-3" />
-                {tVal("cards.source")}
-              </a>
+            {(e.grounding_status === "unverified" || e.grounding_status === "quarantined") ? (
+              <span className="badge text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 ms-auto">
+                Unverified — not evidence
+              </span>
+            ) : (
+              e.source_url && (
+                <a
+                  href={e.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="cite-link ms-auto"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  {tVal("cards.source")}
+                </a>
+              )
             )}
           </div>
         </div>
@@ -1353,7 +1359,7 @@ function ValidateDashboard() {
                         ? tVal("assistant.errors.researchEmpty")
                         : (() => {
                             const grounded = secondaryEvidence.filter(
-                              (e) => e.source_type === "web_search" && !!e.source_url
+                              (e) => e.source_type === "web_search" && !!e.source_url && e.grounding_status !== "unverified" && e.grounding_status !== "quarantined"
                             ).length;
                             const count = secondaryEvidence.length;
                             if (grounded === count)
