@@ -22,6 +22,7 @@ import {
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
 import { withLocale, type AppLocale } from "@/lib/i18n-path";
+import { getTranslations } from "next-intl/server";
 import {
   queryWorkspacesList,
   type WorkspaceUsageRow,
@@ -30,22 +31,13 @@ import {
 const WS_SORT_ALLOWLIST = ["name", "created_at", "plan"] as const;
 const WS_DEFAULT_SORT = "created_at";
 
-const WS_COLUMNS: AdminTableColumn[] = [
-  { key: "name", label: "Workspace", sortable: true },
-  { key: "plan", label: "Plan", sortable: true },
-  { key: "status", label: "Status", sortable: false },
-  { key: "usage", label: "Usage", sortable: false },
-  { key: "spend", label: "Spend (est.)", sortable: false },
-  { key: "created_at", label: "Created", sortable: true },
-];
-
 const VALID_PLANS = ["free", "pro", "team"] as const;
 const VALID_STATUS = ["active", "suspended"] as const;
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: AppLocale): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "—";
-  return new Date(ms).toLocaleDateString("en-US", {
+  return new Date(ms).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -73,6 +65,16 @@ export default async function AdminWorkspacesPage({
   const { locale } = await routeParams;
   const appLocale = locale as AppLocale;
   const wsBase = withLocale("/admin/workspaces", appLocale);
+  const t = await getTranslations("admin.workspaces");
+  const tShared = await getTranslations("shared");
+  const columns: AdminTableColumn[] = [
+    { key: "name", label: t("cols.name"), sortable: true },
+    { key: "plan", label: t("cols.plan"), sortable: true },
+    { key: "status", label: t("cols.status"), sortable: false },
+    { key: "usage", label: t("cols.usage"), sortable: false },
+    { key: "spend", label: t("cols.spend"), sortable: false },
+    { key: "created_at", label: t("cols.created"), sortable: true },
+  ];
   const raw = await searchParams;
   const params = parseAdminTableParams(
     raw,
@@ -139,9 +141,9 @@ export default async function AdminWorkspacesPage({
           </Link>
         ),
         plan: (
-          <span title="Plan is read-only in v1 (spec I1)">
+          <span title={t("planReadonlyTitle")}>
             {w.plan}
-            <span className="block text-xs text-slate-500">v1 read-only</span>
+            <span className="block text-xs text-slate-500">{t("planReadonlyNote")}</span>
           </span>
         ),
         status:
@@ -154,9 +156,14 @@ export default async function AdminWorkspacesPage({
               active
             </span>
           ),
-        usage: `${w.memberCount} members · ${w.startupCount} startups · ${w.runs} runs · ${w.evidenceCount} evidence`,
+        usage: t("usagePattern", {
+          members: w.memberCount,
+          startups: w.startupCount,
+          runs: w.runs,
+          evidence: w.evidenceCount,
+        }),
         spend: `$${w.spend.value.toFixed(2)}`,
-        created_at: formatDate(w.created_at),
+        created_at: formatDate(w.created_at, appLocale),
       },
     })) ?? [];
 
@@ -167,11 +174,10 @@ export default async function AdminWorkspacesPage({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black mb-1">
-            Admin <span className="gradient-text">Workspaces</span>
+            {t("titlePrefix")} <span className="gradient-text">{t("titleAccent")}</span>
           </h1>
           <p className="text-slate-400 text-sm">
-            Plan is read-only in v1 · spend is estimated (COST_TABLE metering,
-            not provider billing)
+            {t("sub")}
           </p>
         </div>
         {data !== null && (
@@ -196,13 +202,13 @@ export default async function AdminWorkspacesPage({
         <input type="hidden" name="order" value={params.order} />
         <input type="hidden" name="limit" value={String(params.limit)} />
         <label className="text-xs text-slate-400 space-y-1">
-          Plan
+          {t("filters.plan")}
           <select
             name="plan"
             defaultValue={plan ?? ""}
             className="block glass rounded-lg px-2 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent"
           >
-            <option value="">All plans</option>
+            <option value="">{t("filters.allPlans")}</option>
             {VALID_PLANS.map((p) => (
               <option key={p} value={p}>
                 {p}
@@ -211,13 +217,13 @@ export default async function AdminWorkspacesPage({
           </select>
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Status
+          {t("filters.status")}
           <select
             name="status"
             defaultValue={status ?? ""}
             className="block glass rounded-lg px-2 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent"
           >
-            <option value="">All statuses</option>
+            <option value="">{t("filters.allStatuses")}</option>
             {VALID_STATUS.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -229,14 +235,14 @@ export default async function AdminWorkspacesPage({
           type="submit"
           className="glass glass-hover px-4 py-2 rounded-xl text-sm border border-white/5 text-slate-300"
         >
-          Filter
+          {t("filters.submit")}
         </button>
         {(plan !== null || status !== null) && (
           <Link
             href={withLocale(`/admin/workspaces${baseQuery.length > 0 ? `?${baseQuery}` : ""}`, appLocale)}
             className="text-sm text-slate-500 hover:text-slate-300 px-2 py-2"
           >
-            Clear
+            {tShared("actions.clear")}
           </Link>
         )}
       </form>
@@ -244,13 +250,13 @@ export default async function AdminWorkspacesPage({
       {loadError !== null || data === null ? (
         <div className="glass rounded-2xl p-10 text-center border border-red-500/20">
           <p className="text-red-300 text-sm">
-            {loadError ?? "Failed to load workspaces"}
+            {loadError ?? t("loadFailed")}
           </p>
         </div>
       ) : (
         <AdminTable
           basePath={wsBase}
-          columns={WS_COLUMNS}
+          columns={columns}
           rows={rows}
           page={data.page}
           limit={data.limit}
@@ -259,7 +265,7 @@ export default async function AdminWorkspacesPage({
           q={params.q}
           sort={params.sort}
           order={params.order}
-          searchPlaceholder="Search name/slug (min 2 chars)..."
+          searchPlaceholder={t("searchPlaceholder")}
         />
       )}
     </div>

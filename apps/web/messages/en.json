@@ -816,7 +816,9 @@
     },
     "dialogs": {
       "revokeConfirmPattern": "Revoke platform admin for {label}? This is audited.",
-      "screenConfirmPattern": "Screen {name}? Approve records a go decision, reject records stop. Requires admin/owner."
+      "screenConfirmPattern": "Screen {name}? Approve records a go decision, reject records stop. Requires admin/owner.",
+      "suspendPattern": "{action} {email}?",
+      "suspendNote": "Takes full effect within ~1 hour."
     },
     "contentActions": {
       "flag": "Flag",
@@ -924,6 +926,84 @@
     "revokeButton": {
       "revoke": "Revoke",
       "revokeTitlePattern": "Revoke platform admin {label}"
+    },
+    "users": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Users",
+      "sub": "Profiles + workspace memberships · status from Auth (banned ⇒ suspended) · email prefix search · sortable email / created",
+      "loadFailed": "Failed to load users",
+      "cols": {
+        "email": "Email",
+        "created": "Created",
+        "status": "Status",
+        "workspaces": "Workspaces",
+        "actions": "Actions"
+      },
+      "searchPlaceholder": "Search email prefix (min 2 chars)..."
+    },
+    "workspaces": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Workspaces",
+      "sub": "Plan is read-only in v1 · spend is estimated (COST_TABLE metering, not provider billing)",
+      "loadFailed": "Failed to load workspaces",
+      "cols": {
+        "name": "Workspace",
+        "plan": "Plan",
+        "status": "Status",
+        "usage": "Usage",
+        "spend": "Spend (est.)",
+        "created": "Created"
+      },
+      "usagePattern": "{members} members · {startups} startups · {runs} runs · {evidence} evidence",
+      "planReadonlyTitle": "Plan is read-only in v1 (spec I1)",
+      "planReadonlyNote": "v1 read-only",
+      "searchPlaceholder": "Search name/slug (min 2 chars)...",
+      "filters": {
+        "plan": "Plan",
+        "allPlans": "All plans",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "submit": "Filter"
+      }
+    },
+    "workspaceDetail": {
+      "backToWorkspaces": "Workspaces",
+      "loadFailed": "Failed to load workspace",
+      "badShape": "Unexpected workspace response shape",
+      "titleAccent": "Detail",
+      "subPattern": "{slug} · plan {plan} (v1 read-only) · status {status}",
+      "kpi": {
+        "members": "Members",
+        "startups": "Startups",
+        "runs": "Runs",
+        "evidence": "Evidence",
+        "spend": "Spend"
+      },
+      "planTitle": "Plan & status",
+      "planNote": "(read-only in v1 — spec §9: no plan changing until entitlements are defined)",
+      "planLinePattern": "Plan {plan} · status {status}",
+      "membersPattern": "Members ({count})",
+      "memberCols": {
+        "email": "Email",
+        "role": "Role",
+        "userId": "User ID"
+      },
+      "emptyMembers": "No members."
+    },
+    "userActions": {
+      "suspend": "Suspend",
+      "unsuspend": "Unsuspend",
+      "reasonPlaceholder": "Reason (recorded in audit log)",
+      "working": "Working...",
+      "workspaceAria": "Workspace",
+      "selectWorkspace": "Select workspace…",
+      "workspaceIdPlaceholder": "Workspace ID",
+      "workspaceRequired": "Workspace is required"
+    },
+    "workspaceSwitcher": {
+      "label": "Workspace",
+      "switchAria": "Switch workspace",
+      "selectPlaceholder": "Select workspace…"
     }
   }
 }

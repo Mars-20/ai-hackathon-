@@ -13,7 +13,6 @@
 // refresh + sign-in; live JWTs expire naturally) — stated in the confirm copy.
 // ─────────────────────────────────────────────────────────────────────────────
 import AdminTable, {
-  type AdminTableColumn,
   type AdminTableRow,
 } from "@/components/admin/AdminTable";
 import UserActions from "@/components/admin/UserActions";
@@ -22,6 +21,7 @@ import {
 } from "@/components/admin/table-helpers";
 import { runAdminQuery } from "@/lib/admin-dal";
 import { withLocale, type AppLocale } from "@/lib/i18n-path";
+import { getTranslations } from "next-intl/server";
 import {
   queryUsersList,
   type AdminUserRow,
@@ -31,18 +31,10 @@ import { queryWorkspacesList } from "@/lib/admin-queries/workspaces";
 const USERS_SORT_ALLOWLIST = ["email", "created_at"] as const;
 const USERS_DEFAULT_SORT = "created_at";
 
-const USERS_COLUMNS: AdminTableColumn[] = [
-  { key: "email", label: "Email", sortable: true },
-  { key: "created_at", label: "Created", sortable: true },
-  { key: "status", label: "Status", sortable: false },
-  { key: "workspaces", label: "Workspaces", sortable: false },
-  { key: "actions", label: "Actions", sortable: false },
-];
-
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: AppLocale): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "—";
-  return new Date(ms).toLocaleDateString("en-US", {
+  return new Date(ms).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -59,6 +51,14 @@ export default async function AdminUsersPage({
   const { locale } = await params;
   const appLocale = locale as AppLocale;
   const usersBase = withLocale("/admin/users", appLocale);
+  const t = await getTranslations("admin.users");
+  const columns = [
+    { key: "email", label: t("cols.email"), sortable: true },
+    { key: "created_at", label: t("cols.created"), sortable: true },
+    { key: "status", label: t("cols.status"), sortable: false },
+    { key: "workspaces", label: t("cols.workspaces"), sortable: false },
+    { key: "actions", label: t("cols.actions"), sortable: false },
+  ];
   const params_ = parseAdminTableParams(
     await searchParams,
     USERS_SORT_ALLOWLIST,
@@ -123,7 +123,7 @@ export default async function AdminUsersPage({
       key: user.id,
       cells: {
         email: user.email,
-        created_at: formatDate(user.created_at),
+        created_at: formatDate(user.created_at, appLocale),
         status:
           user.status === "suspended" ? (
             <span className="text-xs px-2 py-0.5 rounded-full border border-red-500/30 bg-red-500/10 text-red-400">
@@ -155,24 +155,23 @@ export default async function AdminUsersPage({
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-black mb-1">
-          Admin <span className="gradient-text">Users</span>
+          {t("titlePrefix")} <span className="gradient-text">{t("titleAccent")}</span>
         </h1>
         <p className="text-slate-400 text-sm">
-          Profiles + workspace memberships · status from Auth (banned ⇒
-          suspended) · email prefix search · sortable email / created
+          {t("sub")}
         </p>
       </div>
 
       {loadError !== null || data === null ? (
         <div className="glass rounded-2xl p-10 text-center border border-red-500/20">
           <p className="text-red-300 text-sm">
-            {loadError ?? "Failed to load users"}
+            {loadError ?? t("loadFailed")}
           </p>
         </div>
       ) : (
         <AdminTable
           basePath={usersBase}
-          columns={USERS_COLUMNS}
+          columns={columns}
           rows={rows}
           page={data.page}
           limit={data.limit}
@@ -181,7 +180,7 @@ export default async function AdminUsersPage({
           q={params_.q}
           sort={params_.sort}
           order={params_.order}
-          searchPlaceholder="Search email prefix (min 2 chars)..."
+          searchPlaceholder={t("searchPlaceholder")}
         />
       )}
     </div>

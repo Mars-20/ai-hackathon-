@@ -816,7 +816,9 @@
     },
     "dialogs": {
       "revokeConfirmPattern": "إلغاء صلاحية أدمن المنصة لـ {label}؟ ده بيتسجل في التدقيق.",
-      "screenConfirmPattern": "افرز {name}؟ الاعتماد بيسجل قرار go، والرفض بيسجل stop. محتاج أدمن/مالك."
+      "screenConfirmPattern": "افرز {name}؟ الاعتماد بيسجل قرار go، والرفض بيسجل stop. محتاج أدمن/مالك.",
+      "suspendPattern": "{action} {email}؟",
+      "suspendNote": "بيسمع بالكامل خلال ساعة تقريبًا."
     },
     "contentActions": {
       "flag": "فلاج",
@@ -924,6 +926,84 @@
     "revokeButton": {
       "revoke": "إلغاء",
       "revokeTitlePattern": "إلغاء صلاحية أدمن المنصة {label}"
+    },
+    "users": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "المستخدمين",
+      "sub": "البروفايلات وعضويات مساحات العمل · الحالة من المصادقة (محظور ⇒ موقوف) · بحث ببداية الإيميل · ترتيب بالإيميل / تاريخ الإنشاء",
+      "loadFailed": "فشل تحميل المستخدمين",
+      "cols": {
+        "email": "الإيميل",
+        "created": "تاريخ الإنشاء",
+        "status": "الحالة",
+        "workspaces": "مساحات العمل",
+        "actions": "إجراءات"
+      },
+      "searchPlaceholder": "دوّر ببداية الإيميل (حرفين على الأقل)..."
+    },
+    "workspaces": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "مساحات العمل",
+      "sub": "الخطة للقراءة بس في v1 · المصاريف تقديرية (بعدّاد COST_TABLE مش بالفاتورة الفعلية)",
+      "loadFailed": "فشل تحميل مساحات العمل",
+      "cols": {
+        "name": "مساحة العمل",
+        "plan": "الخطة",
+        "status": "الحالة",
+        "usage": "الاستخدام",
+        "spend": "المصاريف (تقديرية)",
+        "created": "تاريخ الإنشاء"
+      },
+      "usagePattern": "{members} عضو · {startups} شركة · {runs} تشغيل · {evidence} دليل",
+      "planReadonlyTitle": "الخطة للقراءة بس في v1 (spec I1)",
+      "planReadonlyNote": "قراءة بس في v1",
+      "searchPlaceholder": "دوّر بالاسم/slug (حرفين على الأقل)...",
+      "filters": {
+        "plan": "الخطة",
+        "allPlans": "كل الخطط",
+        "status": "الحالة",
+        "allStatuses": "كل الحالات",
+        "submit": "صفّي"
+      }
+    },
+    "workspaceDetail": {
+      "backToWorkspaces": "مساحات العمل",
+      "loadFailed": "فشل تحميل مساحة العمل",
+      "badShape": "شكل رد مساحة العمل غير متوقع",
+      "titleAccent": "التفاصيل",
+      "subPattern": "{slug} · الخطة {plan} (قراءة بس في v1) · الحالة {status}",
+      "kpi": {
+        "members": "الأعضاء",
+        "startups": "الشركات",
+        "runs": "التشغيلات",
+        "evidence": "الأدلة",
+        "spend": "المصاريف"
+      },
+      "planTitle": "الخطة والحالة",
+      "planNote": "(قراءة بس في v1 — حسب spec §9: مفيش تغيير للخطط لحد ما الصلاحيات تتحدد)",
+      "planLinePattern": "الخطة {plan} · الحالة {status}",
+      "membersPattern": "الأعضاء ({count})",
+      "memberCols": {
+        "email": "الإيميل",
+        "role": "الدور",
+        "userId": "ID المستخدم"
+      },
+      "emptyMembers": "مفيش أعضاء."
+    },
+    "userActions": {
+      "suspend": "وقّف",
+      "unsuspend": "شغّل تاني",
+      "reasonPlaceholder": "السبب (بيتسجل في سجل التدقيق)",
+      "working": "جاري التنفيذ...",
+      "workspaceAria": "مساحة العمل",
+      "selectWorkspace": "اختار مساحة العمل…",
+      "workspaceIdPlaceholder": "ID مساحة العمل",
+      "workspaceRequired": "مساحة العمل مطلوبة"
+    },
+    "workspaceSwitcher": {
+      "label": "مساحة العمل",
+      "switchAria": "بدّل مساحة العمل",
+      "selectPlaceholder": "اختار مساحة العمل…"
     }
   }
 }

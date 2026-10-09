@@ -9,6 +9,7 @@
 // usage metrics (estimated spend labeled), member roster.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import KpiCard from "@/components/admin/KpiCard";
 import WorkspaceSwitcher from "@/components/admin/WorkspaceSwitcher";
 import { runAdminQuery } from "@/lib/admin-dal";
@@ -102,6 +103,8 @@ export default async function AdminWorkspaceDetailPage({
   const { id, locale } = await params;
   const appLocale = locale as AppLocale;
   const backHref = withLocale("/admin/workspaces", appLocale);
+  const t = await getTranslations("admin.workspaceDetail");
+  const tShared = await getTranslations("shared");
 
   // Detail and sibling switcher list are independent — one concurrent
   // DAL round (same helpers the routes delegate to). DAL data failures
@@ -128,7 +131,7 @@ export default async function AdminWorkspaceDetailPage({
 
   const detail = body !== null ? narrowDetail(body) : null;
   if (detail === null && loadError === null) {
-    loadError = "Unexpected workspace response shape";
+    loadError = t("badShape");
   }
 
   // Sibling options for the switcher (auxiliary — never fails the page).
@@ -148,11 +151,11 @@ export default async function AdminWorkspaceDetailPage({
           href={backHref}
           className="text-sm text-brand-400 hover:text-brand-300"
         >
-          ← Workspaces
+          <span className="inline-block rtl:scale-x-[-1]">←</span> {t("backToWorkspaces")}
         </Link>
         <div className="glass rounded-2xl p-10 text-center border border-red-500/20 mt-6">
           <p className="text-red-300 text-sm">
-            {loadError ?? "Failed to load workspace"}
+            {loadError ?? t("loadFailed")}
           </p>
         </div>
       </div>
@@ -167,62 +170,63 @@ export default async function AdminWorkspaceDetailPage({
             href={backHref}
             className="text-sm text-brand-400 hover:text-brand-300"
           >
-            ← Workspaces
+            <span className="inline-block rtl:scale-x-[-1]">←</span> {t("backToWorkspaces")}
           </Link>
           <h1 className="text-2xl font-black mt-1">
             {detail.name.length > 0 ? detail.name : detail.slug}{" "}
-            <span className="gradient-text">Detail</span>
+            <span className="gradient-text">{t("titleAccent")}</span>
           </h1>
           <p className="text-slate-400 text-sm">
-            {detail.slug} · plan {detail.plan} (v1 read-only) · status{" "}
-            {detail.status}
+            {t("subPattern", {
+              slug: detail.slug,
+              plan: detail.plan,
+              status: detail.status,
+            })}
           </p>
         </div>
         <WorkspaceSwitcher currentId={detail.id} workspaces={siblings} />
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        <KpiCard label="Members" value={String(detail.metrics.members)} />
-        <KpiCard label="Startups" value={String(detail.metrics.startups)} />
-        <KpiCard label="Runs" value={String(detail.metrics.runs)} />
-        <KpiCard label="Evidence" value={String(detail.metrics.evidence)} />
+        <KpiCard label={t("kpi.members")} value={String(detail.metrics.members)} />
+        <KpiCard label={t("kpi.startups")} value={String(detail.metrics.startups)} />
+        <KpiCard label={t("kpi.runs")} value={String(detail.metrics.runs)} />
+        <KpiCard label={t("kpi.evidence")} value={String(detail.metrics.evidence)} />
         <KpiCard
-          label="Spend"
+          label={t("kpi.spend")}
           value={`$${detail.metrics.spend.value.toFixed(2)}`}
           estimated
-          hint="COST_TABLE metering, not provider billing"
+          hint={tShared("misc.estimatedNote")}
         />
       </div>
 
       <div className="glass rounded-2xl p-5 border border-white/5 mb-8">
         <h2 className="text-sm font-bold text-slate-200 mb-2">
-          Plan &amp; status{" "}
+          {t("planTitle")}{" "}
           <span className="text-slate-500 font-normal">
-            (read-only in v1 — spec §9: no plan changing until entitlements
-            are defined)
+            {t("planNote")}
           </span>
         </h2>
         <p className="text-sm text-slate-300">
-          Plan <span className="font-mono text-xs">{detail.plan}</span> ·
-          status <span className="font-mono text-xs">{detail.status}</span>
+          {t("planLinePattern", { plan: detail.plan, status: detail.status })}
         </p>
       </div>
 
       <h2 className="text-lg font-bold text-slate-200 mb-3">
-        Members ({detail.members.length})
+        {t("membersPattern", { count: detail.members.length })}
       </h2>
       <div className="glass rounded-2xl border border-white/5 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Email
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("memberCols.email")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Role
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("memberCols.role")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                User ID
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("memberCols.userId")}
               </th>
             </tr>
           </thead>
@@ -233,7 +237,7 @@ export default async function AdminWorkspaceDetailPage({
                   colSpan={3}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  No members.
+                  {t("emptyMembers")}
                 </td>
               </tr>
             ) : (

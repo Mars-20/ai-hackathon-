@@ -9,6 +9,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { stripLocale, withLocale } from "@/lib/i18n-path";
 
 export interface SwitcherWorkspace {
@@ -27,6 +28,7 @@ export default function WorkspaceSwitcher({
   currentId,
 }: WorkspaceSwitcherProps) {
   const router = useRouter();
+  const t = useTranslations("admin.workspaceSwitcher");
   // i18n Task 3: locale from pathname (this island renders under [locale]
   // pages; stripLocale falls back to "en" for unprefixed paths).
   const pathname = usePathname();
@@ -37,7 +39,7 @@ export default function WorkspaceSwitcher({
   return (
     <label className="flex items-center gap-2 text-sm">
       <span className="text-slate-500 text-xs font-medium uppercase tracking-wider">
-        Workspace
+        {t("label")}
       </span>
       <select
         value={currentId ?? ""}
@@ -46,9 +48,9 @@ export default function WorkspaceSwitcher({
           if (id.length > 0) router.push(withLocale(`/admin/workspaces/${encodeURIComponent(id)}`, wsLocale));
         }}
         className="glass rounded-xl px-3 py-2 text-sm text-slate-200 outline-none border border-white/5 bg-transparent max-w-64"
-        aria-label="Switch workspace"
+        aria-label={t("switchAria")}
       >
-        {currentId === null && <option value="">Select workspace…</option>}
+        {currentId === null && <option value="">{t("selectPlaceholder")}</option>}
         {workspaces.map((w) => (
           <option key={w.id} value={w.id}>
             {w.name.length > 0 ? w.name : w.slug}
