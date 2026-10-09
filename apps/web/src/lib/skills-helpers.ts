@@ -127,6 +127,49 @@ export function parseInvestorScorecard(text: string): InvestorScorecard | null {
   }
 }
 
+// ── Evidence grounding ──
+export interface Groundable {
+  source_url?: string | null;
+  source_type?: string | null;
+  grounding_status?: string | null;
+}
+
+function isHttpUrlLocal(url: unknown): url is string {
+  if (typeof url !== "string") return false;
+  const t = url.trim();
+  return /^https?:\/\/\S/i.test(t);
+}
+
+export function isGroundedEvidence(e: Groundable): boolean {
+  const gs = e?.grounding_status;
+  if (gs !== undefined && gs !== null && gs !== "grounded") return false;
+  if (typeof e?.source_type !== "string" || e.source_type.trim().length === 0) return false;
+  return isHttpUrlLocal(e?.source_url);
+}
+
+export function splitEvidenceByGrounding<T extends Groundable>(rows: T[]): { grounded: T[]; ungrounded: T[] } {
+  const grounded: T[] = [];
+  const ungrounded: T[] = [];
+  for (const r of rows) {
+    if (isGroundedEvidence(r)) grounded.push(r);
+    else ungrounded.push(r);
+  }
+  return { grounded, ungrounded };
+}
+
+export function ungroundedCount<T extends Groundable>(rows: T[]): number {
+  let n = 0;
+  for (const r of rows) if (!isGroundedEvidence(r)) n += 1;
+  return n;
+}
+
+export function claimHasNumericContent(claim: string): boolean {
+  if (!claim) return false;
+  const stripped = claim.replace(/\[[SAEDMW]\d+\]/g, "");
+  if (!stripped.trim()) return false;
+  return /[0-9٠-٩]|[%٪$]|million|billion|trillion|CAGR|مليار|مليون/i.test(stripped);
+}
+
 // Persist first-50 PLUS late investor rows (cap 55); investor rows win
 // overflow slots; dedupe by id. Non-investor rows past 50 drop as today.
 export function sliceTraceForPersist(trace: TraceEvent[]): TraceEvent[] {
