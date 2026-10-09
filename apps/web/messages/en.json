@@ -683,5 +683,19 @@
     "forgetCancel": "Cancel",
     "paywallTitle": "Memory is part of a paid plan.",
     "paywallCta": "View plans"
+  },
+  "invite": {
+    "page": {
+      "title": "Workspace invite",
+      "accepted": "Invite accepted — welcome aboard.",
+      "declined": "Invite declined.",
+      "expired": "This invite has expired (410). Ask a workspace admin to resend it.",
+      "networkError": "Network error. Please try again.",
+      "requestFailed": "Request failed.",
+      "bodyText": "You have been invited to join a workspace. Accept or decline below. Each invite can be used once.",
+      "workingCta": "Working…",
+      "acceptCta": "Accept",
+      "declineCta": "Decline"
+    }
   }
 }

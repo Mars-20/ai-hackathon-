@@ -12,12 +12,17 @@
 // - Email delivery wiring (Resend, Task 6 pick) is out of scope in v1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { use, useState } from "react";
+import { Suspense, use, useState } from "react";
+import { useTranslations } from "next-intl";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import type { AppLocale } from "@/lib/i18n-path";
 
 type Phase = "idle" | "working" | "accepted" | "declined" | "expired" | "error";
 
-export default function InviteTokenPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params);
+export default function InviteTokenPage({ params }: { params: Promise<{ token: string; locale: string }> }) {
+  const { token, locale } = use(params);
+  const appLocale = locale as AppLocale;
+  const tInv = useTranslations("invite.page");
   const [phase, setPhase] = useState<Phase>("idle");
   const [detail, setDetail] = useState<string | null>(null);
 
@@ -37,7 +42,7 @@ export default function InviteTokenPage({ params }: { params: Promise<{ token: s
       });
     } catch {
       setPhase("error");
-      setDetail("Network error. Please try again.");
+      setDetail(tInv("networkError"));
       return;
     }
     if (res.status === 410) {
@@ -48,35 +53,42 @@ export default function InviteTokenPage({ params }: { params: Promise<{ token: s
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
       setPhase("error");
       // Server error text contains no token material (route strips it).
-      setDetail(typeof body?.error === "string" ? body.error : "Request failed.");
+      setDetail(typeof body?.error === "string" ? body.error : tInv("requestFailed"));
       return;
     }
     setPhase(action === "accept" ? "accepted" : "declined");
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center px-4">
+    <div dir={appLocale === "ar" ? "rtl" : "ltr"} className="min-h-dvh flex flex-col">
+      <header className="glass border-b border-white/5">
+        <div className="px-4 sm:px-6 h-14 flex items-center justify-end max-w-5xl mx-auto w-full">
+          <Suspense>
+            <LanguageSwitcher locale={appLocale} />
+          </Suspense>
+        </div>
+      </header>
+      <main className="flex-1 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md glass rounded-3xl p-8 border border-white/10 text-center">
-        <h1 className="font-black text-xl tracking-tight mb-2">Workspace invite</h1>
+        <h1 className="font-black text-xl tracking-tight mb-2">{tInv("title")}</h1>
         {phase === "accepted" && (
-          <p className="text-sm text-green-300" id="invite-result">Invite accepted — welcome aboard.</p>
+          <p className="text-sm text-green-300" id="invite-result">{tInv("accepted")}</p>
         )}
         {phase === "declined" && (
-          <p className="text-sm text-slate-300" id="invite-result">Invite declined.</p>
+          <p className="text-sm text-slate-300" id="invite-result">{tInv("declined")}</p>
         )}
         {phase === "expired" && (
           <p className="text-sm text-amber-300" id="invite-result">
-            This invite has expired (410). Ask a workspace admin to resend it.
+            {tInv("expired")}
           </p>
         )}
         {phase === "error" && (
-          <p className="text-sm text-red-300" id="invite-result">{detail ?? "Request failed."}</p>
+          <p className="text-sm text-red-300" id="invite-result">{detail ?? tInv("requestFailed")}</p>
         )}
         {!terminal && (
           <>
             <p className="text-sm text-slate-400 mb-6">
-              You have been invited to join a workspace. Accept or decline below.
-              Each invite can be used once.
+              {tInv("bodyText")}
             </p>
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -85,7 +97,7 @@ export default function InviteTokenPage({ params }: { params: Promise<{ token: s
                 className="btn-glow text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50"
                 id="invite-accept-btn"
               >
-                {phase === "working" ? "Working…" : "Accept"}
+                {phase === "working" ? tInv("workingCta") : tInv("acceptCta")}
               </button>
               <button
                 onClick={() => act("decline")}
@@ -93,12 +105,13 @@ export default function InviteTokenPage({ params }: { params: Promise<{ token: s
                 className="glass glass-hover rounded-xl py-3 text-sm font-medium text-slate-300 border border-white/5 disabled:opacity-50"
                 id="invite-decline-btn"
               >
-                Decline
+                {tInv("declineCta")}
               </button>
             </div>
           </>
         )}
       </div>
+      </main>
     </div>
   );
 }
