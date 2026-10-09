@@ -11,7 +11,7 @@ import { z } from "zod";
 import { memoryKindSchema } from "@/lib/companion/validation";
 import { getGeminiKeys, getGroqKeys, isQuotaError } from "@/lib/provider-keys";
 import { withTimeout } from "@/lib/timeout";
-import { findUnsupportedFactualClaims } from "@/lib/utils";
+import { claimHasOwnedRowSupport, findUnsupportedFactualClaims } from "@/lib/utils";
 
 const UUID = z.string().uuid();
 
@@ -103,12 +103,25 @@ export interface CriticVerdict {
   unsupported: string[];
 }
 
-/** Verifier-as-critic: flagged draft → refusal + trace row (caller persists). */
+/** Verifier-as-critic: flagged draft → refusal + trace row (caller persists).
+ * URL support covers evidence rows; owned-row support covers startups and
+ * memories (no URL by nature) — a line passes on either. Only real http(s)
+ * sources count as URLs: pseudo-sources like "memory" go through the
+ * owned-row path so invented figures sharing a memory token stay blocked. */
 export function criticScan(
   draft: string,
   adapted: Array<{ claim?: string; source_url?: string }>
 ): CriticVerdict {
-  const unsupported = findUnsupportedFactualClaims(draft, adapted);
+  const isHttp = (u: unknown): u is string =>
+    typeof u === "string" && /^https?:\/\//i.test(u);
+  const urlOnly = adapted.map((e) => ({
+    claim: e.claim,
+    source_url: isHttp(e.source_url) ? (e.source_url as string) : undefined,
+  }));
+  const ownedRows = adapted.map((e) => ({ claim: e.claim }));
+  const unsupported = findUnsupportedFactualClaims(draft, urlOnly).filter(
+    (line) => !claimHasOwnedRowSupport(line, ownedRows)
+  );
   return { blocked: unsupported.length > 0, unsupported };
 }
 

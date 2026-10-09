@@ -267,6 +267,32 @@ export function claimHasUrlSupport(
 // source_url). Bare numbers/URLs elsewhere in the line are still checked.
 const CITATION_MARKER_RE = /\[[SAEDMW]\d+\]/g;
 
+function tokenizeLine(lower: string): string[] {
+  return lower.split(/[^a-z0-9\u0600-\u06ff]+/u).filter((t) => t.length >= 4);
+}
+
+/** Owned-row support (assistant critic): startups/memories carry no URL, so
+ * URL support can never back them — without this, any grounded synthesis
+ * ("B2B SaaS", "stage (1/4)") is refused (live regression 2026-10-09: a
+ * correct 3-project analysis was critic-blocked). A line is
+ * owned-row-supported when one owned claim shares a 4+ char token AND
+ * contains every numeric token in the line — invented figures ("$50B" with
+ * no owned row containing 50) stay blocked. */
+export function claimHasOwnedRowSupport(
+  line: string,
+  rows: Array<{ claim?: string }>,
+): boolean {
+  const tokens = new Set(tokenizeLine(line.toLowerCase()));
+  if (tokens.size === 0) return false;
+  const numbers = line.match(/\d[\d.,%]*/g) ?? [];
+  return rows.some((r) => {
+    if (!r.claim) return false;
+    const claimLower = r.claim.toLowerCase();
+    if (!tokenizeLine(claimLower).some((t) => tokens.has(t))) return false;
+    return numbers.every((n) => claimLower.includes(n.toLowerCase()));
+  });
+}
+
 // Structural position statements ("stage 2 of 5" / "المرحلة 2 من 5") are
 // inherently numeric but carry no factual payload beyond an ordinal backed
 // by an [S#] provenance marker. Exempt ONLY lines whose sole numeric

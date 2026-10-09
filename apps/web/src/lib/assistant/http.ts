@@ -194,6 +194,34 @@ async function ownedEvidenceRows(
   }
 }
 
+/** Owned startup claims for the critic (name + one-liner + stage + position
+ * ordinal). Read fresh from the DB at critic time like evidence/memories —
+ * the grounding object may be stale or stubbed. The stage/position text is
+ * what makes a grounded "(1/4)" matchable (live regression 2026-10-09). */
+async function ownedStartupRows(ctx: AssistantHttpContext): Promise<string[]> {
+  try {
+    const extended = (await ctx.db
+      .from("startups")
+      .select("name,one_liner,stage,stage_track,stage_order")
+      .eq("owner_id", ctx.userId)
+      .limit(50)) as unknown as { data: StartupBrief[] | null };
+    const rows = (extended.data ?? []) as StartupBrief[];
+    return rows
+      .filter((s) => typeof s.name === "string")
+      .map((s) => {
+        const order = resolveOrder(
+          s.stage_track ?? null,
+          (s.stage_order ?? null) as Array<{ key: string; label: string }> | null,
+        );
+        const pos = stagePosition(order, s.stage ?? "idea");
+        const position = pos >= 0 ? ` stage ${pos + 1}/${order.length}` : "";
+        return `${s.name}: ${s.one_liner ?? ""} ${s.stage ?? ""}${position}`;
+      });
+  } catch {
+    return [];
+  }
+}
+
 /** Approved memory values for the critic. Memories carry no URL, so they
  * are keyed with source "memory" — claimHasUrlSupport only needs a truthy
  * source plus token overlap. Live regression 2026-10-07: a just-saved
@@ -714,12 +742,13 @@ export async function handleAssistantPost(
   }
 
   // 9. verifier-as-critic rescan; flagged draft → refusal + trace row.
-  // The critic matches numeric/factual lines against rows WITH source
-  // URLs, so feed it the owned evidence rows (claim + source_url) — a
-  // startups-only input has no URLs and would refuse every numeric reply.
+  // URL support covers evidence rows; startup/memory claims ride the
+  // owned-row path in criticScan (token overlap + number containment), so
+  // the startup claim carries stage + position ordinal text too — otherwise
+  // a grounded "(1/4)" is unmatchable (live regression 2026-10-09).
   let reply = turn.reply;
   const adapted = adaptCitedRows([
-    ...startups.map((s) => ({ claim: `${s.name}: ${s.one_liner ?? ""}` })),
+    ...(await ownedStartupRows(ctx)).map((claim) => ({ claim })),
     ...(await ownedEvidenceRows(ctx)),
     ...(await ownedMemoryRows(ctx)),
   ]);

@@ -528,6 +528,53 @@ describe("assistant-chat handlers", () => {
     expect(tokens).not.toMatch(/can't find supporting data/);
   });
 
+  it("critic accepts grounded data synthesis (names, B2B, stage ordinals)", async () => {
+    // Live regression (2026-10-09): a correct analysis of the user's own
+    // projects was critic-blocked and replaced with refusal — the digit in
+    // "B2B" and the "(1/4)" stage ordinal demanded URL-backed evidence that
+    // owned rows (startups/memories) never carry. Owned-row-backed lines
+    // (token overlap + number containment) must pass.
+    const sid = "44444444-4444-4444-8444-444444444444";
+    const order = [
+      { key: "idea", label: "Idea" },
+      { key: "mvp", label: "MVP" },
+      { key: "beta", label: "Beta" },
+      { key: "live", label: "Live" },
+    ];
+    const { ctx } = makeCtx({
+      startups: [
+        {
+          id: sid,
+          owner_id: UID,
+          name: "MENA Restaurant Inventory",
+          one_liner: "B2B inventory management platform for restaurants in the MENA region.",
+          stage: "idea",
+          stage_track: null,
+          stage_order: order,
+        },
+      ],
+    });
+    ctx.modelCaller = async () => ({
+      reply:
+        "Based on your data: MENA Restaurant Inventory is a B2B SaaS for the MENA region, currently at the initial idea stage (1/4).",
+      citations: [],
+      toolCalls: [],
+      usage: [{ totalTokenCount: 10 }],
+      dispatched: true,
+    });
+    const res = await handleAssistantPost(ctx, {
+      client_message_id: MSG_NEW,
+      message: "analyze the right field for me based on my data",
+    });
+    const text = (await readSse(res)).map((e) => JSON.parse(e));
+    const tokens = text
+      .filter((e) => e.type === "token")
+      .map((e) => e.text)
+      .join("");
+    expect(tokens).toContain("B2B");
+    expect(tokens).not.toMatch(/can't find supporting data/);
+  });
+
   it("tool SSE events carry redacted args per spec §5", async () => {
     const { ctx } = makeCtx();
     ctx.modelCaller = async () => ({
