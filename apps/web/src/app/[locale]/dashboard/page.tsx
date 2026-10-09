@@ -416,7 +416,7 @@ export default function DashboardPage() {
           {/* Welcome */}
           <div className="mb-8">
             <h1 className="text-2xl font-black mb-1">
-              {tDash("greeting", { name: user?.full_name || user?.email?.split("@")[0] ?? "" })} 👋
+              {tDash("greeting", { name: (user?.full_name || user?.email?.split("@")[0]) ?? "" })} 👋
             </h1>
             <p className="text-slate-400 text-sm">
               {tDash("workspaceLine", { workspace: activeWorkspace?.name ?? "", startups: startups.length, members: members.length })}

@@ -1,1 +1,498 @@
-{"common":{"appName":"Validation Copilot","arabicShort":"ع","englishShort":"EN","switchLanguage":"Switch language","switchToArabic":"العربية","switchToEnglish":"English"},"dashboard":{"dialogs":{"membershipAlert":"Workspace created but membership failed — please refresh. If this persists, run migration 0009_workspace_bootstrap.sql in Supabase.","workspacePrompt":"Workspace name:"},"greeting":"Welcome back, {name}","header":{"adminLink":"Admin","avatarAlt":"avatar","noWorkspace":"No Workspace","newWorkspace":"New Workspace","signOutTitle":"Sign out","workspacesTitle":"Your Workspaces"},"inviteModal":{"emailPlaceholder":"colleague@company.com","permAdmin":"Full edit + invite access. Cannot delete workspace.","permMember":"Can edit startups and run experiments. Cannot invite others.","permOwner":"Full control including workspace deletion.","permViewer":"Read-only access. Cannot edit or run experiments.","rolePermissions":"Role permissions:","send":"Send Invite","sendError":"❌ Failed to send invite. Check the email and try again.","sending":"Sending…","sent":"Invite sent successfully!","sub":"They'll receive an email with a join link. Only {workspace} members can access its data.","title":"Invite to Workspace"},"loading":"Loading your workspace…","paywall":{"body":"You've used your free trial project — all your projects and results are saved and you can view them anytime. Subscribe to start a new project.","close":"Close","closeAria":"Close dialog","cta":"View subscription plans","title":"Your free trial has ended"},"quickActions":{"inviteCta":"Invite Members","title":"Quick Actions"},"roles":{"admin":"admin","member":"member","owner":"owner","viewer":"viewer"},"startups":{"emptyCta":"Validate Your First Idea","emptyTitle":"No startups yet in this workspace.","newCta":"New Startup","title":"Your Startups"},"stats":{"decisions":"Decisions","experiments":"Experiments","startups":"Startups","teamMembers":"Team Members"},"team":{"emptyLine":"No members loaded yet.","inviteCta":"Invite","memberLine":"Joined {date}","pending":"Pending","title":"Team"},"workspaceLine":"{workspace} · {startups, plural, =0 {0 startups} =1 {1 startup} other {# startups}} · {members, plural, =0 {0 members} =1 {1 member} other {# members}}"},"history":{"header":{"subPattern":"{total, plural, =0 {0 sessions} =1 {1 session} other {# sessions}} · All your past validation runs, decisions, and experiments"}},"landing":{"features":[{"desc":"Every claim is grounded to a source URL. A dedicated Verifier model strips unsupported claims before they reach you.","title":"Anti-Hallucination Engine"},{"desc":"Distinguishes between 'sounds great' (opinion) and 'here's my credit card' (commitment). No false positives.","title":"Commitment Ladder"},{"desc":"The leading-question validator blocks biased questions before they poison your data. Built on The Mom Test methodology.","title":"Bias-Free Surveys"},{"desc":"Works for edtech, SaaS, food-tech, health, or any vertical — domain knowledge is fetched at runtime, not hardcoded.","title":"Domain-Agnostic"},{"desc":"Every tool call, source, and verifier check shown in real time. No black box — complete observability.","title":"Full Trace Panel"},{"desc":"The system refuses to output 'Go' without real user evidence. 'Test More' is a valid, honest answer.","title":"Real Evidence Required"}],"final":{"cta":"Start Validation","desc":"Describe your idea and get a risk-ranked assumption map, grounded market research, and a bias-free validation experiment — in minutes, not weeks.","title":"Ready to stop guessing?"},"footer":{"brand":"Validation Copilot · AI-OS Hackathon 2026","builtWith":"Built with Gemini + Groq + Supabase","pdpl":"PDPL-compliant evidence collection"},"golden":{"sub":"Six steps from idea to evidence-backed decision memo — all in one session.","title":"The Golden Path"},"header":{"brand":"Validation Copilot","launch":"Launch App","version":"AI-OS Hackathon v2.0"},"hero":{"eyebrow":"AI-Powered Startup Validation · Real Evidence · No Hallucinations","inputPlaceholder":"Describe your startup idea...","orLineA":"Or","orLineB":"open the full dashboard","orLineC":"to see an example analysis","primaryCta":"Validate Now","subA":"Most startups fail not from bad execution, but from","subB":"unvalidated assumptions","subC":". Validation Copilot maps your risks, gathers grounded evidence, and refuses to call anything “validated” without real user data.","titleA":"Stop building","titleB":"the wrong thing."},"honesty":{"desc":"The system never inflates a verdict. If your evidence is thin, it says so — with the next cheapest experiment to run, not false encouragement. Built on the commitment ladder: opinion → intent → time given → contact shared → money committed.","title":"Honest decisions, every time"},"ladder":{"note":"⚠️ Minimum rung-4+ x3 sources, n≥30 (or n≥12 interviews) required before any “Go” verdict is possible.","rows":[{"example":"\"Sounds useful!\"","label":"Opinion","rung":"1"},{"example":"\"I would probably use this\"","label":"Stated intent","rung":"2"},{"example":"Agreed to a call / filled survey","label":"Time given","rung":"3"},{"example":"Gave email voluntarily","label":"Contact shared","rung":"4"},{"example":"Pre-order / deposit / LOI","label":"Commitment","rung":"5"}],"title":"Commitment Ladder"},"rigor":{"desc":"Every feature exists to prevent the mistakes that kill startups after months of wasted effort.","title":"Built for rigor, not comfort"},"steps":[{"desc":"Describe your idea","label":"Intake"},{"desc":"Risk-ranked map","label":"Assumptions"},{"desc":"Grounded evidence","label":"Research"},{"desc":"Design & validate","label":"Experiment"},{"desc":"Real responses","label":"Evidence"},{"desc":"Go / Iterate / Stop","label":"Decision"}],"trust":["Grounded web research","Leading-question validator","Full trace log","Evidence ladder"],"verdicts":[{"desc":"Strong evidence supports moving forward","name":"Go"},{"desc":"Some evidence but key assumptions unproven","name":"Iterate"},{"desc":"Evidence contradicts core assumptions","name":"Stop"},{"desc":"Insufficient evidence to conclude either way","name":"Test More"}]},"nav":{"assistant":"Assistant","dashboard":"Dashboard","history":"History","login":"Log in","validate":"Validate"},"shared":{"actions":{"apply":"Apply","back":"Back","cancel":"Cancel","clearAll":"Clear all","clearFilters":"Clear filters","close":"Close","confirm":"Confirm","delete":"Delete","downloadCsv":"Download CSV","export":"Export","invite":"Invite","retry":"Retry","save":"Save","send":"Send","signOut":"Sign out","stop":"Stop"},"confidence":{"confidence":"confidence","high":"high","low":"low","medium":"medium"},"errors":{"agentRunFailed":"Agent run failed","failedToLoad":"Failed to load","networkError":"Network error. Please try again.","requestFailed":"Request failed ({status})","unknownError":"Unknown error"},"misc":{"loading":"Loading...","nextPage":"Next page","off":"Off","on":"On","previousPage":"Previous page","role":"Role","searchDefault":"Search (min 2 chars)..."},"pagination":{"pageXofY":"{x, plural, =0 {Page 0 of {y}} =1 {Page 1 of {y}} other {Page # of {y}}}","totalOf":"{total, plural, =0 {0 total} =1 {1 total} other {# total}}"},"stages":{"beta":"Closed beta","idea":"Idea","live":"Live","mvp":"MVP","pilot":"Pilot","production":"Production","prototype":"Prototype","retail":"Retail","scaling":"Scaling"},"tracks":{"consumer_product":"Consumer product","general":"General","local_service":"Local service","saas_tech":"Technical SaaS"},"verdicts":{"go":"Go","iterate":"Iterate","stop":"Stop","testMore":"Test More"}},"auth":{"authFailed":"Authentication failed","checkEmail":"✅ Check your email for a confirmation link.","emailDivider":"or continue with email","emailLabel":"Email address","emailPlaceholder":"Email address","enterEmailFirst":"Enter your email first","forgotLink":"Reset it","forgotPrefix":"Forgot your password?","fullNameLabel":"Full name","fullNamePlaceholder":"Full name","google":"Continue with Google","loading":"Loading...","passwordLabel":"Password","passwordPlaceholder":"Password","pdplLine":"PDPL-compliant · Data never sold · Evidence stored securely.","resetSent":"Password reset email sent.","signInTab":"Sign In","signUpTab":"Sign Up","submitSignIn":"Sign In","submitSignUp":"Create Account","taglineA":"Welcome back. Your startups are waiting.","taglineB":"Join thousands of founders validating smarter.","terms":"By continuing, you agree to our Terms of Service & Privacy Policy."}}
+{
+  "common": {
+    "appName": "Validation Copilot",
+    "arabicShort": "ع",
+    "englishShort": "EN",
+    "switchLanguage": "Switch language",
+    "switchToArabic": "العربية",
+    "switchToEnglish": "English"
+  },
+  "dashboard": {
+    "dialogs": {
+      "membershipAlert": "Workspace created but membership failed — please refresh. If this persists, run migration 0009_workspace_bootstrap.sql in Supabase.",
+      "workspacePrompt": "Workspace name:"
+    },
+    "greeting": "Welcome back, {name}",
+    "header": {
+      "adminLink": "Admin",
+      "avatarAlt": "avatar",
+      "noWorkspace": "No Workspace",
+      "newWorkspace": "New Workspace",
+      "signOutTitle": "Sign out",
+      "workspacesTitle": "Your Workspaces"
+    },
+    "inviteModal": {
+      "emailPlaceholder": "colleague@company.com",
+      "permAdmin": "Full edit + invite access. Cannot delete workspace.",
+      "permMember": "Can edit startups and run experiments. Cannot invite others.",
+      "permOwner": "Full control including workspace deletion.",
+      "permViewer": "Read-only access. Cannot edit or run experiments.",
+      "rolePermissions": "Role permissions:",
+      "send": "Send Invite",
+      "sendError": "❌ Failed to send invite. Check the email and try again.",
+      "sending": "Sending…",
+      "sent": "Invite sent successfully!",
+      "sub": "They'll receive an email with a join link. Only {workspace} members can access its data.",
+      "title": "Invite to Workspace"
+    },
+    "loading": "Loading your workspace…",
+    "paywall": {
+      "body": "You've used your free trial project — all your projects and results are saved and you can view them anytime. Subscribe to start a new project.",
+      "close": "Close",
+      "closeAria": "Close dialog",
+      "cta": "View subscription plans",
+      "title": "Your free trial has ended"
+    },
+    "quickActions": {
+      "inviteCta": "Invite Members",
+      "title": "Quick Actions"
+    },
+    "roles": {
+      "admin": "admin",
+      "member": "member",
+      "owner": "owner",
+      "viewer": "viewer"
+    },
+    "startups": {
+      "emptyCta": "Validate Your First Idea",
+      "emptyTitle": "No startups yet in this workspace.",
+      "newCta": "New Startup",
+      "title": "Your Startups"
+    },
+    "stats": {
+      "decisions": "Decisions",
+      "experiments": "Experiments",
+      "startups": "Startups",
+      "teamMembers": "Team Members"
+    },
+    "team": {
+      "emptyLine": "No members loaded yet.",
+      "inviteCta": "Invite",
+      "memberLine": "Joined {date}",
+      "pending": "Pending",
+      "title": "Team"
+    },
+    "workspaceLine": "{workspace} · {startups, plural, =0 {0 startups} =1 {1 startup} other {# startups}} · {members, plural, =0 {0 members} =1 {1 member} other {# members}}"
+  },
+  "history": {
+    "header": {
+      "subPattern": "{total, plural, =0 {0 sessions} =1 {1 session} other {# sessions}} · All your past validation runs, decisions, and experiments"
+    }
+  },
+  "landing": {
+    "features": [
+      {
+        "desc": "Every claim is grounded to a source URL. A dedicated Verifier model strips unsupported claims before they reach you.",
+        "title": "Anti-Hallucination Engine"
+      },
+      {
+        "desc": "Distinguishes between 'sounds great' (opinion) and 'here's my credit card' (commitment). No false positives.",
+        "title": "Commitment Ladder"
+      },
+      {
+        "desc": "The leading-question validator blocks biased questions before they poison your data. Built on The Mom Test methodology.",
+        "title": "Bias-Free Surveys"
+      },
+      {
+        "desc": "Works for edtech, SaaS, food-tech, health, or any vertical — domain knowledge is fetched at runtime, not hardcoded.",
+        "title": "Domain-Agnostic"
+      },
+      {
+        "desc": "Every tool call, source, and verifier check shown in real time. No black box — complete observability.",
+        "title": "Full Trace Panel"
+      },
+      {
+        "desc": "The system refuses to output 'Go' without real user evidence. 'Test More' is a valid, honest answer.",
+        "title": "Real Evidence Required"
+      }
+    ],
+    "final": {
+      "cta": "Start Validation",
+      "desc": "Describe your idea and get a risk-ranked assumption map, grounded market research, and a bias-free validation experiment — in minutes, not weeks.",
+      "title": "Ready to stop guessing?"
+    },
+    "footer": {
+      "brand": "Validation Copilot · AI-OS Hackathon 2026",
+      "builtWith": "Built with Gemini + Groq + Supabase",
+      "pdpl": "PDPL-compliant evidence collection"
+    },
+    "golden": {
+      "sub": "Six steps from idea to evidence-backed decision memo — all in one session.",
+      "title": "The Golden Path"
+    },
+    "header": {
+      "brand": "Validation Copilot",
+      "launch": "Launch App",
+      "version": "AI-OS Hackathon v2.0"
+    },
+    "hero": {
+      "eyebrow": "AI-Powered Startup Validation · Real Evidence · No Hallucinations",
+      "inputPlaceholder": "Describe your startup idea...",
+      "orLineA": "Or",
+      "orLineB": "open the full dashboard",
+      "orLineC": "to see an example analysis",
+      "primaryCta": "Validate Now",
+      "subA": "Most startups fail not from bad execution, but from",
+      "subB": "unvalidated assumptions",
+      "subC": ". Validation Copilot maps your risks, gathers grounded evidence, and refuses to call anything “validated” without real user data.",
+      "titleA": "Stop building",
+      "titleB": "the wrong thing."
+    },
+    "honesty": {
+      "desc": "The system never inflates a verdict. If your evidence is thin, it says so — with the next cheapest experiment to run, not false encouragement. Built on the commitment ladder: opinion → intent → time given → contact shared → money committed.",
+      "title": "Honest decisions, every time"
+    },
+    "ladder": {
+      "note": "⚠️ Minimum rung-4+ x3 sources, n≥30 (or n≥12 interviews) required before any “Go” verdict is possible.",
+      "rows": [
+        {
+          "example": "\"Sounds useful!\"",
+          "label": "Opinion",
+          "rung": "1"
+        },
+        {
+          "example": "\"I would probably use this\"",
+          "label": "Stated intent",
+          "rung": "2"
+        },
+        {
+          "example": "Agreed to a call / filled survey",
+          "label": "Time given",
+          "rung": "3"
+        },
+        {
+          "example": "Gave email voluntarily",
+          "label": "Contact shared",
+          "rung": "4"
+        },
+        {
+          "example": "Pre-order / deposit / LOI",
+          "label": "Commitment",
+          "rung": "5"
+        }
+      ],
+      "title": "Commitment Ladder"
+    },
+    "rigor": {
+      "desc": "Every feature exists to prevent the mistakes that kill startups after months of wasted effort.",
+      "title": "Built for rigor, not comfort"
+    },
+    "steps": [
+      {
+        "desc": "Describe your idea",
+        "label": "Intake"
+      },
+      {
+        "desc": "Risk-ranked map",
+        "label": "Assumptions"
+      },
+      {
+        "desc": "Grounded evidence",
+        "label": "Research"
+      },
+      {
+        "desc": "Design & validate",
+        "label": "Experiment"
+      },
+      {
+        "desc": "Real responses",
+        "label": "Evidence"
+      },
+      {
+        "desc": "Go / Iterate / Stop",
+        "label": "Decision"
+      }
+    ],
+    "trust": [
+      "Grounded web research",
+      "Leading-question validator",
+      "Full trace log",
+      "Evidence ladder"
+    ],
+    "verdicts": [
+      {
+        "desc": "Strong evidence supports moving forward",
+        "name": "Go"
+      },
+      {
+        "desc": "Some evidence but key assumptions unproven",
+        "name": "Iterate"
+      },
+      {
+        "desc": "Evidence contradicts core assumptions",
+        "name": "Stop"
+      },
+      {
+        "desc": "Insufficient evidence to conclude either way",
+        "name": "Test More"
+      }
+    ]
+  },
+  "nav": {
+    "assistant": "Assistant",
+    "dashboard": "Dashboard",
+    "history": "History",
+    "login": "Log in",
+    "validate": "Validate"
+  },
+  "shared": {
+    "actions": {
+      "apply": "Apply",
+      "back": "Back",
+      "cancel": "Cancel",
+      "clearAll": "Clear all",
+      "clearFilters": "Clear filters",
+      "close": "Close",
+      "confirm": "Confirm",
+      "delete": "Delete",
+      "downloadCsv": "Download CSV",
+      "export": "Export",
+      "invite": "Invite",
+      "retry": "Retry",
+      "save": "Save",
+      "send": "Send",
+      "signOut": "Sign out",
+      "stop": "Stop"
+    },
+    "confidence": {
+      "confidence": "confidence",
+      "high": "high",
+      "low": "low",
+      "medium": "medium"
+    },
+    "errors": {
+      "agentRunFailed": "Agent run failed",
+      "failedToLoad": "Failed to load",
+      "networkError": "Network error. Please try again.",
+      "requestFailed": "Request failed ({status})",
+      "unknownError": "Unknown error"
+    },
+    "misc": {
+      "loading": "Loading...",
+      "nextPage": "Next page",
+      "off": "Off",
+      "on": "On",
+      "previousPage": "Previous page",
+      "role": "Role",
+      "searchDefault": "Search (min 2 chars)..."
+    },
+    "pagination": {
+      "pageXofY": "{x, plural, =0 {Page 0 of {y}} =1 {Page 1 of {y}} other {Page # of {y}}}",
+      "totalOf": "{total, plural, =0 {0 total} =1 {1 total} other {# total}}"
+    },
+    "stages": {
+      "beta": "Closed beta",
+      "idea": "Idea",
+      "live": "Live",
+      "mvp": "MVP",
+      "pilot": "Pilot",
+      "production": "Production",
+      "prototype": "Prototype",
+      "retail": "Retail",
+      "scaling": "Scaling"
+    },
+    "tracks": {
+      "consumer_product": "Consumer product",
+      "general": "General",
+      "local_service": "Local service",
+      "saas_tech": "Technical SaaS"
+    },
+    "verdicts": {
+      "go": "Go",
+      "iterate": "Iterate",
+      "stop": "Stop",
+      "testMore": "Test More"
+    }
+  },
+  "auth": {
+    "authFailed": "Authentication failed",
+    "checkEmail": "✅ Check your email for a confirmation link.",
+    "emailDivider": "or continue with email",
+    "emailLabel": "Email address",
+    "emailPlaceholder": "Email address",
+    "enterEmailFirst": "Enter your email first",
+    "forgotLink": "Reset it",
+    "forgotPrefix": "Forgot your password?",
+    "fullNameLabel": "Full name",
+    "fullNamePlaceholder": "Full name",
+    "google": "Continue with Google",
+    "loading": "Loading...",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Password",
+    "pdplLine": "PDPL-compliant · Data never sold · Evidence stored securely.",
+    "resetSent": "Password reset email sent.",
+    "signInTab": "Sign In",
+    "signUpTab": "Sign Up",
+    "submitSignIn": "Sign In",
+    "submitSignUp": "Create Account",
+    "taglineA": "Welcome back. Your startups are waiting.",
+    "taglineB": "Join thousands of founders validating smarter.",
+    "terms": "By continuing, you agree to our Terms of Service & Privacy Policy."
+  },
+  "validate": {
+    "assistant": {
+      "errors": {
+        "quotaExceeded": "The assistant's daily quota is over. To continue, see the plans: {url}",
+        "rateLimited": "Too many requests — wait a bit then retry{wait}.",
+        "requestFailed": "Request failed ({status})",
+        "researchEmpty": "Market Research",
+        "researchGrounded": "Market Research — {count} grounded claims",
+        "researchPartial": "Market Research — {count} research claims ({grounded} grounded)",
+        "researchUnverified": "Market Research — {count} research claims (unverified synthesis)",
+        "sensitiveContent": "This answer couldn't be shown (sensitive content). Rephrase and try again.",
+        "strengthCommitment": "Hard commitment (rung 5)",
+        "strengthContactShared": "Contact shared (rung 4)",
+        "strengthIntent": "Stated intent (rung 2)",
+        "strengthOpinion": "Opinion (rung 1)",
+        "strengthTimeGiven": "Time given (rung 3)",
+        "threadCap": "This conversation is full ({max} messages). Start a new chat to continue."
+      }
+    },
+    "cards": {
+      "biasApproved": "Approved by bias validator",
+      "estCost": "Est. cost",
+      "questionsTitle": "Interview / Survey Questions ({count})",
+      "riskWhy": "Why this risk level:",
+      "source": "Source",
+      "successCriteria": "Success criteria",
+      "targetSample": "Target sample",
+      "timeToRun": "Time to run"
+    },
+    "controls": {
+      "examples": [
+        "AI tutoring app for Egyptian high school students preparing for Thanaweyya Amma",
+        "B2B SaaS platform for restaurant inventory management in MENA",
+        "Subscription box for organic Egyptian produce delivered to Cairo households"
+      ],
+      "examplesTitle": "Try an example:",
+      "run": "Run Validation",
+      "stop": "Stop Agent"
+    },
+    "decision": {
+      "confidence": "confidence",
+      "nextExperiment": "Next cheapest experiment",
+      "rationale": "Rationale",
+      "responsePattern": "response {rate}%"
+    },
+    "form": {
+      "evidenceHint": "Paste CSV, interview notes, or survey results",
+      "evidenceLabel": "Primary Evidence (optional)",
+      "evidencePlaceholder": "Paste interview notes, survey responses, or CSV data here. The agent will analyze the real evidence and factor it into the decision memo.",
+      "ideaLabel": "Startup Idea",
+      "ideaPlaceholder": "Describe your startup idea in detail. What problem does it solve? Who is the target customer? What's your business model?"
+    },
+    "header": {
+      "callsUsed": "{used}/{max} calls",
+      "readyTitle": "Ready to validate",
+      "verifier": "Verifier",
+      "verifierFlags": "⚠ {count} flags",
+      "verifierOk": "✓"
+    },
+    "icp": {
+      "authority": "Buying authority",
+      "context": "Context",
+      "pain": "Pain",
+      "preliminary": "preliminary — pre-research",
+      "role": "Role",
+      "sam": "SAM",
+      "som": "SOM",
+      "tam": "TAM",
+      "workaround": "Workaround"
+    },
+    "idle": {
+      "bullets": [
+        "Assumption mapping",
+        "Grounded research",
+        "Bias-free experiments",
+        "Evidence analysis"
+      ],
+      "descA": "Describe your startup idea on the left and click",
+      "descC": "to start the AI agent.",
+      "title": "Ready to validate"
+    },
+    "investor": {
+      "topGaps": "Top gaps"
+    },
+    "leads": {
+      "notice": "Research-only shortlist for your own manual outreach — Apollo data is third-party and never auto-contacted."
+    },
+    "paywall": {
+      "cta": "View subscription plans",
+      "title": "Your free trial is over — your project is fully saved"
+    },
+    "phases": {
+      "evidence": "Evidence",
+      "experiment": "Experiment",
+      "icp_sizing": "ICP & Market",
+      "intake": "Intake",
+      "investor_readiness": "Investor Ready",
+      "leads": "Leads",
+      "mapping": "Mapping",
+      "memo": "Decision",
+      "research": "Research",
+      "verifying": "Verifying"
+    },
+    "results": {
+      "agentError": "Agent Error",
+      "apiKeyHint": "Make sure GEMINI_API_KEY is set in your .env.local file.",
+      "assumptionMap": "Assumption Map ({count})",
+      "browserOnly": "Saved in this browser only",
+      "clarifying": "Clarifying questions",
+      "evidenceCount": "{count} evidence items collected",
+      "experimentTitle": "Validation Experiment",
+      "icpTitle": "Ideal Customer & Market",
+      "leadsFound": "— {count} found",
+      "leadsSearching": "Searching Apollo for people matching your target customer…",
+      "leadsTitle": "Potential Interviewees",
+      "memoTitle": "Decision Memo",
+      "moreItems": "+{count} more evidence items",
+      "primarySub": "From real respondents",
+      "primaryTitle": "Primary Evidence — {count} items",
+      "scoreTitle": "Investor Readiness",
+      "secondaryOnly": "Secondary only — not sufficient for Go verdict",
+      "toolsUsed": "{count} tool calls used",
+      "verifierApproved": "✓ Approved"
+    },
+    "serverErrors": {
+      "offlineSnapshot": "Couldn't reach the server — this snapshot is kept in this browser only and won't appear in History on other devices.",
+      "requestFailed": "Request failed ({status})",
+      "retryIn": "Retry in {seconds}s.",
+      "saveFailed": "Couldn't save this snapshot (server unreachable, browser storage full).",
+      "statusPattern": "Request failed with status {status}",
+      "streamEnded": "The stream ended before a verdict arrived (connection lost or server timeout). Please try again."
+    },
+    "stage": {
+      "confirmMove": "Confirm move",
+      "dismissSuggestion": "Dismiss suggestion",
+      "errors": {
+        "confirmFailed": "Couldn't confirm the move — please retry.",
+        "dismissFailed": "Couldn't record the dismissal — please retry.",
+        "trackFailed": "Couldn't switch track — please retry."
+      },
+      "offTrackPattern": "{stage} (off track)",
+      "suggestionPattern": "Suggestion: move to {label}",
+      "title": "Project Stages",
+      "trackLabel": "Track",
+      "tracks": {
+        "general": "General",
+        "saas_tech": "SaaS / Tech",
+        "local_service": "Local service",
+        "consumer_product": "Consumer product"
+      }
+    },
+    "stats": {
+      "assumptions": "Assumptions",
+      "evidence": "Evidence items",
+      "title": "Session Stats"
+    },
+    "tabs": {
+      "results": "Results",
+      "trace": "Trace Log"
+    },
+    "trace": {
+      "countPattern": "({count} events)",
+      "title": "Trace Log",
+      "waiting": "Waiting for agent activity..."
+    }
+  }
+}
