@@ -601,5 +601,59 @@
       "metadataDescription": "اسأل عن أفكارك وأدلتك — إجابات مؤرضة على بياناتك فقط.",
       "headerTitle": "المساعد الذكي"
     }
+  },
+  "plans": {
+    "page": {
+      "metadataTitle": "خطط الاشتراك — Validation Copilot",
+      "metadataDescription": "خطط الاشتراك: ابدأ مجانًا ثم ترقَّ عندما تكون جاهزًا.",
+      "title": "خطط الاشتراك",
+      "sub": "ابدأ بمشروعك المجاني — وعندما تنتهي التجربة، اختر الخطة المناسبة لفريقك.",
+      "quotaTitle": "انتهت حصتك اليومية من رسائل المساعد",
+      "quotaBody": "تعود الحصة تلقائيًا عند منتصف الليل (UTC) — أو راسلنا بالأسفل لترقية خطتك إلى حصة أعلى."
+    },
+    "tiers": {
+      "free": {
+        "name": "المجانية",
+        "desc": "مشروع واحد — للمستخدمين الجدد",
+        "price": "مجانًا",
+        "cta": "تسجيل الدخول"
+      },
+      "pro": {
+        "name": "Pro",
+        "desc": "للمؤسسين الأفراد والفرق الصغيرة",
+        "cta": "اشترك في Pro"
+      },
+      "team": {
+        "name": "Team",
+        "desc": "لفرق العمل والمؤسسات",
+        "cta": "اشترك في Team"
+      }
+    },
+    "requestForm": {
+      "loading": "جارٍ التحميل…",
+      "successMessage": "طلبك وصل — سنراجعه قريبًا",
+      "duplicateMessage": "لديك طلب قيد المراجعة",
+      "genericError": "حدث خطأ — حاول مجددًا",
+      "requiredLogin": "سجّل الدخول أولًا لتقديم طلب اشتراك",
+      "subscribedLine": "أنت مشترك حاليًا في خطة {plan}",
+      "backToDashboard": "العودة إلى لوحة التحكم",
+      "title": "طلب اشتراك",
+      "sub": "املأ بياناتك وسنراجع طلبك — الدفع والموافقة يتمّان يدويًا.",
+      "planPickerAria": "اختر الخطة",
+      "nameLabel": "الاسم الكامل",
+      "namePlaceholder": "مثال: أحمد محمد",
+      "nameError": "اكتب الاسم الكامل",
+      "phoneLabel": "رقم الهاتف",
+      "phonePlaceholder": "01xxxxxxxxx",
+      "phoneError": "اكتب رقم هاتف صحيح",
+      "companyLabel": "الشركة",
+      "optionalSuffix": "(اختياري)",
+      "companyPlaceholder": "اسم الشركة",
+      "notesLabel": "ملاحظات",
+      "notesPlaceholder": "أي تفاصيل إضافية عن احتياجك",
+      "loginCta": "تسجيل الدخول",
+      "submit": "إرسال الطلب",
+      "submitting": "جارٍ الإرسال…"
+    }
   }
 }

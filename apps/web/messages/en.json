@@ -601,5 +601,59 @@
       "metadataDescription": "Ask about your ideas and evidence — answers grounded in your data.",
       "headerTitle": "Smart Assistant"
     }
+  },
+  "plans": {
+    "page": {
+      "metadataTitle": "Plans — Validation Copilot",
+      "metadataDescription": "Subscription plans: start free, then upgrade when you're ready.",
+      "title": "Subscription plans",
+      "sub": "Start with your free project — when the trial ends, pick the right plan for your team.",
+      "quotaTitle": "Your daily assistant message quota is over",
+      "quotaBody": "Quota resets automatically at midnight (UTC) — or message us below to upgrade to a higher quota."
+    },
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "desc": "One project — for new users",
+        "price": "Free",
+        "cta": "Log in"
+      },
+      "pro": {
+        "name": "Pro",
+        "desc": "For solo founders and small teams",
+        "cta": "Subscribe to Pro"
+      },
+      "team": {
+        "name": "Team",
+        "desc": "For teams and organizations",
+        "cta": "Subscribe to Team"
+      }
+    },
+    "requestForm": {
+      "loading": "Loading…",
+      "successMessage": "Your request is in — we'll review it soon",
+      "duplicateMessage": "You already have a request under review",
+      "genericError": "Something went wrong — try again",
+      "requiredLogin": "Log in first to submit a subscription request",
+      "subscribedLine": "You are currently subscribed to the {plan} plan",
+      "backToDashboard": "Back to dashboard",
+      "title": "Subscription request",
+      "sub": "Fill in your details and we'll review — payment and approval are manual.",
+      "planPickerAria": "Choose a plan",
+      "nameLabel": "Full name",
+      "namePlaceholder": "e.g. Ahmed Mohamed",
+      "nameError": "Enter your full name",
+      "phoneLabel": "Phone number",
+      "phonePlaceholder": "01xxxxxxxxx",
+      "phoneError": "Enter a valid phone number",
+      "companyLabel": "Company",
+      "optionalSuffix": "(optional)",
+      "companyPlaceholder": "Company name",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "Any extra details about what you need",
+      "loginCta": "Log in",
+      "submit": "Submit request",
+      "submitting": "Submitting…"
+    }
   }
 }
