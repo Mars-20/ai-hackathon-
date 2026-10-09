@@ -330,7 +330,7 @@ export default function HistoryPage() {
             <Link href={withLocale("/assistant", locale)} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={t("assistant")} aria-label={t("assistant")} id="history-assistant-link">
               <MessageCircle className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t("assistant")}</span>
             </Link>
-            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={tH("header.exportCta")} aria-label={tH("header.exportCta")}>
+            <button onClick={exportCSV} className="glass glass-hover px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 border border-white/5" title={tH("header.exportTitle")} aria-label={tH("header.exportTitle")}>
               <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{tH("header.exportCta")}</span>
             </button>
             <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
@@ -549,7 +549,7 @@ export default function HistoryPage() {
               </p>
               {activeFilterCount > 0 || searchQ ? (
                 <button onClick={clearAllFilters} className="text-xs text-brand-400 hover:underline">
-                  {tH("states.clearCta")}
+                  {tShared("actions.clearFilters")}
                 </button>
               ) : (
                 <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5 mt-2">

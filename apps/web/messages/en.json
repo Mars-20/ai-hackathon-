@@ -82,7 +82,8 @@
       "exportCta": "Export",
       "openTitle": "Open startup",
       "openParentTitle": "Open parent startup",
-      "noResultsFor": "No results for \"{q}\""
+      "noResultsFor": "No results for \"{q}\"",
+      "exportTitle": "Export CSV"
     },
     "filters": {
       "byNamePlaceholder": "Filter by name, domain, one-liner...",

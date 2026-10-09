@@ -82,7 +82,8 @@
       "exportCta": "تصدير",
       "openTitle": "افتح المشروع",
       "openParentTitle": "افتح المشروع الأب",
-      "noResultsFor": "مفيش نتائج عن \"{q}\""
+      "noResultsFor": "مفيش نتائج عن \"{q}\"",
+      "exportTitle": "تصدير CSV"
     },
     "filters": {
       "byNamePlaceholder": "رشّح بالاسم أو المجال أو الوصف...",
