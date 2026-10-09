@@ -8,7 +8,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAssistantOpen } from "@/lib/assistant/gate";
-import { stripLocale } from "@/lib/i18n-path";
+import { stripLocale, isLocaleExemptPath } from "@/lib/i18n-path";
 
 // Routes that require authentication (matched against the locale-stripped path)
 const PROTECTED_ROUTES = ["/validate", "/dashboard", "/history", "/assistant", "/workspace", "/admin"];
@@ -55,6 +55,14 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // Functional auth routes (OAuth callback, ...) are not localizable pages.
+  // Serve them as-is: locale-prefix redirecting would 404 (/en/auth/callback
+  // does not exist) and the OAuth code would never be exchanged. Session
+  // refresh above still applies.
+  if (isLocaleExemptPath(pathname)) {
+    return supabaseResponse;
+  }
 
   // Redirects start cookie-free, so re-apply the refreshed Supabase session
   // cookies onto every redirect — otherwise each redirect drops the refresh.
