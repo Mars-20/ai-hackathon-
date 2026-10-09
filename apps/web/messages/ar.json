@@ -1004,6 +1004,33 @@
       "label": "مساحة العمل",
       "switchAria": "بدّل مساحة العمل",
       "selectPlaceholder": "اختار مساحة العمل…"
+    },
+    "requests": {
+      "title": "طلبات الاشتراك",
+      "sub": "قائمة الطلبات المعلقة — الاعتماد والرفض والإيقاف عبر مالك المنصة فقط",
+      "loading": "جارٍ التحميل…",
+      "emptyOwner": "القائمة مقيدة — لم يتم تعيين مالك المنصة بعد",
+      "emptyQueue": "لا توجد طلبات قيد المراجعة",
+      "planLinePattern": "الخطة المطلوبة: {plan} — {date}",
+      "approvePlanLabel": "الخطة عند الاعتماد",
+      "executing": "جارٍ التنفيذ…",
+      "confirmPattern": "تأكيد {action}؟",
+      "loadFailed": "تعذر تحميل القائمة",
+      "actionFailed": "فشل تنفيذ الإجراء",
+      "actionDone": "تم تنفيذ الإجراء بنجاح",
+      "actions": {
+        "approve": "اعتماد",
+        "reject": "رفض",
+        "pause": "إيقاف مؤقت"
+      },
+      "entitlement": {
+        "trialActive": "تجربة نشطة",
+        "trialConsumed": "تجربة مستهلكة",
+        "subscribed": "مشترك",
+        "paused": "موقوف",
+        "legacy": "قديم",
+        "unknown": "غير معروف"
+      }
     }
   }
 }

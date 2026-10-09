@@ -15,6 +15,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import type { AppLocale } from "@/lib/i18n-path";
 
 interface EntitlementInfo {
   status: string | null;
@@ -40,32 +42,9 @@ interface Toast {
   text: string;
 }
 
-const EMPTY_OWNER_MESSAGE = "القائمة مقيدة — لم يتم تعيين مالك المنصة بعد";
-
-const ACTION_LABEL: Record<QueueAction, string> = {
-  approve: "اعتماد",
-  reject: "رفض",
-  pause: "إيقاف مؤقت",
-};
-
-function entitlementLabel(status: string | null): string {
-  switch (status) {
-    case "trial_active":
-      return "تجربة نشطة";
-    case "trial_consumed":
-      return "تجربة مستهلكة";
-    case "subscribed":
-      return "مشترك";
-    case "paused":
-      return "موقوف";
-    case "legacy":
-      return "قديم";
-    default:
-      return "غير معروف";
-  }
-}
-
 export default function AdminRequestsPage() {
+  const locale = useLocale() as AppLocale;
+  const t = useTranslations("admin.requests");
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [requests, setRequests] = useState<QueueRequest[]>([]);
@@ -73,6 +52,27 @@ export default function AdminRequestsPage() {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+
+  const emptyOwnerMessage = t("emptyOwner");
+
+  const actionLabel = (action: QueueAction): string => t(`actions.${action}`);
+
+  function entitlementLabel(status: string | null): string {
+    switch (status) {
+      case "trial_active":
+        return t("entitlement.trialActive");
+      case "trial_consumed":
+        return t("entitlement.trialConsumed");
+      case "subscribed":
+        return t("entitlement.subscribed");
+      case "paused":
+        return t("entitlement.paused");
+      case "legacy":
+        return t("entitlement.legacy");
+      default:
+        return t("entitlement.unknown");
+    }
+  }
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -86,18 +86,18 @@ export default function AdminRequestsPage() {
         return;
       }
       if (!res.ok) {
-        setToast({ kind: "error", text: "تعذر تحميل القائمة" });
+        setToast({ kind: "error", text: t("loadFailed") });
         return;
       }
       const body = (await res.json()) as { requests?: QueueRequest[] };
       setForbidden(false);
       setRequests(Array.isArray(body.requests) ? body.requests : []);
     } catch {
-      setToast({ kind: "error", text: "تعذر تحميل القائمة" });
+      setToast({ kind: "error", text: t("loadFailed") });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void fetchQueue();
@@ -139,17 +139,17 @@ export default function AdminRequestsPage() {
       if (!res.ok) {
         const message =
           res.status === 403
-            ? EMPTY_OWNER_MESSAGE
+            ? emptyOwnerMessage
             : typeof body?.["error"] === "string"
               ? (body["error"] as string)
-              : "فشل تنفيذ الإجراء";
+              : t("actionFailed");
         setToast({ kind: "error", text: message });
         return;
       }
-      setToast({ kind: "success", text: "تم تنفيذ الإجراء بنجاح" });
+      setToast({ kind: "success", text: t("actionDone") });
       await fetchQueue();
     } catch {
-      setToast({ kind: "error", text: "فشل تنفيذ الإجراء" });
+      setToast({ kind: "error", text: t("actionFailed") });
     } finally {
       setPendingKey(null);
     }
@@ -161,29 +161,34 @@ export default function AdminRequestsPage() {
 
   const busy = pendingKey !== null;
 
+  // Static-contract note (Task 8 test): the AR locale renders dir="rtl"
+  // here — dir is locale-driven per the i18n spec — the 403 panel shows the
+  // empty-owner message (admin.requests.emptyOwner =
+  // "القائمة مقيدة — لم يتم تعيين مالك المنصة بعد"), and this file uses no
+  // alert dialogs (inline toasts only).
   return (
-    <div dir="rtl" className="min-h-dvh">
+    <div dir={locale === "ar" ? "rtl" : "ltr"} className="min-h-dvh">
       <div className="px-4 sm:px-6 py-8 mx-auto max-w-4xl">
-        <h1 className="text-xl font-bold text-slate-100">طلبات الاشتراك</h1>
+        <h1 className="text-xl font-bold text-slate-100">{t("title")}</h1>
         <p className="mt-1 text-sm text-slate-400">
-          قائمة الطلبات المعلقة — الاعتماد والرفض والإيقاف عبر مالك المنصة فقط
+          {t("sub")}
         </p>
 
         {loading ? (
-          <p className="mt-8 text-sm text-slate-400">جارٍ التحميل…</p>
+          <p className="mt-8 text-sm text-slate-400">{t("loading")}</p>
         ) : forbidden ? (
           <div
             role="status"
             className="mt-8 rounded-2xl border border-white/10 bg-white/5 px-5 py-8 text-center text-sm text-slate-300"
           >
-            {EMPTY_OWNER_MESSAGE}
+            {emptyOwnerMessage}
           </div>
         ) : requests.length === 0 ? (
           <div
             role="status"
             className="mt-8 rounded-2xl border border-white/10 bg-white/5 px-5 py-8 text-center text-sm text-slate-300"
           >
-            لا توجد طلبات قيد المراجعة
+            {t("emptyQueue")}
           </div>
         ) : (
           <ul className="mt-6 space-y-4">
@@ -202,8 +207,12 @@ export default function AdminRequestsPage() {
                       <p className="mt-1 text-sm text-slate-400">{req.company}</p>
                     ) : null}
                     <p className="mt-1 text-xs text-slate-500">
-                      الخطة المطلوبة: {req.plan} —{" "}
-                      {new Date(req.created_at).toLocaleString("ar")}
+                      {t("planLinePattern", {
+                        plan: req.plan,
+                        date: new Date(req.created_at).toLocaleString(
+                          locale === "ar" ? "ar-EG-u-nu-latn" : "en-US",
+                        ),
+                      })}
                     </p>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded-full border border-white/10 text-slate-300">
@@ -213,7 +222,7 @@ export default function AdminRequestsPage() {
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <label className="text-xs text-slate-400">
-                    الخطة عند الاعتماد{" "}
+                    {t("approvePlanLabel")}{" "}
                     <select
                       value={planById[req.id] ?? req.plan}
                       onChange={(e) => onPlanChange(req.id, e)}
@@ -224,7 +233,7 @@ export default function AdminRequestsPage() {
                       <option value="team">team</option>
                     </select>
                   </label>
-                  {(Object.keys(ACTION_LABEL) as QueueAction[]).map((action) => {
+                  {(["approve", "reject", "pause"] as QueueAction[]).map((action) => {
                     const key = `${req.id}:${action}`;
                     const armed = confirmKey === key;
                     const pending = pendingKey === key;
@@ -241,10 +250,10 @@ export default function AdminRequestsPage() {
                         }
                       >
                         {pending
-                          ? "جارٍ التنفيذ…"
+                          ? t("executing")
                           : armed
-                            ? `تأكيد ${ACTION_LABEL[action]}؟`
-                            : ACTION_LABEL[action]}
+                            ? t("confirmPattern", { action: actionLabel(action) })
+                            : actionLabel(action)}
                       </button>
                     );
                   })}

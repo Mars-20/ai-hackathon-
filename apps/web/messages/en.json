@@ -1004,6 +1004,33 @@
       "label": "Workspace",
       "switchAria": "Switch workspace",
       "selectPlaceholder": "Select workspace…"
+    },
+    "requests": {
+      "title": "Subscription requests",
+      "sub": "Pending requests queue — approve, reject, and pause via the platform owner only",
+      "loading": "Loading…",
+      "emptyOwner": "List restricted — no platform owner is set yet",
+      "emptyQueue": "No requests under review",
+      "planLinePattern": "Requested plan: {plan} — {date}",
+      "approvePlanLabel": "Plan on approve",
+      "executing": "Executing…",
+      "confirmPattern": "Confirm {action}?",
+      "loadFailed": "Couldn't load the list",
+      "actionFailed": "Couldn't complete the action",
+      "actionDone": "Action completed successfully",
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "pause": "Pause"
+      },
+      "entitlement": {
+        "trialActive": "Active trial",
+        "trialConsumed": "Consumed trial",
+        "subscribed": "Subscribed",
+        "paused": "Paused",
+        "legacy": "Legacy",
+        "unknown": "Unknown"
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 // Fails on Arabic-script literals in COVERED files.
-// Exempt: not-yet-covered phases' files + consent-checkbox.tsx (legal verbatim, permanent).
+// Exempt: consent-checkbox.tsx (legal verbatim, permanent).
 // R13: three permanent skips — src/lib/ + /api/ walk skips and the src/app/layout.tsx EXEMPT entry (spec-kept Arabic).
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -12,26 +12,6 @@ const SRC = join(HERE, "..", ".."); // src
 const EXEMPT = new Set([
   "src/components/consent-checkbox.tsx", // legal text stays Arabic (spec §6)
   "src/app/layout.tsx", // R13: root shell, locale-conditional metadata parked per spec
-  // Phase 4 files (removed in Task 4):
-  "src/app/[locale]/admin/layout.tsx",
-  "src/app/[locale]/admin/page.tsx",
-  "src/app/[locale]/admin/analytics/page.tsx",
-  "src/app/[locale]/admin/content/page.tsx",
-  "src/app/[locale]/admin/ops/page.tsx",
-  "src/app/[locale]/admin/users/page.tsx",
-  "src/app/[locale]/admin/workspaces/page.tsx",
-  "src/app/[locale]/admin/workspaces/[id]/page.tsx",
-  "src/app/[locale]/admin/requests/page.tsx",
-  "src/components/admin/AdminTable.tsx",
-  "src/components/admin/ContentActions.tsx",
-  "src/components/admin/UserActions.tsx",
-  "src/components/admin/WorkspaceSwitcher.tsx",
-  "src/components/admin/ReportGenerator.tsx",
-  "src/components/admin/EmailResendButton.tsx",
-  "src/components/admin/PlatformAdminGrantForm.tsx",
-  "src/components/admin/PlatformAdminRevokeButton.tsx",
-  "src/components/admin/AnalyticsAutoRefresh.tsx",
-  "src/components/admin/KpiCard.tsx",
 ]);
 
 const AR = /[\u0600-\u06FF]/;
