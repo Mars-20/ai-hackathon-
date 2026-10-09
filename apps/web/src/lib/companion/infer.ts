@@ -21,7 +21,7 @@ export interface InferCallResult {
   usage: { totalTokenCount: number };
 }
 
-export type InferSkipReason = "over-cap" | "redis" | "disabled";
+export type InferSkipReason = "over-cap" | "disabled";
 
 // Arabic extraction contract: facts about the account holder ONLY; other
 // persons from evidence/interviews, secrets, and third-party contacts are
@@ -110,7 +110,11 @@ export function filterExtractionCandidates(
 
 // Spend-first-drop-later: the daily budget counter increments BEFORE the
 // model call, so count 51 over a limit of 50 skips with NO model spend.
-// Disabled and Redis-outage paths skip before any spend as well.
+// Disabled skips before any spend as well. Redis outage NO LONGER skips
+// (live gap 2026-10-09: 16 consecutive prod skips with a dead counter):
+// fail-open proceeds WITHOUT the increment and stamps budgetFallback so the
+// trace shows the daily cap was unenforced. Abuse-bounded anyway: the caller
+// still ledgers every model call against the quota budget key.
 export async function runPostSessionInference(args: {
   userId: string;
   userEmail: string;
@@ -122,16 +126,24 @@ export async function runPostSessionInference(args: {
   propose: (rows: ProposeRow[]) => Promise<ProposeResult>;
 }): Promise<
   | { skipped: InferSkipReason }
-  | { proposed: ProposeResult; usage: { totalTokenCount: number }; proposeError?: string }
+  | {
+      proposed: ProposeResult;
+      usage: { totalTokenCount: number };
+      proposeError?: string;
+      budgetFallback?: boolean;
+    }
 > {
   if (args.isEnabled === false) return { skipped: "disabled" };
-  let count: number;
+  let count = 0;
+  let budgetFallback = false;
   try {
     count = await incrBudgetAtomic(args.userId);
   } catch {
-    return { skipped: "redis" };
+    // Fail-open (see header): dead counter ⇒ proceed, stamped.
+    budgetFallback = true;
   }
-  if (count > INFER_DAILY_LIMIT) return { skipped: "over-cap" };
+  if (!budgetFallback && count > INFER_DAILY_LIMIT) return { skipped: "over-cap" };
+  const stamp = budgetFallback ? { budgetFallback: true as const } : {};
   const { text, usage } = await args.callAI(
     buildExtractionPrompt(args.memoText, args.startupName),
   );
@@ -139,13 +151,13 @@ export async function runPostSessionInference(args: {
     userEmail: args.userEmail,
     approvedValues: args.approvedValues,
   }).map((c) => ({ kind: c.kind, value: c.value, confidence: c.confidence }));
-  if (rows.length === 0) return { proposed: { results: [], dropped: [] }, usage };
+  if (rows.length === 0) return { proposed: { results: [], dropped: [] }, usage, ...stamp };
   // Channel stamp (review minor): inferred rows carry their provenance like
   // manual rows carry "manual". startup_id stays null — only the startup
   // NAME is known at infer time, never its id.
   const stamped = rows.map((r) => ({ ...r, source_ref: "post-session" }));
   try {
-    return { proposed: await args.propose(stamped), usage };
+    return { proposed: await args.propose(stamped), usage, ...stamp };
   } catch (e) {
     // The model call already spent tokens: surface usage WITH the failure so
     // the hook still ledgers spend instead of dropping it (review #9).
@@ -154,6 +166,7 @@ export async function runPostSessionInference(args: {
       proposed: { results: [], dropped: [] },
       usage,
       proposeError: e instanceof Error ? e.message : String(e),
+      ...stamp,
     };
   }
 }

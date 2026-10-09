@@ -129,6 +129,98 @@ describe("executePostSessionHook done-gate (spec §5.1)", () => {
     });
     expect(inferred).toBe(1);
   });
+
+  it("runs inference on ended-without-done when input text exists (live gap 2026-10-09: 15 prod not-done skips)", async () => {
+    // Timeout/error runs never emit SSE `done`, but the snapshotted input
+    // idea is user-authored and stable regardless of run outcome — and every
+    // proposal still lands in the human-approval queue. The trace must carry
+    // gate:"ended" so relaxed runs stay distinguishable from done runs.
+    let inferred = 0;
+    const traces: Array<{ event_type: string; skipped?: string; gate?: string }> = [];
+    await executePostSessionHook(
+      { ...CAP, outcome: { done: false, ended: true } },
+      {
+        getApprovedValues: async () => [],
+        runInference: (async () => {
+          inferred++;
+          return { proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 1 } };
+        }) as never,
+        recordSpend: (async () => 0) as never,
+        insertTrace: (async (row: { event_type: string; skipped?: string; gate?: string }) => {
+          traces.push(row);
+        }) as never,
+      },
+    );
+    expect(inferred).toBe(1);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ event_type: "companion_infer", gate: "ended" });
+    expect(traces[0].skipped).toBeUndefined();
+  });
+
+  it("done runs trace gate:\"done\"", async () => {
+    const traces: Array<{ event_type: string; gate?: string }> = [];
+    await executePostSessionHook(CAP_DONE, {
+      getApprovedValues: async () => [],
+      runInference: (async () => ({
+        proposed: { results: [], dropped: [] },
+        usage: { totalTokenCount: 1 },
+      })) as never,
+      recordSpend: (async () => 0) as never,
+      insertTrace: (async (row: { event_type: string; gate?: string }) => {
+        traces.push(row);
+      }) as never,
+    });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ gate: "done" });
+  });
+
+  it("ended-without-done with empty input still skips (nothing to extract from)", async () => {
+    let inferred = 0;
+    const traces: Array<{ event_type: string; skipped?: string }> = [];
+    await executePostSessionHook(
+      { ...CAP, memoText: "   ", outcome: { done: false, ended: true } },
+      {
+        getApprovedValues: async () => [],
+        runInference: (async () => {
+          inferred++;
+          return { proposed: { results: [], dropped: [] }, usage: { totalTokenCount: 1 } };
+        }) as never,
+        recordSpend: (async () => 0) as never,
+        insertTrace: (async (row: { event_type: string; skipped?: string }) => {
+          traces.push(row);
+        }) as never,
+      },
+    );
+    expect(inferred).toBe(0);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ event_type: "companion_infer", skipped: "ended-empty" });
+  });
+
+  it("passes budgetFallback through to the trace payload", async () => {
+    const traces: Array<{ event_type: string; budgetFallback?: boolean }> = [];
+    await executePostSessionHook(CAP_DONE, {
+      getApprovedValues: async () => [],
+      runInference: (async () => ({
+        proposed: { results: [], dropped: [] },
+        usage: { totalTokenCount: 1 },
+        budgetFallback: true,
+      })) as never,
+      recordSpend: (async () => 0) as never,
+      insertTrace: (async (row: { event_type: string; budgetFallback?: boolean }) => {
+        traces.push(row);
+      }) as never,
+    });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ budgetFallback: true });
+  });
+
+  it("agent error path marks the outcome ended (static)", () => {
+    // The SSE-error branch must flip `ended` so post-session inference can
+    // run the relaxed gate — done stays false there by design.
+    const src = readFileSync(join(__dirname, "..", "..", "app", "api", "agent", "route.ts"), "utf8");
+    expect(src).toContain("sessionOutcome.done = true");
+    expect(src).toMatch(/sessionOutcome\) sessionOutcome\.ended = true/);
+  });
 });
 
 describe("executePostSessionHook spend (H5)", () => {

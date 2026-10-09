@@ -140,12 +140,23 @@ describe("runPostSessionInference", () => {
     expect(INFER_DAILY_LIMIT).toBe(50);
   });
 
-  it("skips on Redis outage without calling the model", async () => {
+  it("proceeds fail-open on Redis outage with a budgetFallback flag (live gap 2026-10-09: 16 prod skips)", async () => {
     mockedIncr.mockRejectedValue(new Error("boom"));
-    const callAI = vi.fn(canned(`[]`));
-    const out = await runPostSessionInference({ ...base, callAI, propose: vi.fn() });
-    expect(out).toEqual({ skipped: "redis" });
-    expect(callAI).not.toHaveBeenCalled();
+    const callAI = vi.fn(canned(`[{"kind":"fact","value":"المقر الرئيسي في الرياض","confidence":0.85}]`));
+    const propose = vi.fn<(rows: ProposeRow[]) => Promise<ProposeResult>>(async () => ({
+      results: [{ index: 0, ok: true, code: "OK", id: "m1" }],
+      dropped: [],
+    }));
+    const out = await runPostSessionInference({ ...base, callAI, propose });
+    // Fail-open: the model IS consulted (quota/spend still ledgered by the
+    // caller), but the trace must show the daily cap was unenforced.
+    expect(callAI).toHaveBeenCalledTimes(1);
+    expect(propose).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({
+      proposed: { results: [{ index: 0, ok: true, code: "OK", id: "m1" }], dropped: [] },
+      usage: { totalTokenCount: 123 },
+      budgetFallback: true,
+    });
   });
 
   it("skips when disabled without touching budget", async () => {

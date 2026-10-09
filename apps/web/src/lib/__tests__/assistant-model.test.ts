@@ -116,9 +116,13 @@ describe("assistant-model", () => {
     // history — the prompt never instructs the model to save on "remember
     // X" requests, and the no-rows rule suppresses tool proposals. The
     // instruction must name the trigger explicitly.
+    // Live gap 2 (2026-10-09): the trigger is remember-request ONLY, so the
+    // model never saves durable user facts proactively. The instruction must
+    // also allow one proactive save per turn for stated facts/preferences.
     const s = buildAssistantSystemInstruction("base prompt", "");
     expect(s).toContain("save_memory");
     expect(s).toMatch(/remember|store/i);
+    expect(s).toMatch(/proactive|without being asked/i);
   });
 
   it("adaptCitedRows maps startup+evidence rows", () => {

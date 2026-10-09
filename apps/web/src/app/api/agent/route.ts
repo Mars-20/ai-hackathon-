@@ -2329,7 +2329,7 @@ export async function POST(req: NextRequest) {
   // flipped ONLY where the SSE `done` event is emitted — error runs never
   // set it, so post-session inference skips them. Hoisted to POST scope
   // because the flip site lives inside the streaming IIFE.
-  let sessionOutcome: { done: boolean } | null = null;
+  let sessionOutcome: { done: boolean; ended?: boolean } | null = null;
   try {
     const fullBody = rawBody as { idea?: unknown; startup_name?: unknown };
     const ideaText = typeof fullBody.idea === "string" ? fullBody.idea : "";
@@ -2770,6 +2770,11 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
         // best-effort only
       }
       trace.push(makeTrace("executor", "error", { error: message }));
+      // Relaxed ended-gate (2026-10-09): error/timeout runs reached a
+      // terminal stream state — mark `ended` so post-session memory
+      // inference can still extract from the user's input idea. `done`
+      // stays false here by design (no clean verdict was produced).
+      if (sessionOutcome) sessionOutcome.ended = true;
       await send({
         type: "error",
         message,

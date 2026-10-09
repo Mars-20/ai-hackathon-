@@ -26,9 +26,15 @@ export interface PostSessionCapture {
 
 // Mutable by design: exactly one writer (the route IIFE, pre-close) and one
 // reader (executePostSessionHook in after(), post-close). No atomics needed:
-// the write strictly precedes the read in program order.
+// the write strictly precedes the read in program order. `ended` marks ANY
+// terminal stream state (done OR SSE-error, e.g. provider-timeout aborts);
+// `done` stays the clean-verdict flag. The relaxed gate (2026-10-09) infers
+// on ended-without-done because the snapshotted input idea is user-authored
+// and stable regardless of run outcome — and every proposal still lands in
+// the human-approval queue, which is the real safety net.
 export interface SessionOutcome {
   done: boolean;
+  ended?: boolean;
 }
 
 export interface PostSessionHookDeps {
@@ -48,6 +54,10 @@ export interface PostSessionHookDeps {
     // the trace payload. event_type stays `companion_infer` so the CHECK
     // allow-list needs no migration.
     skipped?: string;
+    // Relaxed-gate audit (2026-10-09): which gate admitted this run, and
+    // whether the daily budget counter was unenforced (Redis fail-open).
+    gate?: "done" | "ended";
+    budgetFallback?: boolean;
   }) => Promise<void>;
 }
 
@@ -113,6 +123,8 @@ async function defaultInsertTrace(row: {
   dropped: number;
   latencyMs: number;
   skipped?: string;
+  gate?: "done" | "ended";
+  budgetFallback?: boolean;
 }): Promise<void> {
   const { createServiceRoleClient } = await import("@/lib/supabase/server");
   const admin = createServiceRoleClient();
@@ -126,6 +138,8 @@ async function defaultInsertTrace(row: {
       proposed: row.proposed,
       dropped: row.dropped,
       ...(row.skipped ? { skipped: row.skipped } : {}),
+      ...(row.gate ? { gate: row.gate } : {}),
+      ...(row.budgetFallback ? { budget_fallback: true } : {}),
     },
     cost_usd: null,
     latency_ms: row.latencyMs,
@@ -178,15 +192,27 @@ export async function executePostSessionHook(
   over?: Partial<PostSessionHookDeps>,
 ): Promise<void> {
   const t0 = Date.now();
-  // Done-gate (spec §5.1): infer ONLY when the run emitted SSE `done`.
-  // Error runs, exceptions, early returns and aborted streams all land here
-  // with done=false (or no token) — skip with an audit row, never infer.
-  if (capture.outcome?.done !== true) {
-    const reason = capture.outcome ? "not-done" : "no-outcome";
+  // Done-gate (spec §5.1) + relaxed ended-gate (2026-10-09): infer when the
+  // run emitted SSE `done`, OR when the stream reached a terminal state
+  // (`ended`, set on the error path too) with non-empty input text. Timeout
+  // and provider-error runs (15 prod skips in 7d) carry the same user idea
+  // as clean runs — skipping them starves the memory queue. Runs with no
+  // token, or ended with nothing to extract from, still skip with an audit
+  // row, never infer.
+  const done = capture.outcome?.done === true;
+  const endedEarly =
+    !done && capture.outcome?.ended === true && capture.memoText.trim().length > 0;
+  if (!done && !endedEarly) {
+    const reason = !capture.outcome
+      ? "no-outcome"
+      : capture.outcome.ended === true
+        ? "ended-empty"
+        : "not-done";
     console.warn(`[companion] post-session inference skipped (${reason})`);
     await traceSkip(over, capture, reason, t0);
     return;
   }
+  const gate = done ? ("done" as const) : ("ended" as const);
   const getApproved = over?.getApprovedValues ?? defaultGetApprovedValues;
   const runInference = (over?.runInference ?? defaultRunInference) as (
     args: Parameters<typeof defaultRunInference>[0],
@@ -200,7 +226,14 @@ export async function executePostSessionHook(
   } catch (err) {
     console.warn("[companion] post-session approved-values lookup failed, continuing without dedupe", err);
   }
-  let out: { skipped: string } | { proposed: ProposeResult; usage: { totalTokenCount: number }; proposeError?: string };
+  let out:
+    | { skipped: string }
+    | {
+        proposed: ProposeResult;
+        usage: { totalTokenCount: number };
+        proposeError?: string;
+        budgetFallback?: boolean;
+      };
   try {
     out = await runInference({
       userId: capture.userId,
@@ -244,6 +277,8 @@ export async function executePostSessionHook(
       proposed: out.proposed.results.length,
       dropped: out.proposed.dropped.length,
       latencyMs: Date.now() - t0,
+      gate,
+      ...(out.budgetFallback ? { budgetFallback: true as const } : {}),
     });
   } catch (err) {
     console.warn("[companion] companion_infer trace insert failed", err);

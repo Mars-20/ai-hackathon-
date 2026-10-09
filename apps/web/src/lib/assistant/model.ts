@@ -157,9 +157,12 @@ export interface AssistantModelResult {
 /** Save trigger: without it the model never proposes save_memory on
  * "remember X" requests (live gap 2026-10-07: one proposal in all of prod
  * history). This sentence is the intended exception to the propose-no-tool
- * rule below — a remember-request IS its own authorization. */
+ * rule below — a remember-request IS its own authorization. The second
+ * sentence (live gap 2026-10-09) allows ONE proactive save per turn for
+ * durable user facts/preferences stated without being asked — never for
+ * transient task content, and still subject to the critic + approval queue. */
 export const SAVE_MEMORY_TRIGGER =
-  "When the user asks you to remember, store, note, or keep a fact, preference, style, or episode about them or their work, propose a save_memory tool call in the same turn (kind + value of 1..500 chars, startup_id only when they name a project). This remember-request is the exception to the propose-no-tool rule.";
+  "When the user asks you to remember, store, note, or keep a fact, preference, style, or episode about them or their work, propose a save_memory tool call in the same turn (kind + value of 1..500 chars, startup_id only when they name a project). This remember-request is the exception to the propose-no-tool rule. You may also proactively propose at most one save_memory per turn, without being asked, for a durable fact, preference, or style the user states about themselves or their work — never for transient task content.";
 
 export function buildAssistantSystemInstruction(systemPrompt: string, context: string): string {
   return `${systemPrompt.trim()}
