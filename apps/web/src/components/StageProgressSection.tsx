@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { TRACKS, type StageStep } from "@/lib/progress/tracks";
 import { StageStepper } from "./StageStepper";
 
@@ -38,7 +39,18 @@ export function StageProgressSection({
 }: StageProgressSectionProps) {
   const [payload, setPayload] = useState<ProgressPayload | null>(null);
   const [busy, setBusy] = useState<"confirm" | "dismiss" | "track" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<"confirmFailed" | "dismissFailed" | "trackFailed" | null>(null);
+  const tVal = useTranslations("validate");
+  const tShared = useTranslations("shared");
+  // Track-step labels come from the API/lib by key; resolve via shared.stages (lib UNTOUCHED).
+  const stageLabel = (key: string, fb: string) => {
+    try {
+      const v = tShared(`stages.${key}`);
+      return v === `stages.${key}` ? fb : v;
+    } catch {
+      return fb;
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -57,10 +69,12 @@ export function StageProgressSection({
   }, [load, stage, track]);
 
   const suggestion = payload?.suggestion ?? null;
-  const suggestionLabel =
-    suggestion && payload
-      ? (payload.order.find((s) => s.key === suggestion.to)?.label ?? suggestion.to)
-      : "";
+  const suggestionStep = suggestion && payload
+    ? payload.order.find((s) => s.key === suggestion.to)
+    : undefined;
+  const suggestionLabel = suggestion
+    ? stageLabel(suggestion.to, suggestionStep?.label ?? suggestion.to)
+    : "";
 
   async function confirm() {
     if (!suggestion) return;
@@ -76,7 +90,7 @@ export function StageProgressSection({
       onStageChange?.(suggestion.to);
       await load();
     } catch {
-      setError("تعذّر تأكيد الانتقال — حاول مجددًا");
+      setError("confirmFailed");
     } finally {
       setBusy(null);
     }
@@ -98,7 +112,7 @@ export function StageProgressSection({
       if (!res.ok) throw new Error(`dismiss ${res.status}`);
       await load();
     } catch {
-      setError("تعذّر تسجيل الرفض — حاول مجددًا");
+      setError("dismissFailed");
     } finally {
       setBusy(null);
     }
@@ -123,7 +137,7 @@ export function StageProgressSection({
       onTrackChange?.(next === "general" ? null : next);
       await load();
     } catch {
-      setError("تعذّر تغيير المسار — حاول مجددًا");
+      setError("trackFailed");
     } finally {
       setBusy(null);
     }
@@ -133,9 +147,9 @@ export function StageProgressSection({
     <section className="animate-fade-in">
       <div className="glass rounded-2xl p-5 border border-white/5">
         <div className="flex items-center justify-between gap-3 mb-1">
-          <h3 className="font-bold text-slate-200 text-sm">مراحل المشروع</h3>
+          <h3 className="font-bold text-slate-200 text-sm">{tVal("stage.title")}</h3>
           <label className="flex items-center gap-2 text-xs text-slate-400">
-            المسار
+            {tVal("stage.trackLabel")}
             <select
               data-testid="track-picker"
               value={payload?.track ?? track ?? "general"}
@@ -145,13 +159,7 @@ export function StageProgressSection({
             >
               {Object.keys(TRACKS).map((key) => (
                 <option key={key} value={key}>
-                  {key === "general"
-                    ? "عام"
-                    : key === "saas_tech"
-                      ? "SaaS تقني"
-                      : key === "local_service"
-                        ? "خدمة محلية"
-                        : "منتج استهلاكي"}
+                  {tVal(`stage.tracks.${key}`)}
                 </option>
               ))}
             </select>
@@ -169,10 +177,10 @@ export function StageProgressSection({
             className="mt-4 rounded-xl p-4 bg-brand-500/10 border border-brand-500/30"
           >
             <div className="text-sm text-slate-200 mb-1">
-              اقتراح: الانتقال إلى <strong>{suggestionLabel}</strong>
+              {tVal("stage.suggestionPattern", { label: suggestionLabel })}
             </div>
             <div className="text-xs text-slate-400 mb-3">{suggestion.reason}</div>
-            {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
+            {error && <div className="text-xs text-red-400 mb-2">{tVal(`stage.errors.${error}`)}</div>}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -181,7 +189,7 @@ export function StageProgressSection({
                 onClick={confirm}
                 className="text-xs font-bold px-3 py-1.5 rounded-lg bg-brand-500 text-white disabled:opacity-50"
               >
-                تأكيد الانتقال
+                {tVal("stage.confirmMove")}
               </button>
               <button
                 type="button"
@@ -190,7 +198,7 @@ export function StageProgressSection({
                 onClick={dismiss}
                 className="text-xs px-3 py-1.5 rounded-lg border border-white/15 text-slate-300 disabled:opacity-50"
               >
-                رفض الاقتراح
+                {tVal("stage.dismissSuggestion")}
               </button>
             </div>
           </div>

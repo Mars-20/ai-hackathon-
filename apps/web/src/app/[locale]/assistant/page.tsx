@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { ArrowLeft, Brain } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -10,9 +12,11 @@ import "./assistant.css";
 // Server page: auth is enforced by middleware; SSR fetches the first 20
 // threads so the client never waits on an empty shell (D9 payload cap).
 
-export const metadata = {
-  title: "المساعد | Validation Copilot",
-};
+export async function generateMetadata({ params }: { params: Promise<{ locale: "ar" | "en" }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: "assistant.page" });
+  return { title: t("metadataTitle"), description: t("metadataDescription") };
+}
 
 export default async function AssistantPage({
   params,
@@ -43,16 +47,17 @@ export default async function AssistantPage({
   } catch {
     // client revalidates on mount; SSR degrades to an empty list
   }
+  const tPage = await getTranslations({ locale, namespace: "assistant.page" });
 
   return (
-    <div dir="rtl" className="min-h-dvh flex flex-col">
+    <div dir={appLocale === "ar" ? "rtl" : "ltr"} className="min-h-dvh flex flex-col">
       <header className="glass border-b border-white/5 sticky top-0 z-40 safe-top">
         <div className="container-app h-14 flex items-center gap-4">
           <Link href={withLocale("/dashboard", appLocale)} className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors">
             <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
             <Brain className="w-5 h-5 text-brand-400" />
             <span className="font-bold text-sm">
-              المساعد <span className="gradient-text">الذكي</span>
+              {tPage("headerTitle")}
             </span>
           </Link>
           <div className="ms-auto">

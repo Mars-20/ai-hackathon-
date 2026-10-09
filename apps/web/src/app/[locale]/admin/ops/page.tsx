@@ -18,6 +18,7 @@
 // /api/admin/ops/email) with the platform-only EmailResendButton island.
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import EmailResendButton from "@/components/admin/EmailResendButton";
 import PlatformAdminGrantForm from "@/components/admin/PlatformAdminGrantForm";
 import PlatformAdminRevokeButton from "@/components/admin/PlatformAdminRevokeButton";
@@ -246,10 +247,10 @@ function asPlatformAdmins(value: unknown): PlatformAdmin[] {
   return out;
 }
 
-function formatDateTime(iso: string): string {
+function formatDateTime(iso: string, locale: AppLocale): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "—";
-  return new Date(ms).toLocaleString("en-US", {
+  return new Date(ms).toLocaleString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -267,6 +268,8 @@ export default async function AdminOpsPage({
   const { locale } = await params;
   const appLocale = locale as AppLocale;
   const opsBase = withLocale("/admin/ops", appLocale);
+  const t = await getTranslations("admin.ops");
+  const tShared = await getTranslations("shared");
   const raw = await searchParams;
   const actorFilter = readSingle(raw, "actor");
   const actionFilter = readSingle(raw, "action");
@@ -314,7 +317,7 @@ export default async function AdminOpsPage({
   const auditError =
     auditResult.ok === true
       ? null
-      : (auditResult.error.message ?? "Failed to load audit log");
+      : (auditResult.error.message ?? t("auditLoadFailed"));
   if (auditResult.ok === true) {
     entries = asAuditEntries(auditResult.data.entries);
     auditTotal = auditResult.data.total;
@@ -353,46 +356,44 @@ export default async function AdminOpsPage({
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-black mb-1">
-          Admin <span className="gradient-text">Ops</span>
+          {t("titlePrefix")} <span className="gradient-text">{t("titleAccent")}</span>
         </h1>
         <p className="text-slate-400 text-sm">
-          {tier === "platform"
-            ? "Severity, audit log, settings (read-only in v1), platform grants, invite queue"
-            : "Scoped read-only view for your tier — audit and severity cover your workspaces only"}
+          {tier === "platform" ? t("subPlatform") : t("subWorkspace")}
         </p>
       </div>
 
       <h2 className="text-lg font-bold text-slate-200 mb-3">
-        Severity (7d)
+        {t("severityTitle")}
       </h2>
       {severity === null ? (
         <div className="glass rounded-2xl p-6 text-center border border-white/5 mb-8">
-          <p className="text-slate-500 text-sm">Severity unavailable.</p>
+          <p className="text-slate-500 text-sm">{t("severityUnavailable")}</p>
         </div>
       ) : (
         <>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <KpiCard label="Errors" value={String(severity.error)} />
-            <KpiCard label="Warnings" value={String(severity.warning)} />
-            <KpiCard label="Info" value={String(severity.info)} />
+            <KpiCard label={t("kpi.errors")} value={String(severity.error)} />
+            <KpiCard label={t("kpi.warnings")} value={String(severity.warning)} />
+            <KpiCard label={t("kpi.info")} value={String(severity.info)} />
             <KpiCard
-              label="Rate-limited (429)"
+              label={t("kpi.rateLimited")}
               value={String(severity.rateLimited429)}
-              hint="Heuristic — surfaced 429/rate-limit signals only"
+              hint={t("hints.rateLimited")}
             />
           </div>
           {severity.truncated && (
             <p className="text-xs text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 rounded-xl px-4 py-2 mb-4">
-              Server caps bound this window — figures may be truncated.
+              {tShared("misc.truncatedNote")}
             </p>
           )}
           <div className="grid lg:grid-cols-2 gap-4 mb-8">
             <div className="glass rounded-2xl p-5 border border-white/5">
               <h3 className="text-sm font-bold text-slate-200 mb-3">
-                Top error actors
+                {t("topActors")}
               </h3>
               {severity.errorsByActor.length === 0 ? (
-                <p className="text-sm text-slate-500">No errors recorded.</p>
+                <p className="text-sm text-slate-500">{t("noErrors")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <tbody>
@@ -404,7 +405,7 @@ export default async function AdminOpsPage({
                         <td className="py-1.5 text-slate-300 font-mono text-xs">
                           {shortId(row.actor)}
                         </td>
-                        <td className="py-1.5 text-right text-slate-300">
+                        <td className="py-1.5 text-end text-slate-300">
                           {row.count}
                         </td>
                       </tr>
@@ -415,10 +416,10 @@ export default async function AdminOpsPage({
             </div>
             <div className="glass rounded-2xl p-5 border border-white/5">
               <h3 className="text-sm font-bold text-slate-200 mb-3">
-                Configured caps (read-only reference)
+                {t("capsTitle")}
               </h3>
               {severity.configured.length === 0 ? (
-                <p className="text-sm text-slate-500">No caps reported.</p>
+                <p className="text-sm text-slate-500">{t("noCaps")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <tbody>
@@ -430,7 +431,7 @@ export default async function AdminOpsPage({
                         <td className="py-1.5 text-slate-400 text-xs">
                           {row.label}
                         </td>
-                        <td className="py-1.5 text-right text-slate-300">
+                        <td className="py-1.5 text-end text-slate-300">
                           {row.value}
                         </td>
                       </tr>
@@ -443,29 +444,29 @@ export default async function AdminOpsPage({
         </>
       )}
 
-      <h2 className="text-lg font-bold text-slate-200 mb-3">Audit log</h2>
+      <h2 className="text-lg font-bold text-slate-200 mb-3">{t("auditTitle")}</h2>
       <form
         method="get"
         action={opsBase}
         className="flex flex-wrap gap-3 mb-4 items-end"
       >
         <label className="text-xs text-slate-400 space-y-1">
-          Actor (UUID)
+          {t("filters.actorLabel")}
           <input
             type="text"
             name="actor"
             defaultValue={actorFilter ?? ""}
-            placeholder="Exact actor UUID"
+            placeholder={t("filters.actorPlaceholder")}
             className="block glass rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent w-56"
           />
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Action
+          {t("filters.actionLabel")}
           <input
             type="text"
             name="action"
             defaultValue={actionFilter ?? ""}
-            placeholder="Exact action name"
+            placeholder={t("filters.actionPlaceholder")}
             className="block glass rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent w-56"
           />
         </label>
@@ -473,14 +474,14 @@ export default async function AdminOpsPage({
           type="submit"
           className="glass glass-hover px-4 py-2 rounded-xl text-sm border border-white/5 text-slate-300"
         >
-          Apply
+          {tShared("actions.apply")}
         </button>
         {(actorFilter !== null || actionFilter !== null) && (
           <Link
             href={opsBase}
             className="text-sm text-slate-500 hover:text-slate-300 px-2 py-2"
           >
-            Clear
+            {tShared("actions.clear")}
           </Link>
         )}
       </form>
@@ -495,23 +496,23 @@ export default async function AdminOpsPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Time
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.time")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Severity
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.severity")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Action
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.action")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Actor
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.actor")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Result
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.result")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Run detail
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("auditCols.runDetail")}
                   </th>
                 </tr>
               </thead>
@@ -522,7 +523,7 @@ export default async function AdminOpsPage({
                       colSpan={6}
                       className="px-4 py-10 text-center text-sm text-slate-500"
                     >
-                      No audit entries found.
+                      {t("emptyAudit")}
                     </td>
                   </tr>
                 ) : (
@@ -535,7 +536,7 @@ export default async function AdminOpsPage({
                         className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]"
                       >
                         <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
-                          {formatDateTime(entry.created_at)}
+                          {formatDateTime(entry.created_at, appLocale)}
                         </td>
                         <td className="px-4 py-2.5">
                           <span
@@ -559,7 +560,7 @@ export default async function AdminOpsPage({
                               href={href}
                               className="text-brand-400 hover:text-brand-300"
                             >
-                              View →
+                              {t("viewLink")} <span className="inline-block rtl:scale-x-[-1]">→</span>
                             </Link>
                           ) : (
                             <span className="text-slate-600">—</span>
@@ -577,30 +578,32 @@ export default async function AdminOpsPage({
               <Link
                 href={`${auditBase}page=${auditPage - 1}`}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-                aria-label="Previous page"
+                aria-label={tShared("misc.previousPage")}
               >
-                ←
+                <span className="inline-block rtl:scale-x-[-1]">←</span>
               </Link>
             ) : (
               <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-                ←
+                <span className="inline-block rtl:scale-x-[-1]">←</span>
               </span>
             )}
             <span className="text-xs text-slate-500">
-              Page {auditPage}
-              {auditPages > 0 ? ` of ${auditPages}` : ""} · {auditTotal} total
+              {auditPages > 0
+                ? tShared("pagination.pageXofY", { x: auditPage, y: auditPages })
+                : t("auditPageOnly", { x: auditPage })}{" "}
+              · {tShared("pagination.totalOf", { total: auditTotal })}
             </span>
             {auditPages === 0 || auditPage < auditPages ? (
               <Link
                 href={`${auditBase}page=${auditPage + 1}`}
                 className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-                aria-label="Next page"
+                aria-label={tShared("misc.nextPage")}
               >
-                →
+                <span className="inline-block rtl:scale-x-[-1]">→</span>
               </Link>
             ) : (
               <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-                →
+                <span className="inline-block rtl:scale-x-[-1]">→</span>
               </span>
             )}
           </div>
@@ -608,23 +611,23 @@ export default async function AdminOpsPage({
       )}
 
       <h2 className="text-lg font-bold text-slate-200 mb-3">
-        Agent settings{" "}
+        {t("settingsTitle")}{" "}
         <span className="text-xs font-normal text-slate-500">
-          (read-only in v1 — no write path)
+          {t("settingsNote")}
         </span>
       </h2>
       <div className="glass rounded-2xl border border-white/5 overflow-x-auto mb-8">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Key
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("settingsCols.key")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Value
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("settingsCols.value")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Updated
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("settingsCols.updated")}
               </th>
             </tr>
           </thead>
@@ -635,7 +638,7 @@ export default async function AdminOpsPage({
                   colSpan={3}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  No settings found.
+                  {t("emptySettings")}
                 </td>
               </tr>
             ) : (
@@ -652,7 +655,7 @@ export default async function AdminOpsPage({
                   </td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">
                     {s.updated_at !== null
-                      ? formatDateTime(s.updated_at)
+                      ? formatDateTime(s.updated_at, appLocale)
                       : "—"}
                   </td>
                 </tr>
@@ -665,24 +668,24 @@ export default async function AdminOpsPage({
       {tier === "platform" && (
         <>
           <h2 className="text-lg font-bold text-slate-200 mb-3">
-            Platform admins ({platformAdmins.length})
+            {t("platformAdminsPattern", { count: platformAdmins.length })}
           </h2>
           <PlatformAdminGrantForm />
           <div className="glass rounded-2xl border border-white/5 overflow-x-auto mb-8">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Email
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("adminCols.email")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    User ID
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("adminCols.userId")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Granted
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("adminCols.granted")}
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Actions
+                  <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {t("adminCols.actions")}
                   </th>
                 </tr>
               </thead>
@@ -693,7 +696,7 @@ export default async function AdminOpsPage({
                       colSpan={4}
                       className="px-4 py-10 text-center text-sm text-slate-500"
                     >
-                      No platform admins found.
+                      {t("emptyAdmins")}
                     </td>
                   </tr>
                 ) : (
@@ -710,7 +713,7 @@ export default async function AdminOpsPage({
                       </td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">
                         {entry.granted_at.length > 0
-                          ? formatDateTime(entry.granted_at)
+                          ? formatDateTime(entry.granted_at, appLocale)
                           : "—"}
                       </td>
                       <td className="px-4 py-2.5">
@@ -729,24 +732,24 @@ export default async function AdminOpsPage({
       )}
 
       <h2 className="text-lg font-bold text-slate-200 mb-3">
-        Pending invites ({pending.length})
+        {t("pendingInvitesPattern", { count: pending.length })}
       </h2>
       <div className="glass rounded-2xl border border-white/5 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Email
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("inviteCols.email")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Role
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("inviteCols.role")}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Expires
+              <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {t("inviteCols.expires")}
               </th>
               {tier === "platform" && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Actions
+                <th className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  {t("inviteCols.actions")}
                 </th>
               )}
             </tr>
@@ -758,7 +761,7 @@ export default async function AdminOpsPage({
                   colSpan={tier === "platform" ? 4 : 3}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  No pending invites.
+                  {t("emptyInvites")}
                 </td>
               </tr>
             ) : (
@@ -773,7 +776,7 @@ export default async function AdminOpsPage({
                   <td className="px-4 py-2.5 text-slate-300">{invite.role}</td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">
                     {invite.expires_at !== null
-                      ? formatDateTime(invite.expires_at)
+                      ? formatDateTime(invite.expires_at, appLocale)
                       : "—"}
                   </td>
                   {tier === "platform" && (
@@ -792,7 +795,7 @@ export default async function AdminOpsPage({
       </div>
       {tier !== "platform" && (
         <p className="text-xs text-slate-500 mt-2">
-          Invite resend is platform-managed — read-only for your tier.
+          {t("resendNote")}
         </p>
       )}
     </div>

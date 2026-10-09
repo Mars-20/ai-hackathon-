@@ -8,11 +8,14 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 
 const SORTS = ["name", "status", "sample_size"] as const;
 const ORDERS = ["asc", "desc"] as const;
 
 export default function ReportGenerator({ total }: { total?: number }) {
+  const t = useTranslations("admin.report");
+  const tShared = useTranslations("shared");
   const [sort, setSort] =
     useState<(typeof SORTS)[number]>("name");
   const [order, setOrder] =
@@ -28,15 +31,14 @@ export default function ReportGenerator({ total }: { total?: number }) {
   return (
     <div className="glass rounded-2xl p-5 border border-white/5">
       <h2 className="text-sm font-bold text-slate-200 mb-1">
-        Report generator
+        {t("title")}
       </h2>
       <p className="text-xs text-slate-500 mb-3">
-        Experiments table export (CSV, RFC 4180 quoting). Scoped to your
-        tier by the API.
+        {t("sub")}
       </p>
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
         <label className="text-xs text-slate-400 space-y-1">
-          Sort by
+          {t("sortBy")}
           <select
             value={sort}
             onChange={(e) =>
@@ -52,7 +54,7 @@ export default function ReportGenerator({ total }: { total?: number }) {
           </select>
         </label>
         <label className="text-xs text-slate-400 space-y-1">
-          Order
+          {t("order")}
           <select
             value={order}
             onChange={(e) =>
@@ -70,10 +72,10 @@ export default function ReportGenerator({ total }: { total?: number }) {
         {empty ? (
           <span
             aria-disabled="true"
-            title="No experiments yet — nothing to export"
+            title={t("emptyTitle")}
             className="inline-flex items-center justify-center text-sm px-4 py-2 rounded-xl bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed"
           >
-            Download CSV
+            {tShared("actions.downloadCsv")}
           </span>
         ) : (
           <a
@@ -81,7 +83,7 @@ export default function ReportGenerator({ total }: { total?: number }) {
             download
             className="inline-flex items-center justify-center text-sm px-4 py-2 rounded-xl bg-brand-500/20 text-brand-300 border border-brand-500/30 hover:bg-brand-500/30 transition-colors"
           >
-            Download CSV
+            {tShared("actions.downloadCsv")}
           </a>
         )}
       </div>

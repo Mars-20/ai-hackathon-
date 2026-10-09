@@ -9,18 +9,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface EmailResendButtonProps {
   inviteId: string;
   inviteEmail: string;
 }
 
-function errorMessage(value: unknown): string {
+function errorMessage(value: unknown, fallback: string): string {
   if (typeof value === "object" && value !== null) {
     const record = value as Record<string, unknown>;
     if (typeof record["error"] === "string") return record["error"];
   }
-  return "Request failed";
+  return fallback;
 }
 
 export default function EmailResendButton({
@@ -28,6 +29,8 @@ export default function EmailResendButton({
   inviteEmail,
 }: EmailResendButtonProps) {
   const router = useRouter();
+  const t = useTranslations("admin.emailResend");
+  const tErr = useTranslations("admin.errors");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -42,13 +45,13 @@ export default function EmailResendButton({
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
-      setMessage("Resend recorded");
+      setMessage(t("done"));
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -60,10 +63,10 @@ export default function EmailResendButton({
         type="button"
         disabled={pending}
         onClick={() => void runResend()}
-        title={`Record resend for ${inviteEmail} (delivery out of scope in v1)`}
+        title={t("resendTitlePattern", { email: inviteEmail })}
         className="text-xs px-2 py-1 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 transition-colors disabled:opacity-50"
       >
-        {pending ? "…" : "Resend"}
+        {pending ? "…" : t("resend")}
       </button>
       {message !== null && (
         <span className="text-xs text-slate-400" role="status">

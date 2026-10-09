@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { getTranslations } from "next-intl/server";
 
 export interface AdminTableColumn {
   key: string;
@@ -53,7 +54,7 @@ function buildHref(
   return query.length > 0 ? `${basePath}?${query}` : basePath;
 }
 
-export default function AdminTable({
+export default async function AdminTable({
   basePath,
   columns,
   rows,
@@ -67,6 +68,8 @@ export default function AdminTable({
   searchPlaceholder,
 }: AdminTableProps) {
   const current = { q, sort, order, limit };
+  const t = await getTranslations("admin.tables");
+  const tShared = await getTranslations("shared");
   return (
     <div>
       <form
@@ -79,7 +82,7 @@ export default function AdminTable({
           name="q"
           defaultValue={q ?? ""}
           minLength={2}
-          placeholder={searchPlaceholder ?? "Search (min 2 chars)..."}
+          placeholder={searchPlaceholder ?? tShared("misc.searchDefault")}
           className="flex-1 glass rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
           id="admin-table-search"
         />
@@ -90,7 +93,7 @@ export default function AdminTable({
           type="submit"
           className="glass glass-hover px-4 py-2.5 rounded-xl text-sm border border-white/5 text-slate-300"
         >
-          Search
+          {tShared("actions.search")}
         </button>
       </form>
 
@@ -101,7 +104,7 @@ export default function AdminTable({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap"
+                  className="text-start px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap"
                 >
                   {col.sortable ? (
                     <Link
@@ -131,7 +134,7 @@ export default function AdminTable({
                   colSpan={columns.length}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  No rows found.
+                  {t("noRows")}
                 </td>
               </tr>
             ) : (
@@ -162,29 +165,30 @@ export default function AdminTable({
               page: String(page - 1),
             })}
             className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-            aria-label="Previous page"
+            aria-label={tShared("misc.previousPage")}
           >
-            ←
+            <span className="inline-block rtl:scale-x-[-1]">←</span>
           </Link>
         ) : (
           <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-            ←
+            <span className="inline-block rtl:scale-x-[-1]">←</span>
           </span>
         )}
         <span className="text-xs text-slate-500">
-          Page {page} of {pages} · {total} total
+          {tShared("pagination.pageXofY", { x: page, y: pages })} ·{" "}
+          {tShared("pagination.totalOf", { total })}
         </span>
         {page < pages ? (
           <Link
             href={buildHref(basePath, current, { page: String(page + 1) })}
             className="glass glass-hover w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-400"
-            aria-label="Next page"
+            aria-label={tShared("misc.nextPage")}
           >
-            →
+            <span className="inline-block rtl:scale-x-[-1]">→</span>
           </Link>
         ) : (
           <span className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/5 text-slate-700 opacity-30">
-            →
+            <span className="inline-block rtl:scale-x-[-1]">→</span>
           </span>
         )}
       </div>

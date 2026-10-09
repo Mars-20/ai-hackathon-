@@ -9,11 +9,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import type { AppLocale } from "@/lib/i18n-path";
 
 const REFRESH_SECONDS = 60;
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString("en-US", {
+function formatTime(date: Date, locale: AppLocale): string {
+  return date.toLocaleTimeString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -22,6 +24,8 @@ function formatTime(date: Date): string {
 
 export default function AnalyticsAutoRefresh() {
   const router = useRouter();
+  const locale = useLocale() as AppLocale;
+  const t = useTranslations("admin.autoRefresh");
   // Mount-guarded clock: rendering `new Date()` (or `document.hidden`)
   // during SSR/hydration emits server-clock HTML that the client almost
   // always mismatches (React #418 hydration error on every load). Render a
@@ -56,8 +60,8 @@ export default function AnalyticsAutoRefresh() {
 
   return (
     <p className="text-xs text-slate-500" aria-live="polite">
-      Auto-refresh {paused ? "paused (tab hidden)" : "every 60s"} · last
-      updated {lastUpdated === null ? "—" : formatTime(lastUpdated)}
+      {t("prefix")} {paused ? t("pausedNote") : t("intervalNote")} ·{" "}
+      {t("updatedNote")} {lastUpdated === null ? "—" : formatTime(lastUpdated, locale)}
     </p>
   );
 }

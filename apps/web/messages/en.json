@@ -1,1 +1,1036 @@
-{ "common": { "appName": "Validation Copilot", "switchToArabic": "العربية", "switchToEnglish": "English" }, "nav": { "dashboard": "Dashboard", "validate": "Validate", "history": "History", "assistant": "Assistant", "login": "Log in" } }
+{
+  "common": {
+    "appName": "Validation Copilot",
+    "arabicShort": "ع",
+    "englishShort": "EN",
+    "switchLanguage": "Switch language",
+    "switchToArabic": "العربية",
+    "switchToEnglish": "English"
+  },
+  "dashboard": {
+    "dialogs": {
+      "membershipAlert": "Workspace created but membership failed — please refresh. If this persists, run migration 0009_workspace_bootstrap.sql in Supabase.",
+      "workspacePrompt": "Workspace name:"
+    },
+    "greeting": "Welcome back, {name}",
+    "header": {
+      "adminLink": "Admin",
+      "avatarAlt": "avatar",
+      "noWorkspace": "No Workspace",
+      "newWorkspace": "New Workspace",
+      "signOutTitle": "Sign out",
+      "workspacesTitle": "Your Workspaces"
+    },
+    "inviteModal": {
+      "emailPlaceholder": "colleague@company.com",
+      "permAdmin": "Full edit + invite access. Cannot delete workspace.",
+      "permMember": "Can edit startups and run experiments. Cannot invite others.",
+      "permOwner": "Full control including workspace deletion.",
+      "permViewer": "Read-only access. Cannot edit or run experiments.",
+      "rolePermissions": "Role permissions:",
+      "send": "Send Invite",
+      "sendError": "❌ Failed to send invite. Check the email and try again.",
+      "sending": "Sending…",
+      "sent": "Invite sent successfully!",
+      "sub": "They'll receive an email with a join link. Only {workspace} members can access its data.",
+      "title": "Invite to Workspace"
+    },
+    "loading": "Loading your workspace…",
+    "paywall": {
+      "body": "You've used your free trial project — all your projects and results are saved and you can view them anytime. Subscribe to start a new project.",
+      "close": "Close",
+      "closeAria": "Close dialog",
+      "cta": "View subscription plans",
+      "title": "Your free trial has ended"
+    },
+    "quickActions": {
+      "inviteCta": "Invite Members",
+      "title": "Quick Actions"
+    },
+    "roles": {
+      "admin": "admin",
+      "member": "member",
+      "owner": "owner",
+      "viewer": "viewer"
+    },
+    "startups": {
+      "emptyCta": "Validate Your First Idea",
+      "emptyTitle": "No startups yet in this workspace.",
+      "newCta": "New Startup",
+      "title": "Your Startups"
+    },
+    "stats": {
+      "decisions": "Decisions",
+      "experiments": "Experiments",
+      "startups": "Startups",
+      "teamMembers": "Team Members"
+    },
+    "team": {
+      "emptyLine": "No members loaded yet.",
+      "inviteCta": "Invite",
+      "memberLine": "Joined {date}",
+      "pending": "Pending",
+      "title": "Team"
+    },
+    "workspaceLine": "{workspace} · {startups, plural, =0 {0 startups} =1 {1 startup} other {# startups}} · {members, plural, =0 {0 members} =1 {1 member} other {# members}}"
+  },
+  "history": {
+    "header": {
+      "title": "Validation History",
+      "subPattern": "{total, plural, =0 {0 sessions} =1 {1 session} other {# sessions}} · All your past validation runs, decisions, and experiments",
+      "searchPlaceholder": "Search startups, assumptions, evidence...",
+      "exportCta": "Export",
+      "openTitle": "Open startup",
+      "openParentTitle": "Open parent startup",
+      "noResultsFor": "No results for \"{q}\"",
+      "exportTitle": "Export CSV"
+    },
+    "filters": {
+      "byNamePlaceholder": "Filter by name, domain, one-liner...",
+      "filtersTitle": "Filters",
+      "sortDate": "Sort: Date Created",
+      "sortUpdated": "Sort: Last Updated",
+      "sortName": "Sort: Name",
+      "descTitle": "Descending",
+      "ascTitle": "Ascending",
+      "activeTitle": "Active Filters",
+      "verdict": "Verdict",
+      "stage": "Stage",
+      "confidence": "Confidence",
+      "dateRange": "Date Range",
+      "fromPlaceholder": "From",
+      "toPlaceholder": "To"
+    },
+    "states": {
+      "error": "Failed to load history",
+      "retry": "Retry",
+      "emptyFiltered": "No results match your filters.",
+      "emptyFresh": "No validation sessions yet.",
+      "clearCta": "Clear all",
+      "startCta": "Start Validating"
+    },
+    "cards": {
+      "assumptions": "Assumptions",
+      "validated": "Validated",
+      "experiments": "Experiments",
+      "critical": "{count} critical",
+      "confidencePattern": "{confidence} confidence"
+    }
+  },
+  "landing": {
+    "features": [
+      {
+        "desc": "Every claim is grounded to a source URL. A dedicated Verifier model strips unsupported claims before they reach you.",
+        "title": "Anti-Hallucination Engine"
+      },
+      {
+        "desc": "Distinguishes between 'sounds great' (opinion) and 'here's my credit card' (commitment). No false positives.",
+        "title": "Commitment Ladder"
+      },
+      {
+        "desc": "The leading-question validator blocks biased questions before they poison your data. Built on The Mom Test methodology.",
+        "title": "Bias-Free Surveys"
+      },
+      {
+        "desc": "Works for edtech, SaaS, food-tech, health, or any vertical — domain knowledge is fetched at runtime, not hardcoded.",
+        "title": "Domain-Agnostic"
+      },
+      {
+        "desc": "Every tool call, source, and verifier check shown in real time. No black box — complete observability.",
+        "title": "Full Trace Panel"
+      },
+      {
+        "desc": "The system refuses to output 'Go' without real user evidence. 'Test More' is a valid, honest answer.",
+        "title": "Real Evidence Required"
+      }
+    ],
+    "final": {
+      "cta": "Start Validation",
+      "desc": "Describe your idea and get a risk-ranked assumption map, grounded market research, and a bias-free validation experiment — in minutes, not weeks.",
+      "title": "Ready to stop guessing?"
+    },
+    "footer": {
+      "brand": "Validation Copilot · AI-OS Hackathon 2026",
+      "builtWith": "Built with Gemini + Groq + Supabase",
+      "pdpl": "PDPL-compliant evidence collection"
+    },
+    "golden": {
+      "sub": "Six steps from idea to evidence-backed decision memo — all in one session.",
+      "title": "The Golden Path"
+    },
+    "header": {
+      "brand": "Validation Copilot",
+      "launch": "Launch App",
+      "version": "AI-OS Hackathon v2.0"
+    },
+    "hero": {
+      "eyebrow": "AI-Powered Startup Validation · Real Evidence · No Hallucinations",
+      "inputPlaceholder": "Describe your startup idea...",
+      "orLineA": "Or",
+      "orLineB": "open the full dashboard",
+      "orLineC": "to see an example analysis",
+      "primaryCta": "Validate Now",
+      "subA": "Most startups fail not from bad execution, but from",
+      "subB": "unvalidated assumptions",
+      "subC": ". Validation Copilot maps your risks, gathers grounded evidence, and refuses to call anything “validated” without real user data.",
+      "titleA": "Stop building",
+      "titleB": "the wrong thing."
+    },
+    "honesty": {
+      "desc": "The system never inflates a verdict. If your evidence is thin, it says so — with the next cheapest experiment to run, not false encouragement. Built on the commitment ladder: opinion → intent → time given → contact shared → money committed.",
+      "title": "Honest decisions, every time"
+    },
+    "ladder": {
+      "note": "⚠️ Minimum rung-4+ x3 sources, n≥30 (or n≥12 interviews) required before any “Go” verdict is possible.",
+      "rows": [
+        {
+          "example": "\"Sounds useful!\"",
+          "label": "Opinion",
+          "rung": "1"
+        },
+        {
+          "example": "\"I would probably use this\"",
+          "label": "Stated intent",
+          "rung": "2"
+        },
+        {
+          "example": "Agreed to a call / filled survey",
+          "label": "Time given",
+          "rung": "3"
+        },
+        {
+          "example": "Gave email voluntarily",
+          "label": "Contact shared",
+          "rung": "4"
+        },
+        {
+          "example": "Pre-order / deposit / LOI",
+          "label": "Commitment",
+          "rung": "5"
+        }
+      ],
+      "title": "Commitment Ladder"
+    },
+    "rigor": {
+      "desc": "Every feature exists to prevent the mistakes that kill startups after months of wasted effort.",
+      "title": "Built for rigor, not comfort"
+    },
+    "steps": [
+      {
+        "desc": "Describe your idea",
+        "label": "Intake"
+      },
+      {
+        "desc": "Risk-ranked map",
+        "label": "Assumptions"
+      },
+      {
+        "desc": "Grounded evidence",
+        "label": "Research"
+      },
+      {
+        "desc": "Design & validate",
+        "label": "Experiment"
+      },
+      {
+        "desc": "Real responses",
+        "label": "Evidence"
+      },
+      {
+        "desc": "Go / Iterate / Stop",
+        "label": "Decision"
+      }
+    ],
+    "trust": [
+      "Grounded web research",
+      "Leading-question validator",
+      "Full trace log",
+      "Evidence ladder"
+    ],
+    "verdicts": [
+      {
+        "desc": "Strong evidence supports moving forward",
+        "name": "Go"
+      },
+      {
+        "desc": "Some evidence but key assumptions unproven",
+        "name": "Iterate"
+      },
+      {
+        "desc": "Evidence contradicts core assumptions",
+        "name": "Stop"
+      },
+      {
+        "desc": "Insufficient evidence to conclude either way",
+        "name": "Test More"
+      }
+    ]
+  },
+  "nav": {
+    "assistant": "Assistant",
+    "dashboard": "Dashboard",
+    "history": "History",
+    "login": "Log in",
+    "validate": "Validate"
+  },
+  "shared": {
+    "actions": {
+      "apply": "Apply",
+      "back": "Back",
+      "backToDashboard": "Back to dashboard",
+      "cancel": "Cancel",
+      "clear": "Clear",
+      "clearAll": "Clear all",
+      "clearFilters": "Clear filters",
+      "close": "Close",
+      "confirm": "Confirm",
+      "delete": "Delete",
+      "downloadCsv": "Download CSV",
+      "export": "Export",
+      "invite": "Invite",
+      "retry": "Retry",
+      "save": "Save",
+      "search": "Search",
+      "send": "Send",
+      "signOut": "Sign out",
+      "stop": "Stop"
+    },
+    "confidence": {
+      "confidence": "confidence",
+      "high": "high",
+      "low": "low",
+      "medium": "medium"
+    },
+    "errors": {
+      "agentRunFailed": "Agent run failed",
+      "failedToLoad": "Failed to load",
+      "networkError": "Network error. Please try again.",
+      "requestFailed": "Request failed ({status})",
+      "unknownError": "Unknown error"
+    },
+    "misc": {
+      "conversation": "Conversation",
+      "estimated": "estimated",
+      "estimatedNote": "COST_TABLE metering, not provider billing",
+      "estimatedTitle": "Estimated — COST_TABLE metering, not provider billing",
+      "loading": "Loading...",
+      "nextPage": "Next page",
+      "noRunsInWindow": "No runs in this window.",
+      "off": "Off",
+      "on": "On",
+      "previousPage": "Previous page",
+      "role": "Role",
+      "searchDefault": "Search (min 2 chars)...",
+      "truncatedNote": "Server caps bound this window — figures may be truncated."
+    },
+    "pagination": {
+      "pageXofY": "{x, plural, =0 {Page 0 of {y}} =1 {Page 1 of {y}} other {Page # of {y}}}",
+      "totalOf": "{total, plural, =0 {0 total} =1 {1 total} other {# total}}"
+    },
+    "stages": {
+      "beta": "Closed beta",
+      "idea": "Idea",
+      "live": "Live",
+      "mvp": "MVP",
+      "pilot": "Pilot",
+      "production": "Production",
+      "prototype": "Prototype",
+      "retail": "Retail",
+      "scaling": "Scaling"
+    },
+    "tracks": {
+      "consumer_product": "Consumer product",
+      "general": "General",
+      "local_service": "Local service",
+      "saas_tech": "Technical SaaS"
+    },
+    "verdicts": {
+      "go": "Go",
+      "iterate": "Iterate",
+      "stop": "Stop",
+      "testMore": "Test More"
+    }
+  },
+  "auth": {
+    "authFailed": "Authentication failed",
+    "checkEmail": "✅ Check your email for a confirmation link.",
+    "emailDivider": "or continue with email",
+    "emailLabel": "Email address",
+    "emailPlaceholder": "Email address",
+    "enterEmailFirst": "Enter your email first",
+    "forgotLink": "Reset it",
+    "forgotPrefix": "Forgot your password?",
+    "fullNameLabel": "Full name",
+    "fullNamePlaceholder": "Full name",
+    "google": "Continue with Google",
+    "loading": "Loading...",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Password",
+    "pdplLine": "PDPL-compliant · Data never sold · Evidence stored securely.",
+    "resetSent": "Password reset email sent.",
+    "signInTab": "Sign In",
+    "signUpTab": "Sign Up",
+    "submitSignIn": "Sign In",
+    "submitSignUp": "Create Account",
+    "taglineA": "Welcome back. Your startups are waiting.",
+    "taglineB": "Join thousands of founders validating smarter.",
+    "terms": "By continuing, you agree to our Terms of Service & Privacy Policy."
+  },
+  "validate": {
+    "assistant": {
+      "errors": {
+        "quotaExceeded": "The assistant's daily quota is over. To continue, see the plans: {url}",
+        "rateLimited": "Too many requests — wait a bit then retry{wait}.",
+        "requestFailed": "Request failed ({status})",
+        "researchEmpty": "Market Research",
+        "researchGrounded": "Market Research — {count} grounded claims",
+        "researchPartial": "Market Research — {count} research claims ({grounded} grounded)",
+        "researchUnverified": "Market Research — {count} research claims (unverified synthesis)",
+        "sensitiveContent": "This answer couldn't be shown (sensitive content). Rephrase and try again.",
+        "strengthCommitment": "Hard commitment (rung 5)",
+        "strengthContactShared": "Contact shared (rung 4)",
+        "strengthIntent": "Stated intent (rung 2)",
+        "strengthOpinion": "Opinion (rung 1)",
+        "strengthTimeGiven": "Time given (rung 3)",
+        "threadCap": "This conversation is full ({max} messages). Start a new chat to continue."
+      }
+    },
+    "cards": {
+      "biasApproved": "Approved by bias validator",
+      "estCost": "Est. cost",
+      "questionsTitle": "Interview / Survey Questions ({count})",
+      "riskWhy": "Why this risk level:",
+      "source": "Source",
+      "successCriteria": "Success criteria",
+      "targetSample": "Target sample",
+      "timeToRun": "Time to run"
+    },
+    "controls": {
+      "examples": [
+        "AI tutoring app for Egyptian high school students preparing for Thanaweyya Amma",
+        "B2B SaaS platform for restaurant inventory management in MENA",
+        "Subscription box for organic Egyptian produce delivered to Cairo households"
+      ],
+      "examplesTitle": "Try an example:",
+      "run": "Run Validation",
+      "stop": "Stop Agent"
+    },
+    "decision": {
+      "confidence": "confidence",
+      "nextExperiment": "Next cheapest experiment",
+      "rationale": "Rationale",
+      "responsePattern": "response {rate}%"
+    },
+    "form": {
+      "evidenceHint": "Paste CSV, interview notes, or survey results",
+      "evidenceLabel": "Primary Evidence (optional)",
+      "evidencePlaceholder": "Paste interview notes, survey responses, or CSV data here. The agent will analyze the real evidence and factor it into the decision memo.",
+      "ideaLabel": "Startup Idea",
+      "ideaPlaceholder": "Describe your startup idea in detail. What problem does it solve? Who is the target customer? What's your business model?"
+    },
+    "header": {
+      "callsUsed": "{used}/{max} calls",
+      "readyTitle": "Ready to validate",
+      "verifier": "Verifier",
+      "verifierFlags": "⚠ {count} flags",
+      "verifierOk": "✓"
+    },
+    "icp": {
+      "authority": "Buying authority",
+      "context": "Context",
+      "pain": "Pain",
+      "preliminary": "preliminary — pre-research",
+      "role": "Role",
+      "sam": "SAM",
+      "som": "SOM",
+      "tam": "TAM",
+      "workaround": "Workaround"
+    },
+    "idle": {
+      "bullets": [
+        "Assumption mapping",
+        "Grounded research",
+        "Bias-free experiments",
+        "Evidence analysis"
+      ],
+      "descA": "Describe your startup idea on the left and click",
+      "descC": "to start the AI agent.",
+      "title": "Ready to validate"
+    },
+    "investor": {
+      "topGaps": "Top gaps"
+    },
+    "leads": {
+      "notice": "Research-only shortlist for your own manual outreach — Apollo data is third-party and never auto-contacted."
+    },
+    "paywall": {
+      "cta": "View subscription plans",
+      "title": "Your free trial is over — your project is fully saved"
+    },
+    "phases": {
+      "evidence": "Evidence",
+      "experiment": "Experiment",
+      "icp_sizing": "ICP & Market",
+      "intake": "Intake",
+      "investor_readiness": "Investor Ready",
+      "leads": "Leads",
+      "mapping": "Mapping",
+      "memo": "Decision",
+      "research": "Research",
+      "verifying": "Verifying"
+    },
+    "results": {
+      "agentError": "Agent Error",
+      "apiKeyHint": "Make sure GEMINI_API_KEY is set in your .env.local file.",
+      "assumptionMap": "Assumption Map ({count})",
+      "browserOnly": "Saved in this browser only",
+      "clarifying": "Clarifying questions",
+      "evidenceCount": "{count} evidence items collected",
+      "experimentTitle": "Validation Experiment",
+      "icpTitle": "Ideal Customer & Market",
+      "leadsFound": "— {count} found",
+      "leadsSearching": "Searching Apollo for people matching your target customer…",
+      "leadsTitle": "Potential Interviewees",
+      "memoTitle": "Decision Memo",
+      "moreItems": "+{count} more evidence items",
+      "primarySub": "From real respondents",
+      "primaryTitle": "Primary Evidence — {count} items",
+      "scoreTitle": "Investor Readiness",
+      "secondaryOnly": "Secondary only — not sufficient for Go verdict",
+      "toolsUsed": "{count} tool calls used",
+      "verifierApproved": "✓ Approved"
+    },
+    "serverErrors": {
+      "offlineSnapshot": "Couldn't reach the server — this snapshot is kept in this browser only and won't appear in History on other devices.",
+      "requestFailed": "Request failed ({status})",
+      "retryIn": "Retry in {seconds}s.",
+      "saveFailed": "Couldn't save this snapshot (server unreachable, browser storage full).",
+      "statusPattern": "Request failed with status {status}",
+      "streamEnded": "The stream ended before a verdict arrived (connection lost or server timeout). Please try again."
+    },
+    "stage": {
+      "confirmMove": "Confirm move",
+      "dismissSuggestion": "Dismiss suggestion",
+      "errors": {
+        "confirmFailed": "Couldn't confirm the move — please retry.",
+        "dismissFailed": "Couldn't record the dismissal — please retry.",
+        "trackFailed": "Couldn't switch track — please retry."
+      },
+      "offTrackPattern": "{stage} (off track)",
+      "suggestionPattern": "Suggestion: move to {label}",
+      "title": "Project Stages",
+      "trackLabel": "Track",
+      "tracks": {
+        "general": "General",
+        "saas_tech": "SaaS / Tech",
+        "local_service": "Local service",
+        "consumer_product": "Consumer product"
+      }
+    },
+    "stats": {
+      "assumptions": "Assumptions",
+      "evidence": "Evidence items",
+      "title": "Session Stats"
+    },
+    "tabs": {
+      "results": "Results",
+      "trace": "Trace Log"
+    },
+    "trace": {
+      "countPattern": "({count} events)",
+      "title": "Trace Log",
+      "waiting": "Waiting for agent activity..."
+    }
+  },
+  "assistant": {
+    "composer": {
+      "placeholder": "Ask the assistant…",
+      "sendAria": "Send",
+      "sendLabel": "Send",
+      "stopAria": "Stop",
+      "stopLabel": "Stop",
+      "thinking": "Thinking…"
+    },
+    "list": {
+      "titlePattern": "Conversations ({count})",
+      "newCta": "New chat",
+      "emptyLine": "No conversations yet — start with a question.",
+      "renameTitle": "Conversation name",
+      "renameAria": "Rename conversation",
+      "deleteTitle": "Delete",
+      "deleteAria": "Delete conversation",
+      "quotaTitle": "Assistant daily quota",
+      "quotaPattern": "Quota {used}/{quota}"
+    },
+    "dialogs": {
+      "deleteTitle": "Delete conversation?",
+      "deleteBody": "All messages in this conversation will be permanently deleted.",
+      "deleteConfirm": "Delete",
+      "cancelAria": "Cancel",
+      "confirmAria": "Confirm deletion"
+    },
+    "errors": {
+      "unavailable": "This conversation is no longer available.",
+      "loadFailed": "Couldn't load messages. Try again.",
+      "tooLong": "Message too long (max {max} chars). Shorten it and try again.",
+      "failed": "Assistant failed",
+      "disconnected": "Connection lost before the answer arrived. Try again.",
+      "serverUnreachable": "Can't reach the server. Check your connection and try again.",
+      "renameFailed": "Couldn't rename.",
+      "deleteFailed": "Couldn't delete the conversation.",
+      "quotaExceeded": "The assistant's daily quota is over. To continue, see the plans: {url}",
+      "threadCap": "This conversation is full ({max} messages). Start a new chat to continue.",
+      "sensitiveContent": "This answer couldn't be shown (sensitive content). Rephrase and try again.",
+      "rateLimited": "Too many requests — wait a bit then retry{wait}.",
+      "requestFailed": "Request failed ({status})"
+    },
+    "samples": [
+      "What is the strongest evidence supporting my idea?",
+      "Create an experiment to test the most important assumption",
+      "What is the weakest point in the current validation?"
+    ],
+    "hints": {
+      "composerHint": "Ask about your ideas and evidence — answers are grounded in your data only.",
+      "floatLabel": "Floating button",
+      "openFull": "Open the full page",
+      "viewPlans": "View plans",
+      "newChatCta": "New chat",
+      "closeAria": "Close"
+    },
+    "citation": {
+      "titlePattern": "Source {label} — tap to jump to cards",
+      "ariaPattern": "Source {label}"
+    },
+    "view": {
+      "loading": "Loading the assistant…"
+    },
+    "page": {
+      "metadataTitle": "Assistant | Validation Copilot",
+      "metadataDescription": "Ask about your ideas and evidence — answers grounded in your data.",
+      "headerTitle": "Smart Assistant"
+    }
+  },
+  "plans": {
+    "page": {
+      "metadataTitle": "Plans — Validation Copilot",
+      "metadataDescription": "Subscription plans: start free, then upgrade when you're ready.",
+      "title": "Subscription plans",
+      "sub": "Start with your free project — when the trial ends, pick the right plan for your team.",
+      "quotaTitle": "Your daily assistant message quota is over",
+      "quotaBody": "Quota resets automatically at midnight (UTC) — or message us below to upgrade to a higher quota."
+    },
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "desc": "One project — for new users",
+        "price": "Free",
+        "cta": "Log in"
+      },
+      "pro": {
+        "name": "Pro",
+        "desc": "For solo founders and small teams",
+        "cta": "Subscribe to Pro"
+      },
+      "team": {
+        "name": "Team",
+        "desc": "For teams and organizations",
+        "cta": "Subscribe to Team"
+      }
+    },
+    "requestForm": {
+      "loading": "Loading…",
+      "successMessage": "Your request is in — we'll review it soon",
+      "duplicateMessage": "You already have a request under review",
+      "genericError": "Something went wrong — try again",
+      "requiredLogin": "Log in first to submit a subscription request",
+      "subscribedLine": "You are currently subscribed to the {plan} plan",
+      "backToDashboard": "Back to dashboard",
+      "title": "Subscription request",
+      "sub": "Fill in your details and we'll review — payment and approval are manual.",
+      "planPickerAria": "Choose a plan",
+      "nameLabel": "Full name",
+      "namePlaceholder": "e.g. Ahmed Mohamed",
+      "nameError": "Enter your full name",
+      "phoneLabel": "Phone number",
+      "phonePlaceholder": "01xxxxxxxxx",
+      "phoneError": "Enter a valid phone number",
+      "companyLabel": "Company",
+      "optionalSuffix": "(optional)",
+      "companyPlaceholder": "Company name",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "Any extra details about what you need",
+      "loginCta": "Log in",
+      "submit": "Submit request",
+      "submitting": "Submitting…"
+    }
+  },
+  "memories": {
+    "page_title": "My memories",
+    "pending_queue": "Pending your approval",
+    "approve": "Approve",
+    "edit_approve": "Edit & approve",
+    "reject": "Reject",
+    "forget": "Forget permanently",
+    "forget_confirm": "It will be permanently deleted everywhere — sure?",
+    "disable": "Pause memory temporarily",
+    "disable_hint": "Personalization stops without deleting anything",
+    "conflict_pair": "Conflicts with an approved memory — pick the correct one",
+    "empty_queue": "Nothing pending — I'll suggest what I learn here",
+    "provenance": "From session {date}",
+    "cap_full": "List is full — delete a memory first",
+    "memory_full": "Your memory is full (200) — delete or merge before adding more",
+    "memory_duplicate": "Duplicate — this memory is already approved",
+    "startup_not_owned": "This project is not yours",
+    "secret_blocked": "Sorry — I don't store keys or sensitive data",
+    "dismissAria": "Dismiss",
+    "cancelAria": "Cancel",
+    "approvedAria": "Approved",
+    "onLabel": "On",
+    "offLabel": "Off",
+    "forgetCancel": "Cancel",
+    "paywallTitle": "Memory is part of a paid plan.",
+    "paywallCta": "View plans"
+  },
+  "invite": {
+    "page": {
+      "title": "Workspace invite",
+      "accepted": "Invite accepted — welcome aboard.",
+      "declined": "Invite declined.",
+      "expired": "This invite has expired (410). Ask a workspace admin to resend it.",
+      "networkError": "Network error. Please try again.",
+      "requestFailed": "Request failed.",
+      "bodyText": "You have been invited to join a workspace. Accept or decline below. Each invite can be used once.",
+      "workingCta": "Working…",
+      "acceptCta": "Accept",
+      "declineCta": "Decline"
+    }
+  },
+  "admin": {
+    "shell": {
+      "brand": "Validation Copilot",
+      "adminTitle": "Admin",
+      "tierPlatform": "Platform admin",
+      "tierWorkspace": "Workspace admin",
+      "sectionsAria": "Admin sections",
+      "nav": {
+        "overview": "Overview",
+        "users": "Users",
+        "workspaces": "Workspaces",
+        "content": "Content",
+        "analytics": "Analytics",
+        "ops": "Ops",
+        "requests": "Requests"
+      }
+    },
+    "overview": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Overview",
+      "sub": "Trailing 7 days · NULL-workspace rows excluded · spend is estimated",
+      "loadFailed": "Failed to load overview",
+      "kpi": {
+        "users": "Users",
+        "activeWorkspaces": "Active workspaces",
+        "startups": "Startups",
+        "runs7d": "Runs (7d)",
+        "rejectRate": "Verifier reject rate",
+        "spend": "Spend (7d)"
+      },
+      "hints": {
+        "activeWorkspaces": "≥1 agent run in trailing 7d"
+      },
+      "trendsTitle": "Daily trends",
+      "cols": {
+        "day": "Day",
+        "runs": "Runs",
+        "cost": "Cost (est.)"
+      }
+    },
+    "analytics": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Analytics",
+      "sub": "Costs are estimated (COST_TABLE metering, not provider billing)",
+      "loadFailed": "Failed to load analytics",
+      "badShape": "Unexpected analytics response shape",
+      "chartAria": "Runs per day bar chart",
+      "chartDescPattern": "{day}: {runs} runs, ${cost}",
+      "kpi": {
+        "runsPattern": "Runs ({window})",
+        "signupsPattern": "Signups ({window})",
+        "costPerRun": "Cost / run",
+        "unsupportedRate": "Unsupported-claim rate"
+      },
+      "runsPerDay": "Runs per day",
+      "verdictTitlePattern": "Verdict distribution ({total} decisions)",
+      "experimentsTitle": "Experiments",
+      "expCols": {
+        "name": "Name",
+        "status": "Status",
+        "sampleSize": "Sample size"
+      },
+      "emptyExperiments": "No experiments found.",
+      "showingPattern": "Showing {shown} of {total}",
+      "noExport": "No data to export yet",
+      "downloadFull": "Download full CSV"
+    },
+    "content": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Content",
+      "sub": "Decision review queue · flag hides from the unflagged filter only (no effect on agent output) · screening requires admin/owner",
+      "loadFailed": "Failed to load content",
+      "filters": {
+        "search": "Search",
+        "searchPlaceholder": "Name, claim, lead email…",
+        "flagged": "Flagged",
+        "allOpt": "All",
+        "flaggedOpt": "Flagged",
+        "unflaggedOpt": "Unflagged",
+        "verdict": "Verdict",
+        "anyVerdict": "Any verdict",
+        "confidence": "Confidence",
+        "anyConfidence": "Any confidence"
+      },
+      "detailFallback": "Startup detail",
+      "detailUnavailable": "Detail unavailable (out of scope or not found).",
+      "detailCountsPattern": "{assumptions} assumptions · {traces} trace events",
+      "detailDecisions": "Decisions",
+      "noDecisions": "No decisions yet.",
+      "detailEvidence": "Evidence (first 10 claims)",
+      "noEvidence": "No evidence.",
+      "cols": {
+        "startup": "Startup",
+        "latestDecision": "Latest decision",
+        "evidence": "Evidence",
+        "flag": "Flag",
+        "actions": "Actions"
+      },
+      "emptyQueue": "No startups match these filters.",
+      "untitled": "Untitled",
+      "untitledStartup": "this startup"
+    },
+    "tables": {
+      "noRows": "No rows found."
+    },
+    "errors": {
+      "networkError": "Network error — please retry",
+      "requestFailed": "Request failed"
+    },
+    "dialogs": {
+      "revokeConfirmPattern": "Revoke platform admin for {label}? This is audited.",
+      "screenConfirmPattern": "Screen {name}? Approve records a go decision, reject records stop. Requires admin/owner.",
+      "suspendPattern": "{action} {email}?",
+      "suspendNote": "Takes full effect within ~1 hour."
+    },
+    "contentActions": {
+      "flag": "Flag",
+      "unflag": "Unflag",
+      "screen": "Screen",
+      "screenTitle": "Policy screen — requires admin/owner (API-enforced)",
+      "confidenceAria": "Confidence",
+      "rationalePlaceholder": "Rationale (optional, stored on the decision)",
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "report": {
+      "title": "Report generator",
+      "sub": "Experiments table export (CSV, RFC 4180 quoting). Scoped to your tier by the API.",
+      "sortBy": "Sort by",
+      "order": "Order",
+      "emptyTitle": "No experiments yet — nothing to export"
+    },
+    "autoRefresh": {
+      "prefix": "Auto-refresh",
+      "pausedNote": "paused (tab hidden)",
+      "intervalNote": "every 60s",
+      "updatedNote": "last updated"
+    },
+    "ops": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Ops",
+      "subPlatform": "Severity, audit log, settings (read-only in v1), platform grants, invite queue",
+      "subWorkspace": "Scoped read-only view for your tier — audit and severity cover your workspaces only",
+      "severityTitle": "Severity (7d)",
+      "severityUnavailable": "Severity unavailable.",
+      "kpi": {
+        "errors": "Errors",
+        "warnings": "Warnings",
+        "info": "Info",
+        "rateLimited": "Rate-limited (429)"
+      },
+      "hints": {
+        "rateLimited": "Heuristic — surfaced 429/rate-limit signals only"
+      },
+      "topActors": "Top error actors",
+      "noErrors": "No errors recorded.",
+      "capsTitle": "Configured caps (read-only reference)",
+      "noCaps": "No caps reported.",
+      "auditTitle": "Audit log",
+      "auditLoadFailed": "Failed to load audit log",
+      "filters": {
+        "actorLabel": "Actor (UUID)",
+        "actorPlaceholder": "Exact actor UUID",
+        "actionLabel": "Action",
+        "actionPlaceholder": "Exact action name"
+      },
+      "auditCols": {
+        "time": "Time",
+        "severity": "Severity",
+        "action": "Action",
+        "actor": "Actor",
+        "result": "Result",
+        "runDetail": "Run detail"
+      },
+      "emptyAudit": "No audit entries found.",
+      "viewLink": "View",
+      "auditPageOnly": "Page {x}",
+      "settingsTitle": "Agent settings",
+      "settingsNote": "(read-only in v1 — no write path)",
+      "settingsCols": {
+        "key": "Key",
+        "value": "Value",
+        "updated": "Updated"
+      },
+      "emptySettings": "No settings found.",
+      "platformAdminsPattern": "Platform admins ({count})",
+      "adminCols": {
+        "email": "Email",
+        "userId": "User ID",
+        "granted": "Granted",
+        "actions": "Actions"
+      },
+      "emptyAdmins": "No platform admins found.",
+      "pendingInvitesPattern": "Pending invites ({count})",
+      "inviteCols": {
+        "email": "Email",
+        "role": "Role",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "emptyInvites": "No pending invites.",
+      "resendNote": "Invite resend is platform-managed — read-only for your tier."
+    },
+    "emailResend": {
+      "resend": "Resend",
+      "resendTitlePattern": "Record resend for {email} (delivery out of scope in v1)",
+      "done": "Resend recorded"
+    },
+    "grantForm": {
+      "userIdLabel": "User ID to grant",
+      "userIdPlaceholder": "Exact user UUID",
+      "reasonLabel": "Reason (audit log)",
+      "reasonPlaceholder": "Optional reason",
+      "grant": "Grant platform admin",
+      "granting": "Granting…",
+      "userIdRequired": "Enter a user ID to grant",
+      "done": "Grant recorded"
+    },
+    "revokeButton": {
+      "revoke": "Revoke",
+      "revokeTitlePattern": "Revoke platform admin {label}"
+    },
+    "users": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Users",
+      "sub": "Profiles + workspace memberships · status from Auth (banned ⇒ suspended) · email prefix search · sortable email / created",
+      "loadFailed": "Failed to load users",
+      "cols": {
+        "email": "Email",
+        "created": "Created",
+        "status": "Status",
+        "workspaces": "Workspaces",
+        "actions": "Actions"
+      },
+      "searchPlaceholder": "Search email prefix (min 2 chars)..."
+    },
+    "workspaces": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Workspaces",
+      "sub": "Plan is read-only in v1 · spend is estimated (COST_TABLE metering, not provider billing)",
+      "loadFailed": "Failed to load workspaces",
+      "cols": {
+        "name": "Workspace",
+        "plan": "Plan",
+        "status": "Status",
+        "usage": "Usage",
+        "spend": "Spend (est.)",
+        "created": "Created"
+      },
+      "usagePattern": "{members} members · {startups} startups · {runs} runs · {evidence} evidence",
+      "planReadonlyTitle": "Plan is read-only in v1 (spec I1)",
+      "planReadonlyNote": "v1 read-only",
+      "searchPlaceholder": "Search name/slug (min 2 chars)...",
+      "filters": {
+        "plan": "Plan",
+        "allPlans": "All plans",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "submit": "Filter"
+      }
+    },
+    "workspaceDetail": {
+      "backToWorkspaces": "Workspaces",
+      "loadFailed": "Failed to load workspace",
+      "badShape": "Unexpected workspace response shape",
+      "titleAccent": "Detail",
+      "subPattern": "{slug} · plan {plan} (v1 read-only) · status {status}",
+      "kpi": {
+        "members": "Members",
+        "startups": "Startups",
+        "runs": "Runs",
+        "evidence": "Evidence",
+        "spend": "Spend"
+      },
+      "planTitle": "Plan & status",
+      "planNote": "(read-only in v1 — spec §9: no plan changing until entitlements are defined)",
+      "planLinePattern": "Plan {plan} · status {status}",
+      "membersPattern": "Members ({count})",
+      "memberCols": {
+        "email": "Email",
+        "role": "Role",
+        "userId": "User ID"
+      },
+      "emptyMembers": "No members."
+    },
+    "userActions": {
+      "suspend": "Suspend",
+      "unsuspend": "Unsuspend",
+      "reasonPlaceholder": "Reason (recorded in audit log)",
+      "working": "Working...",
+      "workspaceAria": "Workspace",
+      "selectWorkspace": "Select workspace…",
+      "workspaceIdPlaceholder": "Workspace ID",
+      "workspaceRequired": "Workspace is required"
+    },
+    "workspaceSwitcher": {
+      "label": "Workspace",
+      "switchAria": "Switch workspace",
+      "selectPlaceholder": "Select workspace…"
+    },
+    "requests": {
+      "title": "Subscription requests",
+      "sub": "Pending requests queue — approve, reject, and pause via the platform owner only",
+      "loading": "Loading…",
+      "emptyOwner": "List restricted — no platform owner is set yet",
+      "emptyQueue": "No requests under review",
+      "planLinePattern": "Requested plan: {plan} — {date}",
+      "approvePlanLabel": "Plan on approve",
+      "executing": "Executing…",
+      "confirmPattern": "Confirm {action}?",
+      "loadFailed": "Couldn't load the list",
+      "actionFailed": "Couldn't complete the action",
+      "actionDone": "Action completed successfully",
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "pause": "Pause"
+      },
+      "entitlement": {
+        "trialActive": "Active trial",
+        "trialConsumed": "Consumed trial",
+        "subscribed": "Subscribed",
+        "paused": "Paused",
+        "legacy": "Legacy",
+        "unknown": "Unknown"
+      }
+    }
+  }
+}

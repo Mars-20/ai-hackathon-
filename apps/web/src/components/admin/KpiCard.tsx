@@ -3,6 +3,7 @@
 // Spend cards pass `estimated` to render the spec §3 "estimated —
 // COST_TABLE metering, not provider billing" label (never bare spend).
 // ─────────────────────────────────────────────────────────────────────────────
+import { getTranslations } from "next-intl/server";
 
 interface KpiCardProps {
   label: string;
@@ -11,7 +12,8 @@ interface KpiCardProps {
   estimated?: boolean;
 }
 
-export default function KpiCard({ label, value, hint, estimated }: KpiCardProps) {
+export default async function KpiCard({ label, value, hint, estimated }: KpiCardProps) {
+  const tShared = await getTranslations("shared");
   return (
     <div className="glass rounded-2xl p-5 border border-white/5">
       <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
@@ -21,9 +23,9 @@ export default function KpiCard({ label, value, hint, estimated }: KpiCardProps)
       {estimated === true && (
         <span
           className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
-          title="Estimated — COST_TABLE metering, not provider billing"
+          title={tShared("misc.estimatedTitle")}
         >
-          estimated
+          {tShared("misc.estimated")}
         </span>
       )}
       {hint !== undefined && hint.length > 0 && (

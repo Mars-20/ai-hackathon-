@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { resolveOrder, stagePosition, type StageStep } from "@/lib/progress/tracks";
 
 interface StageStepperProps {
@@ -11,20 +12,32 @@ interface StageStepperProps {
 
 /** Visual stage journey: dots + labels from the project's track order. */
 export function StageStepper({ startupId, stage, track, customOrder }: StageStepperProps) {
+  const tVal = useTranslations("validate");
+  const tShared = useTranslations("shared");
   const order = resolveOrder(track ?? null, customOrder ?? null);
   const pos = stagePosition(order, stage ?? "idea");
+  // Step labels resolve by id via shared.stages (lib UNTOUCHED); unknown keys fall back to lib label.
+  const stepLabel = (s: StageStep) => {
+    try {
+      const v = tShared(`stages.${s.key}`);
+      return v === `stages.${s.key}` ? s.label : v;
+    } catch {
+      return s.label;
+    }
+  };
   return (
     <div data-stage-stepper={startupId} className="flex flex-wrap items-center gap-1.5 mt-2">
       {order.map((s, i) => {
         const done = pos >= 0 && i < pos;
         const active = i === pos;
+        const label = stepLabel(s);
         return (
           <div key={s.key} className="flex items-center gap-1.5">
             {i > 0 && <span className="w-3 h-px bg-white/15" aria-hidden="true" />}
             <span
               data-stage-dot={s.key}
               data-active={active}
-              title={s.label}
+              title={label}
               className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
                 active
                   ? "bg-brand-500/25 text-brand-300 border-brand-500/40 font-bold"
@@ -38,7 +51,7 @@ export function StageStepper({ startupId, stage, track, customOrder }: StageStep
                   active ? "bg-brand-300" : done ? "bg-emerald-400" : "bg-slate-600"
                 }`}
               />
-              {s.label}
+              {label}
             </span>
           </div>
         );
@@ -48,7 +61,7 @@ export function StageStepper({ startupId, stage, track, customOrder }: StageStep
           data-stage-offtrack="true"
           className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30"
         >
-          {stage} (خارج المسار)
+          {tVal("stage.offTrackPattern", { stage })}
         </span>
       )}
     </div>

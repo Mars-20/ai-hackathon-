@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export interface UserWorkspaceBrief {
   workspace_id: string;
@@ -25,12 +26,12 @@ interface UserActionsProps {
 
 const ROLES = ["owner", "admin", "member", "viewer"] as const;
 
-function errorMessage(value: unknown): string {
+function errorMessage(value: unknown, fallback: string): string {
   if (typeof value === "object" && value !== null) {
     const record = value as Record<string, unknown>;
     if (typeof record["error"] === "string") return record["error"];
   }
-  return "Request failed";
+  return fallback;
 }
 
 export default function UserActions({
@@ -40,6 +41,10 @@ export default function UserActions({
   workspaces,
 }: UserActionsProps) {
   const router = useRouter();
+  const t = useTranslations("admin.userActions");
+  const tDialogs = useTranslations("admin.dialogs");
+  const tShared = useTranslations("shared");
+  const tErr = useTranslations("admin.errors");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [roleOpen, setRoleOpen] = useState(false);
@@ -64,14 +69,14 @@ export default function UserActions({
       );
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
       setConfirmOpen(false);
       setReason("");
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -79,7 +84,7 @@ export default function UserActions({
 
   async function runRoleChange() {
     if (workspaceId.trim().length === 0) {
-      setMessage("Workspace is required");
+      setMessage(t("workspaceRequired"));
       return;
     }
     setPending(true);
@@ -99,14 +104,14 @@ export default function UserActions({
       );
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
       setRoleOpen(false);
       setReason("");
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -127,7 +132,7 @@ export default function UserActions({
               : "border-red-500/30 text-red-400 hover:bg-red-500/10"
           }`}
         >
-          {status === "suspended" ? "Unsuspend" : "Suspend"}
+          {status === "suspended" ? t("unsuspend") : t("suspend")}
         </button>
         <button
           type="button"
@@ -137,20 +142,23 @@ export default function UserActions({
           }}
           className="text-xs px-2 py-1 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
         >
-          Role
+          {tShared("misc.role")}
         </button>
       </div>
 
       {confirmOpen && (
         <div className="glass rounded-xl p-3 border border-white/10 space-y-2">
           <p className="text-xs text-slate-400">
-            {status === "suspended" ? "Unsuspend" : "Suspend"} {email}?{" "}
-            {status === "active" && "Takes full effect within ~1 hour."}
+            {tDialogs("suspendPattern", {
+              action: status === "suspended" ? t("unsuspend") : t("suspend"),
+              email,
+            })}{" "}
+            {status === "active" && tDialogs("suspendNote")}
           </p>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason (recorded in audit log)"
+            placeholder={t("reasonPlaceholder")}
             rows={2}
             className="w-full glass rounded-lg px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
           />
@@ -161,14 +169,14 @@ export default function UserActions({
               onClick={() => void runSuspend(status !== "suspended")}
               className="text-xs px-2 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 disabled:opacity-50"
             >
-              {pending ? "Working..." : "Confirm"}
+              {pending ? t("working") : tShared("actions.confirm")}
             </button>
             <button
               type="button"
               onClick={() => setConfirmOpen(false)}
               className="text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200"
             >
-              Cancel
+              {tShared("actions.cancel")}
             </button>
           </div>
         </div>
@@ -181,9 +189,9 @@ export default function UserActions({
               value={workspaceId}
               onChange={(e) => setWorkspaceId(e.target.value)}
               className="w-full glass rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none border border-white/5 bg-transparent"
-              aria-label="Workspace"
+              aria-label={t("workspaceAria")}
             >
-              <option value="">Select workspace…</option>
+              <option value="">{t("selectWorkspace")}</option>
               {workspaces.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name.length > 0 ? w.name : w.slug} ({w.id.slice(0, 8)}…)
@@ -194,7 +202,7 @@ export default function UserActions({
             <input
               value={workspaceId}
               onChange={(e) => setWorkspaceId(e.target.value)}
-              placeholder="Workspace ID"
+              placeholder={t("workspaceIdPlaceholder")}
               className="w-full glass rounded-lg px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
             />
           )}
@@ -218,14 +226,14 @@ export default function UserActions({
               onClick={() => void runRoleChange()}
               className="text-xs px-2 py-1 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 disabled:opacity-50"
             >
-              {pending ? "Working..." : "Apply"}
+              {pending ? t("working") : tShared("actions.apply")}
             </button>
             <button
               type="button"
               onClick={() => setRoleOpen(false)}
               className="text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200"
             >
-              Cancel
+              {tShared("actions.cancel")}
             </button>
           </div>
         </div>

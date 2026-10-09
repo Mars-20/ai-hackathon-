@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createSseParser } from "@/lib/sse-client";
-import { describeResearchCoverage } from "@/lib/research-label";
 import { StageProgressSection } from "@/components/StageProgressSection";
 import type {
   Startup,
@@ -54,7 +53,6 @@ import {
   formatMs,
   getVerdictColor,
   getRiskColor,
-  STRENGTH_LABEL,
   STRENGTH_COLOR,
   truncate,
 } from "@/lib/utils";
@@ -62,17 +60,18 @@ import {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function PhaseIndicator({ phase }: { phase: SessionPhase }) {
-  const phases: { id: SessionPhase; label: string; icon: React.ReactNode }[] = [
-    { id: "intake", label: "Intake", icon: <Brain className="w-3.5 h-3.5" /> },
-    { id: "mapping", label: "Mapping", icon: <Target className="w-3.5 h-3.5" /> },
-    { id: "icp_sizing", label: "ICP & Market", icon: <Globe className="w-3.5 h-3.5" /> },
-    { id: "research", label: "Research", icon: <Search className="w-3.5 h-3.5" /> },
-    { id: "experiment", label: "Experiment", icon: <FlaskConical className="w-3.5 h-3.5" /> },
-    { id: "leads", label: "Leads", icon: <Users className="w-3.5 h-3.5" /> },
-    { id: "evidence", label: "Evidence", icon: <Users className="w-3.5 h-3.5" /> },
-    { id: "verifying", label: "Verifying", icon: <Shield className="w-3.5 h-3.5" /> },
-    { id: "memo", label: "Decision", icon: <LineChart className="w-3.5 h-3.5" /> },
-    { id: "investor_readiness", label: "Investor Ready", icon: <TrendingUp className="w-3.5 h-3.5" /> },
+  const tVal = useTranslations("validate");
+  const phases: { id: SessionPhase; icon: React.ReactNode }[] = [
+    { id: "intake", icon: <Brain className="w-3.5 h-3.5" /> },
+    { id: "mapping", icon: <Target className="w-3.5 h-3.5" /> },
+    { id: "icp_sizing", icon: <Globe className="w-3.5 h-3.5" /> },
+    { id: "research", icon: <Search className="w-3.5 h-3.5" /> },
+    { id: "experiment", icon: <FlaskConical className="w-3.5 h-3.5" /> },
+    { id: "leads", icon: <Users className="w-3.5 h-3.5" /> },
+    { id: "evidence", icon: <Users className="w-3.5 h-3.5" /> },
+    { id: "verifying", icon: <Shield className="w-3.5 h-3.5" /> },
+    { id: "memo", icon: <LineChart className="w-3.5 h-3.5" /> },
+    { id: "investor_readiness", icon: <TrendingUp className="w-3.5 h-3.5" /> },
   ];
 
   const activeIdx = phases.findIndex((p) => p.id === phase);
@@ -99,7 +98,7 @@ function PhaseIndicator({ phase }: { phase: SessionPhase }) {
               ) : (
                 p.icon
               )}
-              <span className="hidden sm:inline">{p.label}</span>
+              <span className="hidden sm:inline">{tVal(`phases.${p.id}`)}</span>
             </div>
             {i < phases.length - 1 && (
               <div
@@ -117,6 +116,7 @@ function PhaseIndicator({ phase }: { phase: SessionPhase }) {
 }
 
 function TracePanel({ events }: { events: TraceEvent[] }) {
+  const tVal = useTranslations("validate");
   const [expanded, setExpanded] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -144,13 +144,13 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-brand-400" />
-          <span className="text-xs font-semibold text-slate-300">Trace Log</span>
-          <span className="text-xs text-slate-500">({events.length} events)</span>
+          <span className="text-xs font-semibold text-slate-300">{tVal("trace.title")}</span>
+          <span className="text-xs text-slate-500">{tVal("trace.countPattern", { count: events.length })}</span>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-1.5 font-mono text-xs">
         {events.length === 0 && (
-          <div className="text-slate-500 text-center py-8">Waiting for agent activity...</div>
+          <div className="text-slate-500 text-center py-8">{tVal("trace.waiting")}</div>
         )}
         {events.map((e) => {
           const color = getActorColor(e.actor);
@@ -159,12 +159,12 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
           return (
             <div
               key={e.id}
-              className="rounded-lg glass overflow-hidden border-l-2"
-              style={{ borderLeftColor: color }}
+              className="rounded-lg glass overflow-hidden border-s-2"
+              style={{ borderInlineStartColor: color }}
             >
               <button
                 onClick={() => setExpanded(isOpen ? null : e.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-start hover:bg-white/5 transition-colors"
               >
                 <span style={{ color }} className="font-semibold text-xs shrink-0">
                   {e.actor.replace("skill:", "")}
@@ -172,7 +172,7 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
                 <span className="text-slate-500 shrink-0">/</span>
                 <span className="text-slate-300 truncate">{e.event_type}</span>
                 {e.latency_ms !== undefined && (
-                  <span className="ml-auto text-slate-500 shrink-0">{formatMs(e.latency_ms)}</span>
+                  <span className="ms-auto text-slate-500 shrink-0">{formatMs(e.latency_ms)}</span>
                 )}
                 {isOpen ? (
                   <ChevronUp className="w-3 h-3 text-slate-500 shrink-0" />
@@ -197,6 +197,7 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
 }
 
 function AssumptionCard({ a, idx }: { a: Assumption; idx: number }) {
+  const tVal = useTranslations("validate");
   const [open, setOpen] = useState(false);
   const riskColor = getRiskColor(a.risk_level);
   const catIcons: Record<string, React.ReactNode> = {
@@ -208,11 +209,11 @@ function AssumptionCard({ a, idx }: { a: Assumption; idx: number }) {
   return (
     <div
       className="glass rounded-xl overflow-hidden border border-white/5 hover:border-white/10 transition-all animate-slide-up"
-      style={{ animationDelay: `${idx * 60}ms`, borderLeftColor: riskColor, borderLeftWidth: 2 }}
+      style={{ animationDelay: `${idx * 60}ms`, borderInlineStartColor: riskColor, borderInlineStartWidth: 2 }}
     >
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-start gap-3 p-4 text-left"
+        className="w-full flex items-start gap-3 p-4 text-start"
       >
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <span
@@ -235,8 +236,8 @@ function AssumptionCard({ a, idx }: { a: Assumption; idx: number }) {
       </button>
       {open && a.reasoning && (
         <div className="px-4 pb-4">
-          <div className="text-xs text-slate-400 p-3 glass rounded-lg border-l-2 border-brand-500/50">
-            <strong className="text-brand-400">Why this risk level: </strong>
+          <div className="text-xs text-slate-400 p-3 glass rounded-lg border-s-2 border-brand-500/50">
+            <strong className="text-brand-400">{tVal("cards.riskWhy")} </strong>
             {a.reasoning}
           </div>
         </div>
@@ -246,8 +247,16 @@ function AssumptionCard({ a, idx }: { a: Assumption; idx: number }) {
 }
 
 function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
+  const tVal = useTranslations("validate");
   const strengthColor = STRENGTH_COLOR[e.strength];
-  const strengthLabel = STRENGTH_LABEL[e.strength];
+  const strengthKey: Record<string, string> = {
+    opinion: "strengthOpinion",
+    intent: "strengthIntent",
+    time_given: "strengthTimeGiven",
+    contact_shared: "strengthContactShared",
+    commitment: "strengthCommitment",
+  };
+  const strengthLabel = tVal(`assistant.errors.${strengthKey[e.strength] ?? "strengthOpinion"}`);
   return (
     <div
       className="glass rounded-xl p-4 border border-white/5 animate-slide-up"
@@ -282,10 +291,10 @@ function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
                 href={e.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="cite-link ml-auto"
+                className="cite-link ms-auto"
               >
                 <ExternalLink className="w-3 h-3" />
-                Source
+                {tVal("cards.source")}
               </a>
             )}
           </div>
@@ -296,6 +305,7 @@ function EvidenceCard({ e, idx }: { e: Evidence; idx: number }) {
 }
 
 function ExperimentPanel({ exp }: { exp: Experiment }) {
+  const tVal = useTranslations("validate");
   const [showQuestions, setShowQuestions] = useState(true);
   return (
     <div className="space-y-4">
@@ -310,26 +320,26 @@ function ExperimentPanel({ exp }: { exp: Experiment }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
           {exp.design.target_sample_size && (
             <div className="glass rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Target sample</div>
+              <div className="text-xs text-slate-500 mb-1">{tVal("cards.targetSample")}</div>
               <div className="text-lg font-bold text-brand-400">n≥{exp.design.target_sample_size}</div>
             </div>
           )}
           {exp.design.estimated_cost && (
             <div className="glass rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Est. cost</div>
+              <div className="text-xs text-slate-500 mb-1">{tVal("cards.estCost")}</div>
               <div className="text-lg font-bold text-green-400">{exp.design.estimated_cost}</div>
             </div>
           )}
           {exp.design.time_to_run && (
             <div className="glass rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Time to run</div>
+              <div className="text-xs text-slate-500 mb-1">{tVal("cards.timeToRun")}</div>
               <div className="text-sm font-bold text-slate-200">{exp.design.time_to_run}</div>
             </div>
           )}
         </div>
         {exp.design.success_criteria && (
-          <div className="mt-3 p-3 glass rounded-lg border-l-2 border-green-500/50">
-            <div className="text-xs text-slate-500 mb-1">Success criteria</div>
+          <div className="mt-3 p-3 glass rounded-lg border-s-2 border-green-500/50">
+            <div className="text-xs text-slate-500 mb-1">{tVal("cards.successCriteria")}</div>
             <div className="text-sm text-slate-300">{exp.design.success_criteria}</div>
           </div>
         )}
@@ -342,7 +352,7 @@ function ExperimentPanel({ exp }: { exp: Experiment }) {
             className="flex items-center gap-2 text-sm font-medium text-slate-300 mb-3 hover:text-white transition-colors"
           >
             <ClipboardList className="w-4 h-4 text-brand-400" />
-            Interview / Survey Questions ({exp.design.questions.length})
+            {tVal("cards.questionsTitle", { count: exp.design.questions.length })}
             {showQuestions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showQuestions && (
@@ -368,7 +378,7 @@ function ExperimentPanel({ exp }: { exp: Experiment }) {
                       {!q.is_leading && (
                         <div className="mt-2 flex items-center gap-1.5 text-xs text-green-400">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Approved by bias validator</span>
+                          <span>{tVal("cards.biasApproved")}</span>
                         </div>
                       )}
                     </div>
@@ -385,11 +395,12 @@ function ExperimentPanel({ exp }: { exp: Experiment }) {
 }
 
 function LeadsPanel({ leads, message }: { leads: import("@/lib/apollo").ApolloLead[]; message?: string | null }) {
+  const tVal = useTranslations("validate");
   if (leads.length === 0) return null;
   return (
     <div className="space-y-3">
       {message && (
-        <p className="text-xs text-slate-400 p-3 glass rounded-xl border-l-2 border-green-500/50">
+        <p className="text-xs text-slate-400 p-3 glass rounded-xl border-s-2 border-green-500/50">
           {message}
         </p>
       )}
@@ -419,24 +430,25 @@ function LeadsPanel({ leads, message }: { leads: import("@/lib/apollo").ApolloLe
         ))}
       </div>
       <p className="text-xs text-slate-500">
-        Research-only shortlist for your own manual outreach — Apollo data is third-party and never auto-contacted.
+        {tVal("leads.notice")}
       </p>
     </div>
   );
 }
 
 function IcpProfileCard({ profile }: { profile: IcpProfile }) {
-  const dims: { label: string; value: string }[] = [
-    { label: "Role", value: profile.role_title },
-    { label: "Context", value: profile.context },
-    { label: "Pain", value: profile.pain },
-    { label: "Workaround", value: profile.workaround },
-    { label: "Buying authority", value: profile.buying_authority },
+  const tVal = useTranslations("validate");
+  const dims: { id: "role" | "context" | "pain" | "workaround" | "authority"; value: string }[] = [
+    { id: "role", value: profile.role_title },
+    { id: "context", value: profile.context },
+    { id: "pain", value: profile.pain },
+    { id: "workaround", value: profile.workaround },
+    { id: "authority", value: profile.buying_authority },
   ];
-  const markets: { label: string; value: string; note?: string }[] = [
-    { label: "TAM", value: profile.tam.value, note: profile.tam.source_url },
-    { label: "SAM", value: profile.sam.value, note: profile.sam.source_note },
-    { label: "SOM", value: profile.som.value, note: profile.som.basis },
+  const markets: { id: "tam" | "sam" | "som"; value: string; note?: string }[] = [
+    { id: "tam", value: profile.tam.value, note: profile.tam.source_url },
+    { id: "sam", value: profile.sam.value, note: profile.sam.source_note },
+    { id: "som", value: profile.som.value, note: profile.som.basis },
   ];
   return (
     <div className="glass rounded-xl p-4 border border-white/5 animate-slide-up">
@@ -444,22 +456,22 @@ function IcpProfileCard({ profile }: { profile: IcpProfile }) {
         <span className="text-sm font-bold text-slate-200">{profile.role_title}</span>
         {profile.preliminary && (
           <span className="badge text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30">
-            preliminary — pre-research
+            {tVal("icp.preliminary")}
           </span>
         )}
       </div>
       <div className="space-y-2 mb-3">
         {dims.map((d) => (
-          <div key={d.label} className="flex gap-2 text-sm">
-            <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0 w-28">{d.label}</span>
+          <div key={d.id} className="flex gap-2 text-sm">
+            <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0 w-28">{tVal(`icp.${d.id}`)}</span>
             <span className="text-sm text-slate-200">{d.value}</span>
           </div>
         ))}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {markets.map((m) => (
-          <div key={m.label} className="glass rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">{m.label}</div>
+          <div key={m.id} className="glass rounded-lg p-3">
+            <div className="text-xs text-slate-500 mb-1">{tVal(`icp.${m.id}`)}</div>
             <div className="text-sm font-bold text-slate-100">{m.value}</div>
             {m.note && <div className="text-xs text-slate-500 mt-1 truncate">{m.note}</div>}
           </div>
@@ -470,6 +482,7 @@ function IcpProfileCard({ profile }: { profile: IcpProfile }) {
 }
 
 function InvestorScorecardCard({ scorecard }: { scorecard: InvestorScorecard }) {
+  const tVal = useTranslations("validate");
   const fitColor: Record<string, string> = {
     fundable: "#22c55e",
     not_yet: "#eab308",
@@ -507,8 +520,8 @@ function InvestorScorecardCard({ scorecard }: { scorecard: InvestorScorecard }) 
         ))}
       </div>
       {scorecard.top_gaps.length > 0 && (
-        <div className="p-3 glass rounded-lg border-l-2 border-yellow-500/50">
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Top gaps</div>
+        <div className="p-3 glass rounded-lg border-s-2 border-yellow-500/50">
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">{tVal("investor.topGaps")}</div>
           <ul className="text-sm text-slate-300 list-disc list-inside">
             {scorecard.top_gaps.map((g) => (
               <li key={g}>{g}</li>
@@ -521,6 +534,8 @@ function InvestorScorecardCard({ scorecard }: { scorecard: InvestorScorecard }) 
 }
 
 function DecisionMemoPanel({ decision }: { decision: Decision }) {
+  const tVal = useTranslations("validate");
+  const tShared = useTranslations("shared");
   const verdictColor = getVerdictColor(decision.verdict);
   const verdictEmoji: Record<string, string> = {
     go: "🚀",
@@ -544,7 +559,7 @@ function DecisionMemoPanel({ decision }: { decision: Decision }) {
               className="text-3xl font-black uppercase tracking-wider"
               style={{ color: verdictColor }}
             >
-              {decision.verdict.replace("_", " ")}
+              {tShared(`verdicts.${decision.verdict === "test_more" ? "testMore" : decision.verdict}`)}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -556,13 +571,13 @@ function DecisionMemoPanel({ decision }: { decision: Decision }) {
                 border: `1px solid ${verdictColor}40`,
               }}
             >
-              {decision.confidence} confidence
+              {decision.confidence} {tVal("decision.confidence")}
             </span>
             {decision.sample_size !== undefined && decision.sample_size > 0 && (
               <span className="text-xs text-slate-500">n={decision.sample_size}</span>
             )}
             {decision.response_rate !== undefined && (
-              <span className="text-xs text-slate-500">response {decision.response_rate}%</span>
+              <span className="text-xs text-slate-500">{tVal("decision.responsePattern", { rate: decision.response_rate })}</span>
             )}
           </div>
         </div>
@@ -570,14 +585,14 @@ function DecisionMemoPanel({ decision }: { decision: Decision }) {
 
       <div className="space-y-4">
         <div>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Rationale</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">{tVal("decision.rationale")}</div>
           <p className="text-sm text-slate-300 leading-relaxed">{decision.rationale}</p>
         </div>
 
         {decision.next_experiment && (
-          <div className="p-4 glass rounded-xl border-l-2 border-brand-500/60">
+          <div className="p-4 glass rounded-xl border-s-2 border-brand-500/60">
             <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">
-              Next cheapest experiment
+              {tVal("decision.nextExperiment")}
             </div>
             <p className="text-sm text-slate-200">{decision.next_experiment}</p>
           </div>
@@ -593,6 +608,17 @@ function ValidateDashboard() {
   const searchParams = useSearchParams();
   const locale = useLocale() as AppLocale;
   const t = useTranslations("nav");
+  const tVal = useTranslations("validate");
+  const tShared = useTranslations("shared");
+  // Stage keys from the API resolve to shared.stages labels by id (lib UNTOUCHED).
+  const stageLabel = (key: string, fb: string) => {
+    try {
+      const v = tShared(`stages.${key}`);
+      return v === `stages.${key}` ? fb : v;
+    } catch {
+      return fb;
+    }
+  };
   const initialIdea = searchParams.get("idea") ?? "";
   const startupIdParam = searchParams.get("startup_id") ?? "";
 
@@ -737,11 +763,9 @@ function ValidateDashboard() {
       } catch {
         try {
           localStorage.setItem(`startup:${snapshot.startup.id}`, JSON.stringify(snapshot));
-          setPersistNotice(
-            "Couldn't reach the server — this snapshot is kept in this browser only and won't appear in History on other devices."
-          );
+          setPersistNotice("offlineSnapshot");
         } catch {
-          setPersistNotice("Couldn't save this snapshot (server unreachable, browser storage full).");
+          setPersistNotice("saveFailed");
         }
       }
     },
@@ -803,12 +827,12 @@ function ValidateDashboard() {
       // Non-SSE pre-flight rejections (429 rate-limit, 402 budget): surface
       // the JSON error instead of hanging on an empty stream.
       if (!res.ok) {
-        let message = `Request failed (${res.status})`;
+        let message = tVal("serverErrors.statusPattern", { status: res.status });
         try {
           const errBody = (await res.json()) as { error?: unknown; retryAfter?: unknown };
           if (typeof errBody.error === "string" && errBody.error) message = errBody.error;
           if (typeof errBody.retryAfter === "number" && errBody.retryAfter > 0) {
-            message += ` Retry in ${errBody.retryAfter}s.`;
+            message += ` ${tVal("serverErrors.retryIn", { seconds: errBody.retryAfter })}`;
           }
         } catch {
           // keep default message
@@ -925,7 +949,7 @@ function ValidateDashboard() {
                 }
                 break;
               case "error":
-                setError(typeof data.message === "string" ? data.message : "Agent run failed");
+                setError(typeof data.message === "string" ? data.message : tShared("errors.agentRunFailed"));
                 setPhase("error");
                 if (data.trace) setTrace([...data.trace]);
                 break;
@@ -936,7 +960,7 @@ function ValidateDashboard() {
         // kill, dropped connection, lost frames). Never freeze silently —
         // surface it so the user can retry instead of staring at a dead UI.
         if (!sse.hasTerminalEvent()) {
-          setError("The stream ended before a verdict arrived (connection lost or server timeout). Please try again.");
+          setError(tVal("serverErrors.streamEnded"));
           setPhase("error");
         }
     } catch (err) {
@@ -947,7 +971,7 @@ function ValidateDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [idea, uploadedData, isLoading, persistStartupSnapshot]);
+  }, [idea, uploadedData, isLoading, persistStartupSnapshot, tVal, tShared]);
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -975,7 +999,7 @@ function ValidateDashboard() {
             {isLoading || phase !== "idle" ? (
               <PhaseIndicator phase={phase} />
             ) : (
-              <span className="text-xs text-slate-500">Ready to validate</span>
+              <span className="text-xs text-slate-500">{tVal("header.readyTitle")}</span>
             )}
           </div>
 
@@ -1007,12 +1031,12 @@ function ValidateDashboard() {
                 stats.verifier_approved ? "text-green-400 bg-green-500/10" : "text-yellow-400 bg-yellow-500/10"
               )}>
                 <Shield className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Verifier</span> {stats.verifier_approved ? "✓" : `⚠ ${stats.unsupported_claims} flags`}
+                <span className="hidden sm:inline">{tVal("header.verifier")}</span> {stats.verifier_approved ? tVal("header.verifierOk") : tVal("header.verifierFlags", { count: stats.unsupported_claims ?? 0 })}
               </div>
             )}
             {stats.tool_calls !== undefined && (
               <div className="hidden sm:block text-xs text-slate-500 px-2 py-1 glass rounded-lg">
-                {stats.tool_calls}/{15} calls
+                {tVal("header.callsUsed", { used: stats.tool_calls, max: 15 })}
               </div>
             )}
           </div>
@@ -1021,16 +1045,16 @@ function ValidateDashboard() {
 
       <div className="flex-1 flex flex-col lg:flex-row">
         {/* ── Left sidebar — Input ── */}
-        <aside className="w-full lg:w-80 lg:shrink-0 glass border-b lg:border-b-0 lg:border-r border-white/5 p-4 flex flex-col gap-4 lg:overflow-y-auto">
+        <aside className="w-full lg:w-80 lg:shrink-0 glass border-b lg:border-b-0 lg:border-e border-white/5 p-4 flex flex-col gap-4 lg:overflow-y-auto">
           <div>
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-              Startup Idea
+              {tVal("form.ideaLabel")}
             </label>
             <textarea
               id="idea-textarea"
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
-              placeholder="Describe your startup idea in detail. What problem does it solve? Who is the target customer? What's your business model?"
+              placeholder={tVal("form.ideaPlaceholder")}
               rows={6}
               className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-brand-500/50 resize-none transition-colors"
             />
@@ -1039,33 +1063,33 @@ function ValidateDashboard() {
           <div>
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Upload className="w-3.5 h-3.5" />
-              Primary Evidence (optional)
+              {tVal("form.evidenceLabel")}
             </label>
             <textarea
               id="evidence-textarea"
               value={uploadedData}
               onChange={(e) => setUploadedData(e.target.value)}
-              placeholder="Paste interview notes, survey responses, or CSV data here. The agent will analyze the real evidence and factor it into the decision memo."
+              placeholder={tVal("form.evidencePlaceholder")}
               rows={5}
               className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-brand-500/50 resize-none transition-colors"
             />
             <p className="text-xs text-slate-500 mt-1">
-              Paste CSV, interview notes, or survey results
+              {tVal("form.evidenceHint")}
             </p>
           </div>
 
           {/* Trial paywall (Task 7): frozen banner — reads untouched, run locked. */}
           {paywallFrozen && (
-            <div dir="rtl" className="glass rounded-xl p-4 border border-brand-500/30">
+            <div dir={locale === "ar" ? "rtl" : "ltr"} className="glass rounded-xl p-4 border border-brand-500/30">
               <p className="text-sm text-slate-200 mb-3">
-                انتهت تجربتك المجانية — مشروعك محفوظ كاملًا
+                {tVal("paywall.title")}
               </p>
               <Link
                 href={withLocale("/plans", locale)}
                 id="paywall-cta"
                 className="btn-glow text-white text-sm font-bold px-4 py-2 rounded-xl inline-flex items-center justify-center w-full"
               >
-                عرض خطط الاشتراك
+                {tVal("paywall.cta")}
               </Link>
             </div>
           )}
@@ -1084,48 +1108,47 @@ function ValidateDashboard() {
             {isLoading ? (
               <>
                 <XCircle className="w-4 h-4" />
-                Stop Agent
+                {tVal("controls.stop")}
               </>
             ) : (
               <>
                 <Brain className="w-4 h-4" />
-                Run Validation
+                {tVal("controls.run")}
               </>
             )}
           </button>
 
           {/* Example ideas */}
           <div>
-            <div className="text-xs text-slate-500 mb-2">Try an example:</div>
+            <div className="text-xs text-slate-500 mb-2">{tVal("controls.examplesTitle")}</div>
             <div className="space-y-1.5">
-              {[
-                "AI tutoring app for Egyptian high school students preparing for Thanaweyya Amma",
-                "B2B SaaS platform for restaurant inventory management in MENA",
-                "Subscription box for organic Egyptian produce delivered to Cairo households",
-              ].map((ex, i) => (
+              {[0, 1, 2].map((i) => {
+                const ex = tVal(`controls.examples.${i}`);
+                return (
                 <button
                   key={i}
                   onClick={() => setIdea(ex)}
-                  className="w-full text-left text-xs text-slate-400 hover:text-brand-400 p-2 rounded-lg hover:bg-brand-500/10 transition-colors"
+                  className="w-full text-start text-xs text-slate-400 hover:text-brand-400 p-2 rounded-lg hover:bg-brand-500/10 transition-colors"
                 >
                   {ex}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           {/* Stats */}
           {phase === "done" && (
             <div className="space-y-2 pt-2 border-t border-white/5">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Session Stats</div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{tVal("stats.title")}</div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="glass rounded-lg p-2 text-center">
                   <div className="text-base font-bold text-brand-400">{evidence.length}</div>
-                  <div className="text-xs text-slate-500">Evidence items</div>
+                  <div className="text-xs text-slate-500">{tVal("stats.evidence")}</div>
                 </div>
                 <div className="glass rounded-lg p-2 text-center">
                   <div className="text-base font-bold text-slate-200">{assumptions.length}</div>
-                  <div className="text-xs text-slate-500">Assumptions</div>
+                  <div className="text-xs text-slate-500">{tVal("stats.assumptions")}</div>
                 </div>
               </div>
             </div>
@@ -1136,26 +1159,26 @@ function ValidateDashboard() {
         <main className="flex-1 min-w-0 flex flex-col">
           {/* Tab bar */}
           <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-white/5">
-            {(["results", "trace"] as const).map((t) => (
+            {(["results", "trace"] as const).map((tab) => (
               <button
-                key={t}
-                onClick={() => setActiveTab(t)}
+                key={tab}
+                onClick={() => setActiveTab(tab)}
                 className={cn(
                   "px-4 py-2 rounded-t-lg text-sm font-medium transition-all border-b-2",
-                  activeTab === t
+                  activeTab === tab
                     ? "text-brand-400 border-brand-500 bg-brand-500/10"
                     : "text-slate-500 border-transparent hover:text-slate-300"
                 )}
               >
-                {t === "results" ? (
+                {tab === "results" ? (
                   <span className="flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5" />
-                    Results
+                    {tVal("tabs.results")}
                   </span>
                 ) : (
                   <span className="flex items-center gap-1.5">
                     <Zap className="w-3.5 h-3.5" />
-                    Trace Log
+                    {tVal("tabs.trace")}
                     {trace.length > 0 && (
                       <span className="text-xs bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded-full">
                         {trace.length}
@@ -1179,21 +1202,16 @@ function ValidateDashboard() {
                   <div className="w-16 h-16 rounded-2xl bg-brand-500/10 flex items-center justify-center mb-4">
                     <Brain className="w-8 h-8 text-brand-400" />
                   </div>
-                  <h2 className="text-xl font-bold text-slate-200 mb-2">Ready to validate</h2>
+                  <h2 className="text-xl font-bold text-slate-200 mb-2">{tVal("idle.title")}</h2>
                   <p className="text-slate-400 text-sm max-w-sm">
-                    Describe your startup idea on the left and click{" "}
-                    <strong className="text-brand-400">Run Validation</strong> to start the AI agent.
+                    {tVal("idle.descA")}{" "}
+                    <strong className="text-brand-400">{tVal("controls.run")}</strong> {tVal("idle.descC")}
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3 justify-center text-xs text-slate-500">
-                    {[
-                      "Assumption mapping",
-                      "Grounded research",
-                      "Bias-free experiments",
-                      "Evidence analysis",
-                    ].map((f) => (
-                      <span key={f} className="flex items-center gap-1.5 glass px-3 py-1.5 rounded-full">
+                    {[0, 1, 2, 3].map((i) => (
+                      <span key={i} className="flex items-center gap-1.5 glass px-3 py-1.5 rounded-full">
                         <CheckCircle2 className="w-3 h-3 text-green-400" />
-                        {f}
+                        {tVal(`idle.bullets.${i}`)}
                       </span>
                     ))}
                   </div>
@@ -1205,10 +1223,10 @@ function ValidateDashboard() {
                 <div className="glass rounded-xl p-4 border border-red-500/30 flex items-start gap-3">
                   <XCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-semibold text-red-400 mb-1">Agent Error</div>
+                    <div className="text-sm font-semibold text-red-400 mb-1">{tVal("results.agentError")}</div>
                     <div className="text-sm text-slate-300">{error}</div>
                     <div className="text-xs text-slate-500 mt-2">
-                      Make sure GEMINI_API_KEY is set in your .env.local file.
+                      {tVal("results.apiKeyHint")}
                     </div>
                   </div>
                 </div>
@@ -1219,8 +1237,8 @@ function ValidateDashboard() {
                 <div className="glass rounded-xl p-4 border border-amber-500/30 flex items-start gap-3">
                   <XCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-semibold text-amber-400 mb-1">Saved in this browser only</div>
-                    <div className="text-sm text-slate-300">{persistNotice}</div>
+                    <div className="text-sm font-semibold text-amber-400 mb-1">{tVal("results.browserOnly")}</div>
+                    <div className="text-sm text-slate-300">{persistNotice ? tVal(`serverErrors.${persistNotice}`) : null}</div>
                   </div>
                 </div>
               )}
@@ -1259,7 +1277,7 @@ function ValidateDashboard() {
                             </span>
                           )}
                           <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300 capitalize">
-                            🚦 {startup.stage}
+                            🚦 {stageLabel(startup.stage, startup.stage)}
                           </span>
                           {startup.business_model && (
                             <span className="text-xs glass px-2.5 py-1 rounded-full text-slate-300">
@@ -1294,7 +1312,7 @@ function ValidateDashboard() {
                 <section className="animate-fade-in">
                   <div className="glass rounded-2xl p-5 border border-white/5">
                     <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">
-                      Clarifying questions
+                      {tVal("results.clarifying")}
                     </div>
                     <ul className="space-y-1.5">
                       {questions.map((q, i) => (
@@ -1311,7 +1329,7 @@ function ValidateDashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <Target className="w-4 h-4 text-brand-400" />
                     <h3 className="font-bold text-slate-200 text-sm">
-                      Assumption Map ({assumptions.length})
+                      {tVal("results.assumptionMap", { count: assumptions.length })}
                     </h3>
                     {isLoading && phase === "mapping" && (
                       <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin" />
@@ -1331,11 +1349,23 @@ function ValidateDashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <Search className="w-4 h-4 text-brand-400" />
                     <h3 className="font-bold text-slate-200 text-sm">
-                      {describeResearchCoverage(secondaryEvidence)}
+                      {secondaryEvidence.length === 0
+                        ? tVal("assistant.errors.researchEmpty")
+                        : (() => {
+                            const grounded = secondaryEvidence.filter(
+                              (e) => e.source_type === "web_search" && !!e.source_url
+                            ).length;
+                            const count = secondaryEvidence.length;
+                            if (grounded === count)
+                              return tVal("assistant.errors.researchGrounded", { count });
+                            if (grounded === 0)
+                              return tVal("assistant.errors.researchUnverified", { count });
+                            return tVal("assistant.errors.researchPartial", { count, grounded });
+                          })()}
                     </h3>
-                    <div className="flex items-center gap-1 text-xs text-slate-500 ml-auto">
+                    <div className="flex items-center gap-1 text-xs text-slate-500 ms-auto">
                       <Info className="w-3 h-3" />
-                      Secondary only — not sufficient for Go verdict
+                      {tVal("results.secondaryOnly")}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -1344,7 +1374,7 @@ function ValidateDashboard() {
                     ))}
                     {secondaryEvidence.length > 8 && (
                       <p className="text-xs text-slate-500 text-center py-2">
-                        +{secondaryEvidence.length - 8} more evidence items
+                        {tVal("results.moreItems", { count: secondaryEvidence.length - 8 })}
                       </p>
                     )}
                   </div>
@@ -1356,7 +1386,7 @@ function ValidateDashboard() {
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     <Globe className="w-4 h-4 text-brand-400" />
-                    <h3 className="font-bold text-slate-200 text-sm">Ideal Customer & Market</h3>
+                    <h3 className="font-bold text-slate-200 text-sm">{tVal("results.icpTitle")}</h3>
                   </div>
                   <IcpProfileCard profile={icpProfile} />
                 </section>
@@ -1367,7 +1397,7 @@ function ValidateDashboard() {
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     <FlaskConical className="w-4 h-4 text-brand-400" />
-                    <h3 className="font-bold text-slate-200 text-sm">Validation Experiment</h3>
+                    <h3 className="font-bold text-slate-200 text-sm">{tVal("results.experimentTitle")}</h3>
                   </div>
                   <ExperimentPanel exp={experiment} />
                 </section>
@@ -1379,7 +1409,7 @@ function ValidateDashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <Users className="w-4 h-4 text-green-400" />
                     <h3 className="font-bold text-slate-200 text-sm">
-                      Potential Interviewees {leads.length > 0 && `— ${leads.length} found`}
+                      {tVal("results.leadsTitle")} {leads.length > 0 && tVal("results.leadsFound", { count: leads.length })}
                     </h3>
                     {phase === "leads" && leads.length === 0 && !leadsMessage && (
                       <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin" />
@@ -1388,12 +1418,12 @@ function ValidateDashboard() {
                   {leads.length > 0 ? (
                     <LeadsPanel leads={leads} message={leadsMessage} />
                   ) : leadsMessage ? (
-                    <p className="text-xs text-slate-400 p-3 glass rounded-xl border-l-2 border-yellow-500/50">
+                    <p className="text-xs text-slate-400 p-3 glass rounded-xl border-s-2 border-yellow-500/50">
                       {leadsMessage}
                     </p>
                   ) : (
                     <p className="text-xs text-slate-500 p-3 glass rounded-xl">
-                      Searching Apollo for people matching your target customer…
+                      {tVal("results.leadsSearching")}
                     </p>
                   )}
                 </section>
@@ -1405,10 +1435,10 @@ function ValidateDashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <Users className="w-4 h-4 text-green-400" />
                     <h3 className="font-bold text-slate-200 text-sm">
-                      Primary Evidence — {primaryEvidence.length} items
+                      {tVal("results.primaryTitle", { count: primaryEvidence.length })}
                     </h3>
                     <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
-                      From real respondents
+                      {tVal("results.primarySub")}
                     </span>
                   </div>
                   <div className="space-y-2">
@@ -1424,7 +1454,7 @@ function ValidateDashboard() {
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     <LineChart className="w-4 h-4 text-brand-400" />
-                    <h3 className="font-bold text-slate-200 text-sm">Decision Memo</h3>
+                    <h3 className="font-bold text-slate-200 text-sm">{tVal("results.memoTitle")}</h3>
                   </div>
                   <DecisionMemoPanel decision={decision} />
                 </section>
@@ -1435,7 +1465,7 @@ function ValidateDashboard() {
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     <TrendingUp className="w-4 h-4 text-brand-400" />
-                    <h3 className="font-bold text-slate-200 text-sm">Investor Readiness</h3>
+                    <h3 className="font-bold text-slate-200 text-sm">{tVal("results.scoreTitle")}</h3>
                   </div>
                   <InvestorScorecardCard scorecard={scorecard} />
                 </section>
@@ -1447,15 +1477,15 @@ function ValidateDashboard() {
                   <div className="flex flex-wrap gap-4 text-xs">
                     <div className="flex items-center gap-1.5 text-slate-400">
                       <Clock className="w-3.5 h-3.5" />
-                      {stats.tool_calls} tool calls used
+                      {tVal("results.toolsUsed", { count: stats.tool_calls })}
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-400">
                       <Shield className="w-3.5 h-3.5" />
-                      Verifier: {stats.verifier_approved ? "✓ Approved" : `⚠ ${stats.unsupported_claims} flags`}
+                      {tVal("header.verifier")}: {stats.verifier_approved ? tVal("results.verifierApproved") : tVal("header.verifierFlags", { count: stats.unsupported_claims ?? 0 })}
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-400">
                       <FileText className="w-3.5 h-3.5" />
-                      {stats.evidence_count} evidence items collected
+                      {tVal("results.evidenceCount", { count: stats.evidence_count ?? 0 })}
                     </div>
                   </div>
                 </div>

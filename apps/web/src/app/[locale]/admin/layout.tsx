@@ -12,23 +12,25 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { getTranslations } from "next-intl/server";
 import { getCachedAdminContext } from "@/lib/admin-dal";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { withLocale, type AppLocale } from "@/lib/i18n-path";
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: "overview" | "users" | "workspaces" | "content" | "analytics" | "ops" | "requests";
   platformOnly: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/admin", label: "Overview", platformOnly: false },
-  { href: "/admin/users", label: "Users", platformOnly: false },
-  { href: "/admin/workspaces", label: "Workspaces", platformOnly: false },
-  { href: "/admin/content", label: "Content", platformOnly: false },
-  { href: "/admin/analytics", label: "Analytics", platformOnly: false },
-  { href: "/admin/ops", label: "Ops", platformOnly: true },
+  { href: "/admin", labelKey: "overview", platformOnly: false },
+  { href: "/admin/users", labelKey: "users", platformOnly: false },
+  { href: "/admin/workspaces", labelKey: "workspaces", platformOnly: false },
+  { href: "/admin/content", labelKey: "content", platformOnly: false },
+  { href: "/admin/analytics", labelKey: "analytics", platformOnly: false },
+  { href: "/admin/ops", labelKey: "ops", platformOnly: true },
+  { href: "/admin/requests", labelKey: "requests", platformOnly: true },
 ];
 
 async function resolveTier(locale: AppLocale): Promise<"platform" | "workspace"> {
@@ -50,28 +52,32 @@ export default async function AdminLayout({
   const { locale } = await params;
   const appLocale = locale as AppLocale;
   const tier = await resolveTier(appLocale);
+  const t = await getTranslations("admin.shell");
+  const brandParts = t("brand").split(" ");
+  const brandHead = brandParts[0];
+  const brandTail = brandParts.slice(1).join(" ");
 
   const items = NAV_ITEMS.filter(
     (item) => !item.platformOnly || tier === "platform",
-  ).map((item) => ({ ...item, href: withLocale(item.href, appLocale) }));
+  ).map((item) => ({ ...item, href: withLocale(item.href, appLocale), label: t(`nav.${item.labelKey}`) }));
 
   return (
     <div className="min-h-dvh">
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
+      <header className="fixed top-0 start-0 end-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             <Link href={withLocale("/dashboard", appLocale)} className="font-bold text-sm tracking-tight">
-              Validation <span className="gradient-text">Copilot</span>
+              {brandHead} <span className="gradient-text">{brandTail}</span>
             </Link>
             <span className="text-slate-600 text-sm hidden sm:block">/</span>
-            <span className="text-slate-400 text-sm font-medium">Admin</span>
+            <span className="text-slate-400 text-sm font-medium">{t("adminTitle")}</span>
           </div>
           <div className="flex items-center gap-3">
             <Suspense>
               <LanguageSwitcher locale={appLocale} />
             </Suspense>
             <span className="text-xs px-2 py-0.5 rounded-full border border-white/10 text-slate-400">
-              {tier === "platform" ? "Platform admin" : "Workspace admin"}
+              {tier === "platform" ? t("tierPlatform") : t("tierWorkspace")}
             </span>
           </div>
         </div>
@@ -79,8 +85,8 @@ export default async function AdminLayout({
 
       <div className="pt-14 flex flex-col sm:flex-row">
         <nav
-          aria-label="Admin sections"
-          className="sticky top-14 z-30 sm:static glass sm:bg-transparent border-b sm:border-b-0 sm:border-r border-white/5 p-2 sm:p-4 flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible sm:w-48 sm:shrink-0 sm:min-h-[calc(100dvh-3.5rem)]"
+          aria-label={t("sectionsAria")}
+          className="sticky top-14 z-30 sm:static glass sm:bg-transparent border-b sm:border-b-0 sm:border-e border-white/5 p-2 sm:p-4 flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible sm:w-48 sm:shrink-0 sm:min-h-[calc(100dvh-3.5rem)]"
         >
           {items.map((item) => (
             <Link

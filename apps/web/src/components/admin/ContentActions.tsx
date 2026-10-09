@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface ContentActionsProps {
   startupId: string;
@@ -20,12 +21,12 @@ interface ContentActionsProps {
 
 const CONFIDENCES = ["low", "medium", "high"] as const;
 
-function errorMessage(value: unknown): string {
+function errorMessage(value: unknown, fallback: string): string {
   if (typeof value === "object" && value !== null) {
     const record = value as Record<string, unknown>;
     if (typeof record["error"] === "string") return record["error"];
   }
-  return "Request failed";
+  return fallback;
 }
 
 export default function ContentActions({
@@ -34,6 +35,10 @@ export default function ContentActions({
   flagged,
 }: ContentActionsProps) {
   const router = useRouter();
+  const t = useTranslations("admin.contentActions");
+  const tDialogs = useTranslations("admin.dialogs");
+  const tShared = useTranslations("shared");
+  const tErr = useTranslations("admin.errors");
   const [screenOpen, setScreenOpen] = useState(false);
   const [confidence, setConfidence] =
     useState<(typeof CONFIDENCES)[number]>("medium");
@@ -52,12 +57,12 @@ export default function ContentActions({
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -81,14 +86,14 @@ export default function ContentActions({
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        setMessage(errorMessage(body));
+        setMessage(errorMessage(body, tErr("requestFailed")));
         return;
       }
       setScreenOpen(false);
       setRationale("");
       router.refresh();
     } catch {
-      setMessage("Network error — please retry");
+      setMessage(tErr("networkError"));
     } finally {
       setPending(false);
     }
@@ -107,7 +112,7 @@ export default function ContentActions({
               : "border-white/10 text-slate-300 hover:bg-white/5"
           }`}
         >
-          {pending ? "…" : flagged ? "Unflag" : "Flag"}
+          {pending ? "…" : flagged ? t("unflag") : t("flag")}
         </button>
         <button
           type="button"
@@ -116,17 +121,16 @@ export default function ContentActions({
             setMessage(null);
           }}
           className="text-xs px-2 py-1 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 transition-colors"
-          title="Policy screen — requires admin/owner (API-enforced)"
+          title={t("screenTitle")}
         >
-          Screen
+          {t("screen")}
         </button>
       </div>
 
       {screenOpen && (
         <div className="glass rounded-xl p-3 border border-white/10 space-y-2">
           <p className="text-xs text-slate-400">
-            Screen {startupName}? Approve records a go decision, reject records
-            stop. Requires admin/owner.
+            {tDialogs("screenConfirmPattern", { name: startupName })}
           </p>
           <select
             value={confidence}
@@ -134,7 +138,7 @@ export default function ContentActions({
               setConfidence(e.target.value as (typeof CONFIDENCES)[number])
             }
             className="w-full glass rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none border border-white/5 bg-transparent"
-            aria-label="Confidence"
+            aria-label={t("confidenceAria")}
           >
             {CONFIDENCES.map((c) => (
               <option key={c} value={c}>
@@ -145,7 +149,7 @@ export default function ContentActions({
           <textarea
             value={rationale}
             onChange={(e) => setRationale(e.target.value)}
-            placeholder="Rationale (optional, stored on the decision)"
+            placeholder={t("rationalePlaceholder")}
             rows={2}
             className="w-full glass rounded-lg px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 bg-transparent"
           />
@@ -156,7 +160,7 @@ export default function ContentActions({
               onClick={() => void runScreen("approve")}
               className="text-xs px-2 py-1 rounded-lg bg-green-500/20 text-green-300 border border-green-500/30 disabled:opacity-50"
             >
-              {pending ? "…" : "Approve"}
+              {pending ? "…" : t("approve")}
             </button>
             <button
               type="button"
@@ -164,14 +168,14 @@ export default function ContentActions({
               onClick={() => void runScreen("reject")}
               className="text-xs px-2 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 disabled:opacity-50"
             >
-              {pending ? "…" : "Reject"}
+              {pending ? "…" : t("reject")}
             </button>
             <button
               type="button"
               onClick={() => setScreenOpen(false)}
               className="text-xs px-2 py-1 rounded-lg text-slate-400 hover:text-slate-200"
             >
-              Cancel
+              {tShared("actions.cancel")}
             </button>
           </div>
         </div>

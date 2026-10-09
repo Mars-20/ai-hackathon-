@@ -31,4 +31,22 @@ describe("i18n key parity", () => {
   it("only ar/en locales allowed", () => {
     expect(["ar", "en"]).toContain("ar");
   });
+  it("plural keys use full ICU plural syntax in both locales", () => {
+    const get = (msgs: unknown, k: string) =>
+      k.split(".").reduce<unknown>(
+        (a, key) =>
+          typeof a === "object" && a !== null
+            ? (a as Record<string, unknown>)[key]
+            : undefined,
+        msgs
+      );
+    for (const k of ["shared.pagination.pageXofY", "dashboard.workspaceLine", "history.header.subPattern"]) {
+      for (const msgs of [en, ar]) {
+        const val = get(msgs, k);
+        expect(typeof val === "string" && val.includes(", plural,")).toBe(true);
+      }
+    }
+    const arWork = get(ar, "dashboard.workspaceLine");
+    expect(typeof arWork === "string" && arWork.includes("=2") && arWork.includes("few")).toBe(true);
+  });
 });

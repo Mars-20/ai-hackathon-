@@ -40,6 +40,8 @@ export default function DashboardPage() {
   const supabase = createClient();
   const locale = useLocale() as AppLocale;
   const t = useTranslations("nav");
+  const tDash = useTranslations("dashboard");
+  const tShared = useTranslations("shared");
 
   const [data, setData] = useState<DashboardData>({
     user: null,
@@ -237,7 +239,7 @@ export default function DashboardPage() {
 
   async function createNewWorkspace() {
     if (!data.user) return;
-    const name = prompt("Workspace name:");
+    const name = prompt(tDash("dialogs.workspacePrompt"));
     if (!name) return;
     const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + "-" + Date.now();
     const { data: ws, error } = await supabase.from("workspaces").insert({
@@ -248,7 +250,7 @@ export default function DashboardPage() {
         workspace_id: ws.id, user_id: data.user.id, role: "owner", joined_at: new Date().toISOString(),
       });
       if (memberError) {
-        alert("Workspace created but membership failed — please refresh. If this persists, run migration 0009_workspace_bootstrap.sql in Supabase.");
+        alert(tDash("dialogs.membershipAlert"));
         return;
       }
       try { localStorage.setItem("active_workspace_id", (ws as { id: string }).id); } catch {}
@@ -261,7 +263,7 @@ export default function DashboardPage() {
       <div className="min-h-dvh flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-500 text-sm">Loading your workspace…</p>
+          <p className="text-slate-500 text-sm">{tDash("loading")}</p>
         </div>
       </div>
     );
@@ -273,7 +275,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-dvh">
       {/* ── HEADER ──────────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5 safe-top">
+      <header className="fixed top-0 start-0 end-0 z-50 glass border-b border-white/5 safe-top">
         <div className="container-app flex items-center justify-between h-14">
           {/* Logo */}
           <div className="flex items-center gap-2">
@@ -300,21 +302,21 @@ export default function DashboardPage() {
                 <span className="w-5 h-5 rounded bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-xs font-bold">
                   {activeWorkspace?.name?.[0] || "W"}
                 </span>
-                <span className="hidden sm:inline text-slate-300 max-w-24 truncate">{activeWorkspace?.name || "No Workspace"}</span>
+                <span className="hidden sm:inline text-slate-300 max-w-24 truncate">{activeWorkspace?.name || tDash("header.noWorkspace")}</span>
                 <span className={`hidden sm:inline text-xs px-1.5 py-0.5 rounded border ${ROLE_BADGE_STYLE[activeWorkspace?.role || "member"]}`}>
-                  {activeWorkspace?.role}
+                  {tDash(`roles.${activeWorkspace?.role || "member"}`)}
                 </span>
                 <ChevronDown className="w-3 h-3 text-slate-500 hidden sm:block" />
               </button>
 
               {showWorkspaceSwitcher && (
-                <div className="absolute top-full right-0 mt-2 w-72 glass rounded-2xl border border-white/10 shadow-xl p-2 z-50">
-                  <p className="text-xs text-slate-500 px-3 py-2 font-medium uppercase tracking-wider">Your Workspaces</p>
+                <div className="absolute top-full end-0 mt-2 w-72 glass rounded-2xl border border-white/10 shadow-xl p-2 z-50">
+                  <p className="text-xs text-slate-500 px-3 py-2 font-medium uppercase tracking-wider">{tDash("header.workspacesTitle")}</p>
                   {workspaces.map((ws) => (
                     <button
                       key={ws.id}
                       onClick={() => switchWorkspace(ws)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all text-sm ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-start transition-all text-sm ${
                         activeWorkspace?.id === ws.id ? "bg-brand-500/20 text-brand-300" : "text-slate-300 hover:bg-white/5"
                       }`}
                     >
@@ -323,7 +325,7 @@ export default function DashboardPage() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{ws.name}</div>
-                        <div className="text-xs text-slate-500 capitalize">{ws.role} · {ws.plan}</div>
+                        <div className="text-xs text-slate-500 capitalize">{tDash(`roles.${ws.role}`)} · {ws.plan}</div>
                       </div>
                       {ws.role === "owner" && <Crown className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />}
                     </button>
@@ -334,7 +336,7 @@ export default function DashboardPage() {
                       className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/5 text-sm transition-all"
                       id="create-workspace-btn"
                     >
-                      <Plus className="w-4 h-4" /> New Workspace
+                      <Plus className="w-4 h-4" /> {tDash("header.newWorkspace")}
                     </button>
                   </div>
                 </div>
@@ -347,11 +349,11 @@ export default function DashboardPage() {
                 href={withLocale("/admin", locale)}
                 className="glass glass-hover flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-white/5"
                 id="admin-link"
-                title="Admin"
-                aria-label="Admin"
+                title={tDash("header.adminLink")}
+                aria-label={tDash("header.adminLink")}
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
-                <span className="hidden sm:inline">Admin</span>
+                <span className="hidden sm:inline">{tDash("header.adminLink")}</span>
               </Link>
             )}
 
@@ -396,10 +398,10 @@ export default function DashboardPage() {
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
                 {user?.avatar_url
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  ? <img src={user.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                  ? <img src={user.avatar_url} alt={tDash("header.avatarAlt")} className="w-full h-full object-cover" />
                   : user?.full_name?.[0] || user?.email?.[0]?.toUpperCase() || "?"}
               </div>
-              <button onClick={handleSignOut} className="text-slate-500 hover:text-red-400 transition-colors" title="Sign out">
+              <button onClick={handleSignOut} className="text-slate-500 hover:text-red-400 transition-colors" title={tDash("header.signOutTitle")} aria-label={tDash("header.signOutTitle")}>
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
@@ -414,22 +416,22 @@ export default function DashboardPage() {
           {/* Welcome */}
           <div className="mb-8">
             <h1 className="text-2xl font-black mb-1">
-              Welcome back, <span className="gradient-text">{user?.full_name || user?.email?.split("@")[0]}</span> 👋
+              {tDash("greeting", { name: (user?.full_name || user?.email?.split("@")[0]) ?? "" })} 👋
             </h1>
             <p className="text-slate-400 text-sm">
-              {activeWorkspace?.name} · {startups.length} startup{startups.length !== 1 ? "s" : ""} · {members.length} member{members.length !== 1 ? "s" : ""}
+              {tDash("workspaceLine", { workspace: activeWorkspace?.name ?? "", startups: startups.length, members: members.length })}
             </p>
           </div>
 
           {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
-              { label: "Startups", value: startups.length, icon: <Target className="w-4 h-4" />, color: "#5c7cfa" },
-              { label: "Team Members", value: members.length, icon: <Users className="w-4 h-4" />, color: "#7950f2" },
-              { label: "Experiments", value: "—", icon: <FlaskConical className="w-4 h-4" />, color: "#74c0fc" },
-              { label: "Decisions", value: "—", icon: <TrendingUp className="w-4 h-4" />, color: "#51cf66" },
+              { id: "startups", label: tDash("stats.startups"), value: startups.length, icon: <Target className="w-4 h-4" />, color: "#5c7cfa" },
+              { id: "members", label: tDash("stats.teamMembers"), value: members.length, icon: <Users className="w-4 h-4" />, color: "#7950f2" },
+              { id: "experiments", label: tDash("stats.experiments"), value: "—", icon: <FlaskConical className="w-4 h-4" />, color: "#74c0fc" },
+              { id: "decisions", label: tDash("stats.decisions"), value: "—", icon: <TrendingUp className="w-4 h-4" />, color: "#51cf66" },
             ].map((stat) => (
-              <div key={stat.label} className="glass rounded-2xl p-4">
+              <div key={stat.id} className="glass rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-slate-500">{stat.label}</span>
                   <span style={{ color: stat.color }}>{stat.icon}</span>
@@ -443,23 +445,23 @@ export default function DashboardPage() {
             {/* Startups list */}
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold text-slate-200 text-sm">Your Startups</h2>
+                <h2 className="font-bold text-slate-200 text-sm">{tDash("startups.title")}</h2>
                 <Link
                   href={withLocale("/validate", locale)}
                   onClick={handleNewValidation}
                   className="btn-glow text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                   id="new-startup-btn"
                 >
-                  <Plus className="w-3.5 h-3.5" /> New Startup
+                  <Plus className="w-3.5 h-3.5" /> {tDash("startups.newCta")}
                 </Link>
               </div>
 
               {startups.length === 0 ? (
                 <div className="glass rounded-2xl p-10 text-center border border-dashed border-white/10">
                   <Brain className="w-8 h-8 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm mb-4">No startups yet in this workspace.</p>
+                  <p className="text-slate-400 text-sm mb-4">{tDash("startups.emptyTitle")}</p>
                   <Link href={withLocale("/validate", locale)} className="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg inline-flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5" /> Validate Your First Idea
+                    <Zap className="w-3.5 h-3.5" /> {tDash("startups.emptyCta")}
                   </Link>
                 </div>
               ) : (
@@ -483,7 +485,7 @@ export default function DashboardPage() {
                         href={withLocale(`/validate?startup_id=${s.id}`, locale)}
                         className="text-slate-500 group-hover:text-brand-400 transition-colors flex-shrink-0"
                       >
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 rtl:scale-x-[-1]" />
                       </Link>
                     </div>
                   </div>
@@ -494,21 +496,21 @@ export default function DashboardPage() {
             {/* Team members panel */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold text-slate-200 text-sm">Team</h2>
+                <h2 className="font-bold text-slate-200 text-sm">{tDash("team.title")}</h2>
                 {canInvite && (
                   <button
                     onClick={() => setShowInviteModal(true)}
                     className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1 transition-colors"
                     id="invite-member-btn"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Invite
+                    <Plus className="w-3.5 h-3.5" /> {tDash("team.inviteCta")}
                   </button>
                 )}
               </div>
 
               <div className="glass rounded-2xl p-4 space-y-3">
                 {members.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4">No members loaded yet.</p>
+                  <p className="text-xs text-slate-500 text-center py-4">{tDash("team.emptyLine")}</p>
                 ) : (
                   members.map((m) => (
                     <div key={m.id} className="flex items-center gap-3">
@@ -520,11 +522,11 @@ export default function DashboardPage() {
                           {m.user_name || m.user_id.slice(0, 8) + "..."}
                         </div>
                         <div className="text-xs text-slate-500">
-                          {m.joined_at ? `Joined ${new Date(m.joined_at).toLocaleDateString()}` : "Pending"}
+                          {m.joined_at ? tDash("team.memberLine", { date: new Date(m.joined_at).toLocaleDateString() }) : tDash("team.pending")}
                         </div>
                       </div>
                       <span className={`text-xs px-1.5 py-0.5 rounded border ${ROLE_BADGE_STYLE[m.role]}`}>
-                        {m.role}
+                        {tDash(`roles.${m.role}`)}
                       </span>
                     </div>
                   ))
@@ -533,9 +535,9 @@ export default function DashboardPage() {
 
               {/* Quick actions */}
               <div className="glass rounded-2xl p-4 space-y-2">
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">Quick Actions</p>
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">{tDash("quickActions.title")}</p>
                 {[
-                  { label: "Invite Members", icon: <Users className="w-3.5 h-3.5" />, action: () => setShowInviteModal(true), disabled: !canInvite },
+                  { label: tDash("quickActions.inviteCta"), icon: <Users className="w-3.5 h-3.5" />, action: () => setShowInviteModal(true), disabled: !canInvite },
                   { label: t("history"), icon: <History className="w-3.5 h-3.5" />, href: withLocale("/history", locale) },
                   { label: t("validate"), icon: <FlaskConical className="w-3.5 h-3.5" />, href: withLocale("/validate", locale) },
                 ].map((action, i) => (
@@ -560,15 +562,16 @@ export default function DashboardPage() {
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
           <div className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
-            <h3 className="font-bold text-slate-200 text-lg mb-1">Invite to Workspace</h3>
-            <p className="text-slate-400 text-xs mb-6">They&apos;ll receive an email with a join link. Only {activeWorkspace?.name} members can access its data.</p>
+            <h3 className="font-bold text-slate-200 text-lg mb-1">{tDash("inviteModal.title")}</h3>
+            <p className="text-slate-400 text-xs mb-6">{tDash("inviteModal.sub", { workspace: activeWorkspace?.name ?? "" })}</p>
 
             <div className="space-y-4">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@company.com"
+                placeholder={tDash("inviteModal.emailPlaceholder")}
+                aria-label={tDash("inviteModal.emailPlaceholder")}
                 className="w-full glass rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-brand-500/50 transition-all"
                 id="invite-email-input"
               />
@@ -584,27 +587,27 @@ export default function DashboardPage() {
                         : "border-white/5 text-slate-500 hover:bg-white/5"
                     }`}
                   >
-                    {r}
+                    {tDash(`roles.${r}`)}
                   </button>
                 ))}
               </div>
 
               <div className="text-xs text-slate-500 p-3 glass rounded-xl">
-                <strong className="text-slate-400">Role permissions:</strong><br />
-                {inviteRole === "viewer" && "Read-only access. Cannot edit or run experiments."}
-                {inviteRole === "member" && "Can edit startups and run experiments. Cannot invite others."}
-                {inviteRole === "admin" && "Full edit + invite access. Cannot delete workspace."}
-                {inviteRole === "owner" && "Full control including workspace deletion."}
+                <strong className="text-slate-400">{tDash("inviteModal.rolePermissions")}</strong><br />
+                {inviteRole === "viewer" && tDash("inviteModal.permViewer")}
+                {inviteRole === "member" && tDash("inviteModal.permMember")}
+                {inviteRole === "admin" && tDash("inviteModal.permAdmin")}
+                {inviteRole === "owner" && tDash("inviteModal.permOwner")}
               </div>
 
               {inviteStatus === "sent" && (
                 <div className="flex items-center gap-2 text-green-400 text-xs p-3 glass rounded-xl border border-green-500/20">
-                  <CheckCircle2 className="w-4 h-4" /> Invite sent successfully!
+                  <CheckCircle2 className="w-4 h-4" /> {tDash("inviteModal.sent")}
                 </div>
               )}
               {inviteStatus === "error" && (
                 <div className="text-red-400 text-xs p-3 glass rounded-xl border border-red-500/20">
-                  ❌ Failed to send invite. Check the email and try again.
+                  {tDash("inviteModal.sendError")}
                 </div>
               )}
 
@@ -613,7 +616,7 @@ export default function DashboardPage() {
                   onClick={() => { setShowInviteModal(false); setInviteStatus("idle"); setInviteEmail(""); }}
                   className="flex-1 glass py-3 rounded-xl text-sm text-slate-400 hover:text-slate-200 transition-all"
                 >
-                  Cancel
+                  {tShared("actions.cancel")}
                 </button>
                 <button
                   onClick={sendInvite}
@@ -622,8 +625,8 @@ export default function DashboardPage() {
                   id="send-invite-btn"
                 >
                   {inviteStatus === "sending"
-                    ? <><Clock className="w-4 h-4 animate-spin" /> Sending…</>
-                    : <><Users className="w-4 h-4" /> Send Invite</>}
+                    ? <><Clock className="w-4 h-4 animate-spin" /> {tDash("inviteModal.sending")}</>
+                    : <><Users className="w-4 h-4" /> {tDash("inviteModal.send")}</>}
                 </button>
               </div>
             </div>
@@ -634,10 +637,10 @@ export default function DashboardPage() {
       {/* ── TRIAL PAYWALL MODAL (Task 7) ─────────────────────────────────── */}
       {showPaywallModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
-          <div dir="rtl" role="dialog" aria-modal="true" aria-labelledby="paywall-modal-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
-            <h3 id="paywall-modal-title" className="font-bold text-slate-200 text-lg mb-2">انتهت تجربتك المجانية</h3>
+          <div dir={locale === "ar" ? "rtl" : "ltr"} role="dialog" aria-modal="true" aria-labelledby="paywall-modal-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
+            <h3 id="paywall-modal-title" className="font-bold text-slate-200 text-lg mb-2">{tDash("paywall.title")}</h3>
             <p className="text-slate-400 text-sm mb-6">
-              استخدمت مشروعك التجريبي المجاني — جميع مشاريعك ونتائجك محفوظة ويمكنك الاطلاع عليها في أي وقت. اشترك لبدء مشروع جديد.
+              {tDash("paywall.body")}
             </p>
             <div className="flex gap-3">
               <Link
@@ -645,15 +648,15 @@ export default function DashboardPage() {
                 id="paywall-modal-cta"
                 className="flex-1 btn-glow text-white font-bold py-3 rounded-xl text-sm text-center"
               >
-                عرض خطط الاشتراك
+                {tDash("paywall.cta")}
               </Link>
               <button
                 ref={paywallCloseRef}
                 onClick={() => setShowPaywallModal(false)}
-                aria-label="إغلاق النافذة"
+                aria-label={tDash("paywall.closeAria")}
                 className="flex-1 glass py-3 rounded-xl text-sm text-slate-400 hover:text-slate-200 transition-all"
               >
-                إغلاق
+                {tDash("paywall.close")}
               </button>
             </div>
           </div>
