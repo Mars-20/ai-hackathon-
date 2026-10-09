@@ -306,6 +306,7 @@
       "unknownError": "خطأ غير معروف"
     },
     "misc": {
+      "conversation": "محادثة",
       "loading": "جاري التحميل...",
       "nextPage": "الصفحة اللي بعدها",
       "off": "مقفول",
@@ -531,6 +532,74 @@
       "countPattern": "({count} حدث)",
       "title": "سجل التتبع",
       "waiting": "مستني نشاط الوكيل..."
+    }
+  },
+  "assistant": {
+    "composer": {
+      "placeholder": "اسأل المساعد…",
+      "sendAria": "إرسال",
+      "sendLabel": "إرسال",
+      "stopAria": "إيقاف",
+      "stopLabel": "إيقاف",
+      "thinking": "يفكر…"
+    },
+    "list": {
+      "titlePattern": "المحادثات ({count})",
+      "newCta": "محادثة جديدة",
+      "emptyLine": "لا محادثات بعد — ابدأ بسؤال.",
+      "renameTitle": "اسم المحادثة",
+      "renameAria": "إعادة تسمية المحادثة",
+      "deleteTitle": "حذف",
+      "deleteAria": "حذف المحادثة",
+      "quotaTitle": "الحصة اليومية للمساعد",
+      "quotaPattern": "الحصة {used}/{quota}"
+    },
+    "dialogs": {
+      "deleteTitle": "حذف المحادثة؟",
+      "deleteBody": "سيتم حذف جميع رسائل هذه المحادثة نهائياً.",
+      "deleteConfirm": "حذف",
+      "cancelAria": "إلغاء",
+      "confirmAria": "تأكيد الحذف"
+    },
+    "errors": {
+      "unavailable": "هذه المحادثة لم تعد متاحة.",
+      "loadFailed": "تعذر تحميل الرسائل. حاول مجدداً.",
+      "tooLong": "الرسالة طويلة (الحد {max} حرف). اختصر وحاول مجدداً.",
+      "failed": "فشل المساعد",
+      "disconnected": "انقطع الاتصال قبل وصول الإجابة. أعد المحاولة.",
+      "serverUnreachable": "تعذر الوصول إلى الخادم. تحقق من الاتصال وحاول مجدداً.",
+      "renameFailed": "تعذر إعادة التسمية.",
+      "deleteFailed": "تعذر حذف المحادثة.",
+      "quotaExceeded": "انتهت الحصة اليومية للمساعد. للمتابعة راجع الخطط: {url}",
+      "threadCap": "هذه المحادثة ممتلئة ({max} رسالة). ابدأ محادثة جديدة للمتابعة.",
+      "sensitiveContent": "تعذر إظهار هذه الإجابة (محتوى حساس). أعد الصياغة وحاول مجدداً.",
+      "rateLimited": "طلبات كثيرة — انتظر قليلاً ثم أعد المحاولة{wait}.",
+      "requestFailed": "Request failed ({status})"
+    },
+    "samples": [
+      "ما أقوى دليل يدعم فكرتي؟",
+      "أنشئ تجربة لاختبار أهم افتراض",
+      "ما أضعف نقطة في التحقق الحالي؟"
+    ],
+    "hints": {
+      "composerHint": "اسأل عن أفكارك وأدلتك — الإجابات مؤرضة على بياناتك فقط.",
+      "floatLabel": "الزر العائم",
+      "openFull": "فتح الصفحة الكاملة",
+      "viewPlans": "عرض الخطط",
+      "newChatCta": "محادثة جديدة",
+      "closeAria": "إغلاق"
+    },
+    "citation": {
+      "titlePattern": "مصدر {label} — اضغط للانتقال إلى البطاقات",
+      "ariaPattern": "مصدر {label}"
+    },
+    "view": {
+      "loading": "جارٍ تحميل المساعد…"
+    },
+    "page": {
+      "metadataTitle": "المساعد | Validation Copilot",
+      "metadataDescription": "اسأل عن أفكارك وأدلتك — إجابات مؤرضة على بياناتك فقط.",
+      "headerTitle": "المساعد الذكي"
     }
   }
 }

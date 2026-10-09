@@ -8,21 +8,27 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
+import { NextIntlClientProvider, useLocale, useTranslations } from "next-intl";
 import { MessageCircle, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { stripLocale } from "@/lib/i18n-path";
+import arMessages from "../../messages/ar.json";
+import enMessages from "../../messages/en.json";
 import { useAssistantFloatPref } from "./useAssistantFloatPref";
 
 const EmbeddedPanel = dynamic(() => import("@/app/[locale]/assistant/AssistantPanel"), {
   ssr: false,
-  loading: () => (
-    <p className="text-slate-500 text-xs shimmer p-4">جارٍ تحميل المساعد…</p>
-  ),
+  loading: () => <FloatLoading />,
 });
+
+function FloatLoading() {
+  const tAsst = useTranslations("assistant");
+  return <p className="text-slate-500 text-xs shimmer p-4">{tAsst("view.loading")}</p>;
+}
 
 export default function AssistantFloatProvider() {
   const [loggedIn, setLoggedIn] = useState(false);
   const { open, setOpen, enabled, ready } = useAssistantFloatPref(loggedIn);
-  const closeRef = useRef<HTMLButtonElement>(null);
 
   // Session is re-evaluated on auth changes AND on every route change, not
   // just on mount: login does router.push (no reload), and each
@@ -50,6 +56,35 @@ export default function AssistantFloatProvider() {
     };
   }, [pathname]);
 
+  if (!ready || !loggedIn || !enabled) return null;
+
+  // This widget renders via RootLayout — OUTSIDE the [locale]
+  // NextIntlClientProvider — so it brings its own assistant+shared messages,
+  // resolved from the pathname (same stripLocale discipline as
+  // AssistantPanel). AssistantPanel consumes both namespaces (assistant.* +
+  // shared.misc.conversation fallback); a missing namespace throws
+  // MISSING_MESSAGE at useTranslations, so both must be provided here.
+  // CitationChip keeps plain useTranslations.
+  const floatLocale = stripLocale(pathname ?? "/").locale ?? "en";
+  return (
+    <NextIntlClientProvider
+      locale={floatLocale}
+      messages={
+        floatLocale === "ar"
+          ? { assistant: arMessages.assistant, shared: arMessages.shared }
+          : { assistant: enMessages.assistant, shared: enMessages.shared }
+      }
+    >
+      <FloatWidget open={open} setOpen={setOpen} />
+    </NextIntlClientProvider>
+  );
+}
+
+function FloatWidget({ open, setOpen }: { open: boolean; setOpen: (next: boolean) => void }) {
+  const tAsst = useTranslations("assistant");
+  const locale = useLocale();
+  const closeRef = useRef<HTMLButtonElement>(null);
+
   // Page-inert while expanded (bef body-inert rule): every body child
   // except this widget becomes non-interactive. body.inert itself is
   // unusable here — the panel lives inside <body> and would freeze too.
@@ -75,23 +110,21 @@ export default function AssistantFloatProvider() {
     };
   }, [open, setOpen]);
 
-  if (!ready || !loggedIn || !enabled) return null;
-
   return (
-    <div dir="rtl" data-assistant-float>
+    <div dir={locale === "ar" ? "rtl" : "ltr"} data-assistant-float>
       {open ? (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="المساعد الذكي"
+          aria-label={tAsst("page.headerTitle")}
           className="assistant-float-panel glass border border-white/10 p-4"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-bold text-slate-200">المساعد الذكي</span>
+            <span className="text-sm font-bold text-slate-200">{tAsst("page.headerTitle")}</span>
             <button
               ref={closeRef}
               onClick={() => setOpen(false)}
-              aria-label="إغلاق المساعد"
+              aria-label={tAsst("hints.closeAria")}
               className="text-slate-500 hover:text-slate-200"
             >
               <X className="w-4 h-4" />
@@ -102,8 +135,8 @@ export default function AssistantFloatProvider() {
       ) : (
         <button
           onClick={() => setOpen(true)}
-          aria-label="فتح المساعد الذكي"
-          title="المساعد الذكي"
+          aria-label={tAsst("page.headerTitle")}
+          title={tAsst("page.headerTitle")}
           className="assistant-float-btn"
         >
           <MessageCircle className="w-5 h-5" />

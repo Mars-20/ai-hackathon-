@@ -11,12 +11,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Send, Square, Plus, Trash2, Pencil, MessageCircle, X } from "lucide-react";
 import { createSseParser } from "@/lib/sse-client";
 import { stripLocale, withLocale } from "@/lib/i18n-path";
 import {
   MESSAGE_MAX,
-  formatSseError,
+  THREAD_CAP,
   parseCitationTokens,
 } from "@/lib/assistant/format";
 import CitationChip from "./CitationChip";
@@ -34,12 +35,6 @@ import type {
 interface ClientMsg extends AssistantMessageRow {
   cards?: ToolCard[];
 }
-
-const SAMPLE_QUESTIONS = [
-  "ما أقوى دليل يدعم فكرتي؟",
-  "أنشئ تجربة لاختبار أهم افتراض",
-  "ما أضعف نقطة في التحقق الحالي؟",
-];
 
 /** Attach persisted `tool` rows to the preceding assistant message. */
 function groupRows(rows: AssistantMessageRow[]): ClientMsg[] {
@@ -84,6 +79,8 @@ export default function AssistantPanel({
   // from the pathname (Task 2 stripLocale) instead of useLocale().
   const pathname = usePathname();
   const panelLocale = stripLocale(pathname ?? "/").locale ?? "en";
+  const tAsst = useTranslations("assistant");
+  const tShared = useTranslations("shared");
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -151,7 +148,7 @@ export default function AssistantPanel({
         `/api/assistant/conversations/${encodeURIComponent(id)}/messages`
       );
       if (res.status === 403) {
-        setError("هذه المحادثة لم تعد متاحة.");
+        setError(tAsst("errors.unavailable"));
         void refreshThreads();
         return;
       }
@@ -159,15 +156,15 @@ export default function AssistantPanel({
       const body = (await res.json()) as { messages?: AssistantMessageRow[] };
       setMessages(groupRows(Array.isArray(body.messages) ? body.messages : []));
     } catch {
-      setError("تعذر تحميل الرسائل. حاول مجدداً.");
+      setError(tAsst("errors.loadFailed"));
     }
-  }, [refreshThreads]);
+  }, [refreshThreads, tAsst]);
 
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
     if (text.length > MESSAGE_MAX) {
-      setError(`الرسالة طويلة (الحد ${MESSAGE_MAX} حرف). اختصر وحاول مجدداً.`);
+      setError(tAsst("errors.tooLong", { max: MESSAGE_MAX }));
       return;
     }
     const key = crypto.randomUUID();
@@ -215,7 +212,25 @@ export default function AssistantPanel({
         }
         if (res.status === 409) setThreadFull(true);
         if (res.status === 403 || res.status === 404) void refreshThreads();
-        setError(formatSseError(res.status, body));
+        // Error copy resolves here against assistant.errors.* (stable ids
+        // mirror lib/assistant/format.ts; lib UNTOUCHED, server bodies unchanged).
+        if (res.status === 402) {
+          const url = typeof body.plans_url === "string" ? body.plans_url : "/plans";
+          setError(tAsst("errors.quotaExceeded", { url }));
+        } else if (res.status === 409) {
+          setError(tAsst("errors.threadCap", { max: THREAD_CAP }));
+        } else if (res.status === 422) {
+          setError(tAsst("errors.sensitiveContent"));
+        } else if (res.status === 429) {
+          const wait =
+            typeof body.retryAfter === "number" && body.retryAfter > 0
+              ? ` (${body.retryAfter}s)`
+              : "";
+          setError(tAsst("errors.rateLimited", { wait }));
+        } else {
+          const serverMsg = typeof body.error === "string" && body.error ? body.error : null;
+          setError(serverMsg ?? tAsst("errors.requestFailed", { status: res.status }));
+        }
         setSending(false);
         setThinking(false);
         return;
@@ -257,14 +272,14 @@ export default function AssistantPanel({
               setError(
                 typeof data.message === "string" && data.message
                   ? data.message
-                  : "فشل المساعد"
+                  : tAsst("errors.failed")
               );
               break;
           }
         }
       }
       if (!sse.hasTerminalEvent()) {
-        setError("انقطع الاتصال قبل وصول الإجابة. أعد المحاولة.");
+        setError(tAsst("errors.disconnected"));
       } else if (conversationId) {
         if (!activeId) {
           const cid = conversationId;
@@ -297,13 +312,13 @@ export default function AssistantPanel({
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setError("تعذر الوصول إلى الخادم. تحقق من الاتصال وحاول مجدداً.");
+        setError(tAsst("errors.serverUnreachable"));
       }
     } finally {
       setSending(false);
       setThinking(false);
     }
-  }, [input, sending, activeId, refreshThreads]);
+  }, [input, sending, activeId, refreshThreads, tAsst]);
 
   const stop = () => {
     abortRef.current?.abort();
@@ -336,7 +351,7 @@ export default function AssistantPanel({
       if (!res.ok) throw new Error(`rename ${res.status}`);
       setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
     } catch {
-      setError("تعذر إعادة التسمية.");
+      setError(tAsst("errors.renameFailed"));
     }
   };
 
@@ -352,7 +367,7 @@ export default function AssistantPanel({
       setThreads((prev) => prev.filter((t) => t.id !== id));
       if (activeId === id) newChat();
     } catch {
-      setError("تعذر حذف المحادثة.");
+      setError(tAsst("errors.deleteFailed"));
     }
   };
 
@@ -387,7 +402,7 @@ export default function AssistantPanel({
             onClick={() => setShowThreads((v) => !v)}
             className="md:hidden glass rounded-xl px-3 py-2 text-xs text-slate-300 flex items-center gap-2 self-start"
           >
-            <MessageCircle className="w-4 h-4" /> المحادثات ({threads.length})
+            <MessageCircle className="w-4 h-4" /> {tAsst("list.titlePattern", { count: threads.length })}
           </button>
           <aside
             className={`${showThreads ? "flex" : "hidden"} md:flex flex-col gap-2 md:w-64 shrink-0`}
@@ -396,13 +411,13 @@ export default function AssistantPanel({
               onClick={newChat}
               className="btn-glow text-white text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 justify-center"
             >
-              <Plus className="w-3.5 h-3.5" /> محادثة جديدة
+              <Plus className="w-3.5 h-3.5" /> {tAsst("list.newCta")}
             </button>
             <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[40dvh] md:max-h-[60dvh]">
               {threads.length === 0 ? (
                 <div className="glass rounded-xl p-6 text-center border border-dashed border-white/10">
                   <MessageCircle className="w-6 h-6 text-slate-700 mx-auto mb-2" />
-                  <p className="text-slate-500 text-xs">لا محادثات بعد — ابدأ بسؤال.</p>
+                  <p className="text-slate-500 text-xs">{tAsst("list.emptyLine")}</p>
                 </div>
               ) : (
                 threads.map((t) => (
@@ -424,15 +439,15 @@ export default function AssistantPanel({
                         onBlur={() => setRenameId(null)}
                         maxLength={80}
                         className="flex-1 min-w-0 bg-transparent text-xs text-slate-200 outline-none"
-                        aria-label="اسم المحادثة"
+                        aria-label={tAsst("list.renameTitle")}
                       />
                     ) : (
                       <button
                         onClick={() => void openThread(t.id)}
-                        className="flex-1 min-w-0 text-right text-xs text-slate-300 truncate hover:text-slate-100"
-                        title={t.title ?? "محادثة"}
+                        className="flex-1 min-w-0 text-end text-xs text-slate-300 truncate hover:text-slate-100"
+                        title={t.title ?? tShared("misc.conversation")}
                       >
-                        {t.title ?? "محادثة"}
+                        {t.title ?? tShared("misc.conversation")}
                       </button>
                     )}
                     <button
@@ -441,16 +456,16 @@ export default function AssistantPanel({
                         setRenameValue(t.title ?? "");
                       }}
                       className="text-slate-600 hover:text-slate-300 shrink-0"
-                      title="إعادة تسمية"
-                      aria-label="إعادة تسمية المحادثة"
+                      title={tAsst("list.renameAria")}
+                      aria-label={tAsst("list.renameAria")}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => setDeleteId(t.id)}
                       className="text-slate-600 hover:text-red-400 shrink-0"
-                      title="حذف"
-                      aria-label="حذف المحادثة"
+                      title={tAsst("list.deleteTitle")}
+                      aria-label={tAsst("list.deleteAria")}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -469,9 +484,9 @@ export default function AssistantPanel({
           {quota && (
             <div
               className="glass rounded-xl px-3 py-1.5 text-[11px] text-slate-400 flex items-center gap-2"
-              title="الحصة اليومية للمساعد"
+              title={tAsst("list.quotaTitle")}
             >
-              <span>الحصة {quota.used}/{quota.quota}</span>
+              <span>{tAsst("list.quotaPattern", { used: quota.used, quota: quota.quota })}</span>
               <span className="w-16 h-1 rounded bg-white/10 overflow-hidden inline-block">
                 <span
                   className="progress-fill block h-full"
@@ -488,12 +503,12 @@ export default function AssistantPanel({
                 onChange={(e) => void toggleFloat(e.target.checked)}
                 className="accent-[#5c7cfa]"
               />
-              الزر العائم
+              {tAsst("hints.floatLabel")}
             </label>
           )}
           {embedded && (
             <Link href={withLocale("/assistant", panelLocale)} className="text-[11px] text-brand-400 hover:underline">
-              فتح الصفحة الكاملة
+              {tAsst("hints.openFull")}
             </Link>
           )}
         </div>
@@ -504,15 +519,15 @@ export default function AssistantPanel({
             <span className="flex-1">{error}</span>
             {plansUrl && (
               <Link href={plansUrl.startsWith("/") ? withLocale(plansUrl, panelLocale) : plansUrl} className="text-brand-400 hover:underline shrink-0">
-                عرض الخطط
+                {tAsst("hints.viewPlans")}
               </Link>
             )}
             {threadFull && (
               <button onClick={newChat} className="text-brand-400 hover:underline shrink-0">
-                محادثة جديدة
+                {tAsst("hints.newChatCta")}
               </button>
             )}
-            <button onClick={() => { setError(null); setPlansUrl(null); setThreadFull(false); }} aria-label="إغلاق" className="shrink-0 text-slate-500 hover:text-slate-300">
+            <button onClick={() => { setError(null); setPlansUrl(null); setThreadFull(false); }} aria-label={tAsst("hints.closeAria")} className="shrink-0 text-slate-500 hover:text-slate-300">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -523,9 +538,9 @@ export default function AssistantPanel({
           {messages.length === 0 && !sending && (
             <div className="glass rounded-2xl p-8 text-center border border-dashed border-white/10">
               <MessageCircle className="w-8 h-8 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm mb-4">اسأل عن أفكارك وأدلتك — الإجابات مؤرضة على بياناتك فقط.</p>
+              <p className="text-slate-400 text-sm mb-4">{tAsst("hints.composerHint")}</p>
               <div className="flex flex-wrap gap-2 justify-center">
-                {SAMPLE_QUESTIONS.map((q) => (
+                {[tAsst("samples.0"), tAsst("samples.1"), tAsst("samples.2")].map((q) => (
                   <button
                     key={q}
                     onClick={() => setInput(q)}
@@ -554,7 +569,7 @@ export default function AssistantPanel({
           {(sending || liveText || liveCards.length > 0) && (
             <div data-assistant-message className="glass rounded-2xl px-4 py-3 text-sm text-slate-200 border border-white/5">
               {thinking && !liveText && (
-                <p className="text-xs text-slate-500 shimmer">يفكر…</p>
+                <p className="text-xs text-slate-500 shimmer">{tAsst("composer.thinking")}</p>
               )}
               {liveText && (
                 <div className="whitespace-pre-wrap leading-relaxed">
@@ -579,9 +594,9 @@ export default function AssistantPanel({
               }
             }}
             rows={2}
-            placeholder="اسأل المساعد…"
+            placeholder={tAsst("composer.placeholder")}
             className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-600 outline-none resize-none"
-            aria-label="رسالة المساعد"
+            aria-label={tAsst("composer.placeholder")}
             disabled={sending}
           />
           <div className="flex items-center justify-between mt-1">
@@ -592,18 +607,18 @@ export default function AssistantPanel({
               <button
                 onClick={stop}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30"
-                aria-label="إيقاف"
+                aria-label={tAsst("composer.stopAria")}
               >
-                <Square className="w-3.5 h-3.5" /> إيقاف
+                <Square className="w-3.5 h-3.5" /> {tAsst("composer.stopLabel")}
               </button>
             ) : (
               <button
                 onClick={() => void send()}
                 disabled={!input.trim()}
                 className="btn-glow text-white text-xs font-semibold px-4 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-40"
-                aria-label="إرسال"
+                aria-label={tAsst("composer.sendAria")}
               >
-                <Send className="w-3.5 h-3.5 rtl:rotate-180" /> إرسال
+                <Send className="w-3.5 h-3.5 rtl:rotate-180" /> {tAsst("composer.sendLabel")}
               </button>
             )}
           </div>
@@ -613,27 +628,27 @@ export default function AssistantPanel({
       {/* ── Delete confirm (memories precedent) ── */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
-          <div dir="rtl" role="dialog" aria-modal="true" aria-labelledby="assistant-delete-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
+          <div dir={panelLocale === "ar" ? "rtl" : "ltr"} role="dialog" aria-modal="true" aria-labelledby="assistant-delete-title" className="glass rounded-3xl p-8 w-full max-w-md border border-white/10">
             <h3 id="assistant-delete-title" className="font-bold text-slate-200 text-lg mb-2">
-              حذف المحادثة؟
+              {tAsst("dialogs.deleteTitle")}
             </h3>
-            <p className="text-slate-400 text-sm mb-6">سيتم حذف جميع رسائل هذه المحادثة نهائياً.</p>
+            <p className="text-slate-400 text-sm mb-6">{tAsst("dialogs.deleteBody")}</p>
             <div className="flex gap-3">
               <button
                 ref={deleteConfirmRef}
                 onClick={() => void confirmDelete()}
                 onKeyDown={(e) => { if (e.key === "Escape") setDeleteId(null); }}
-                aria-label="تأكيد الحذف"
+                aria-label={tAsst("dialogs.confirmAria")}
                 className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-red-500/80 hover:bg-red-500"
               >
-                حذف
+                {tAsst("dialogs.deleteConfirm")}
               </button>
               <button
                 onClick={() => setDeleteId(null)}
-                aria-label="إلغاء"
+                aria-label={tAsst("dialogs.cancelAria")}
                 className="flex-1 glass py-3 rounded-xl text-sm text-slate-400 hover:text-slate-200 transition-all"
               >
-                إلغاء
+                {tAsst("dialogs.cancelAria")}
               </button>
             </div>
           </div>

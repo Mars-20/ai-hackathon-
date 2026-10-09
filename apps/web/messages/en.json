@@ -306,6 +306,7 @@
       "unknownError": "Unknown error"
     },
     "misc": {
+      "conversation": "Conversation",
       "loading": "Loading...",
       "nextPage": "Next page",
       "off": "Off",
@@ -531,6 +532,74 @@
       "countPattern": "({count} events)",
       "title": "Trace Log",
       "waiting": "Waiting for agent activity..."
+    }
+  },
+  "assistant": {
+    "composer": {
+      "placeholder": "Ask the assistant…",
+      "sendAria": "Send",
+      "sendLabel": "Send",
+      "stopAria": "Stop",
+      "stopLabel": "Stop",
+      "thinking": "Thinking…"
+    },
+    "list": {
+      "titlePattern": "Conversations ({count})",
+      "newCta": "New chat",
+      "emptyLine": "No conversations yet — start with a question.",
+      "renameTitle": "Conversation name",
+      "renameAria": "Rename conversation",
+      "deleteTitle": "Delete",
+      "deleteAria": "Delete conversation",
+      "quotaTitle": "Assistant daily quota",
+      "quotaPattern": "Quota {used}/{quota}"
+    },
+    "dialogs": {
+      "deleteTitle": "Delete conversation?",
+      "deleteBody": "All messages in this conversation will be permanently deleted.",
+      "deleteConfirm": "Delete",
+      "cancelAria": "Cancel",
+      "confirmAria": "Confirm deletion"
+    },
+    "errors": {
+      "unavailable": "This conversation is no longer available.",
+      "loadFailed": "Couldn't load messages. Try again.",
+      "tooLong": "Message too long (max {max} chars). Shorten it and try again.",
+      "failed": "Assistant failed",
+      "disconnected": "Connection lost before the answer arrived. Try again.",
+      "serverUnreachable": "Can't reach the server. Check your connection and try again.",
+      "renameFailed": "Couldn't rename.",
+      "deleteFailed": "Couldn't delete the conversation.",
+      "quotaExceeded": "The assistant's daily quota is over. To continue, see the plans: {url}",
+      "threadCap": "This conversation is full ({max} messages). Start a new chat to continue.",
+      "sensitiveContent": "This answer couldn't be shown (sensitive content). Rephrase and try again.",
+      "rateLimited": "Too many requests — wait a bit then retry{wait}.",
+      "requestFailed": "Request failed ({status})"
+    },
+    "samples": [
+      "What is the strongest evidence supporting my idea?",
+      "Create an experiment to test the most important assumption",
+      "What is the weakest point in the current validation?"
+    ],
+    "hints": {
+      "composerHint": "Ask about your ideas and evidence — answers are grounded in your data only.",
+      "floatLabel": "Floating button",
+      "openFull": "Open the full page",
+      "viewPlans": "View plans",
+      "newChatCta": "New chat",
+      "closeAria": "Close"
+    },
+    "citation": {
+      "titlePattern": "Source {label} — tap to jump to cards",
+      "ariaPattern": "Source {label}"
+    },
+    "view": {
+      "loading": "Loading the assistant…"
+    },
+    "page": {
+      "metadataTitle": "Assistant | Validation Copilot",
+      "metadataDescription": "Ask about your ideas and evidence — answers grounded in your data.",
+      "headerTitle": "Smart Assistant"
     }
   }
 }
