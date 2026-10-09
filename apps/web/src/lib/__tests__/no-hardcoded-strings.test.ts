@@ -13,8 +13,6 @@ const EXEMPT = new Set([
   "src/components/consent-checkbox.tsx", // legal text stays Arabic (spec §6)
   "src/app/layout.tsx", // R13: root shell, locale-conditional metadata parked per spec
   // Phase 3 remainder (removed in Task 3 follow-up commits):
-  "src/app/[locale]/memories/memories-client.tsx",
-  "src/app/[locale]/memories/page.tsx",
   "src/app/[locale]/invite/[token]/page.tsx",
   // Phase 4 files (removed in Task 4):
   "src/app/[locale]/admin/layout.tsx",

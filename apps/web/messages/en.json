@@ -277,6 +277,7 @@
     "actions": {
       "apply": "Apply",
       "back": "Back",
+      "backToDashboard": "Back to dashboard",
       "cancel": "Cancel",
       "clearAll": "Clear all",
       "clearFilters": "Clear filters",
@@ -655,5 +656,32 @@
       "submit": "Submit request",
       "submitting": "Submitting…"
     }
+  },
+  "memories": {
+    "page_title": "My memories",
+    "pending_queue": "Pending your approval",
+    "approve": "Approve",
+    "edit_approve": "Edit & approve",
+    "reject": "Reject",
+    "forget": "Forget permanently",
+    "forget_confirm": "It will be permanently deleted everywhere — sure?",
+    "disable": "Pause memory temporarily",
+    "disable_hint": "Personalization stops without deleting anything",
+    "conflict_pair": "Conflicts with an approved memory — pick the correct one",
+    "empty_queue": "Nothing pending — I'll suggest what I learn here",
+    "provenance": "From session {date}",
+    "cap_full": "List is full — delete a memory first",
+    "memory_full": "Your memory is full (200) — delete or merge before adding more",
+    "memory_duplicate": "Duplicate — this memory is already approved",
+    "startup_not_owned": "This project is not yours",
+    "secret_blocked": "Sorry — I don't store keys or sensitive data",
+    "dismissAria": "Dismiss",
+    "cancelAria": "Cancel",
+    "approvedAria": "Approved",
+    "onLabel": "On",
+    "offLabel": "Off",
+    "forgetCancel": "Cancel",
+    "paywallTitle": "Memory is part of a paid plan.",
+    "paywallCta": "View plans"
   }
 }

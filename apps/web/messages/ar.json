@@ -277,6 +277,7 @@
     "actions": {
       "apply": "تطبيق",
       "back": "رجوع",
+      "backToDashboard": "ارجع للوحة التحكم",
       "cancel": "إلغاء",
       "clearAll": "امسح الكل",
       "clearFilters": "امسح الفلاتر",
@@ -655,5 +656,32 @@
       "submit": "إرسال الطلب",
       "submitting": "جارٍ الإرسال…"
     }
+  },
+  "memories": {
+    "page_title": "ذكرياتي",
+    "pending_queue": "بانتظار موافقتك",
+    "approve": "اعتماد",
+    "edit_approve": "تعديل واعتماد",
+    "reject": "رفض",
+    "forget": "نسيان نهائي",
+    "forget_confirm": "سيُحذف نهائيًا من كل مكان — متأكد؟",
+    "disable": "إيقاف الذاكرة مؤقتًا",
+    "disable_hint": "يتوقف التخصيص دون حذف أي شيء",
+    "conflict_pair": "يتعارض مع ذكرى معتمدة — اختر الصحيحة",
+    "empty_queue": "لا شيء بانتظارك — سأقترح ما أتعلمه هنا",
+    "provenance": "من جلسة {date}",
+    "cap_full": "القائمة ممتلئة — احذف ذكرى أولًا",
+    "memory_full": "ذاكرتك ممتلئة (200) — احذف أو اندمج قبل إضافة جديد",
+    "memory_duplicate": "مكررة — هذه الذكرى معتمدة مسبقًا",
+    "startup_not_owned": "هذا المشروع ليس لك",
+    "secret_blocked": "عذرًا — لا أحفظ المفاتيح والبيانات الحساسة",
+    "dismissAria": "تجاهل",
+    "cancelAria": "إلغاء",
+    "approvedAria": "المعتمدة",
+    "onLabel": "شغال",
+    "offLabel": "مقفول",
+    "forgetCancel": "إلغاء",
+    "paywallTitle": "الذاكرة جزء من خطة مدفوعة.",
+    "paywallCta": "شوف الخطط"
   }
 }
