@@ -279,6 +279,7 @@
       "back": "Back",
       "backToDashboard": "Back to dashboard",
       "cancel": "Cancel",
+      "clear": "Clear",
       "clearAll": "Clear all",
       "clearFilters": "Clear filters",
       "close": "Close",
@@ -289,6 +290,7 @@
       "invite": "Invite",
       "retry": "Retry",
       "save": "Save",
+      "search": "Search",
       "send": "Send",
       "signOut": "Sign out",
       "stop": "Stop"
@@ -308,13 +310,18 @@
     },
     "misc": {
       "conversation": "Conversation",
+      "estimated": "estimated",
+      "estimatedNote": "COST_TABLE metering, not provider billing",
+      "estimatedTitle": "Estimated — COST_TABLE metering, not provider billing",
       "loading": "Loading...",
       "nextPage": "Next page",
+      "noRunsInWindow": "No runs in this window.",
       "off": "Off",
       "on": "On",
       "previousPage": "Previous page",
       "role": "Role",
-      "searchDefault": "Search (min 2 chars)..."
+      "searchDefault": "Search (min 2 chars)...",
+      "truncatedNote": "Server caps bound this window — figures may be truncated."
     },
     "pagination": {
       "pageXofY": "{x, plural, =0 {Page 0 of {y}} =1 {Page 1 of {y}} other {Page # of {y}}}",
@@ -696,6 +703,47 @@
       "workingCta": "Working…",
       "acceptCta": "Accept",
       "declineCta": "Decline"
+    }
+  },
+  "admin": {
+    "shell": {
+      "brand": "Validation Copilot",
+      "adminTitle": "Admin",
+      "tierPlatform": "Platform admin",
+      "tierWorkspace": "Workspace admin",
+      "sectionsAria": "Admin sections",
+      "nav": {
+        "overview": "Overview",
+        "users": "Users",
+        "workspaces": "Workspaces",
+        "content": "Content",
+        "analytics": "Analytics",
+        "ops": "Ops",
+        "requests": "Requests"
+      }
+    },
+    "overview": {
+      "titlePrefix": "Admin",
+      "titleAccent": "Overview",
+      "sub": "Trailing 7 days · NULL-workspace rows excluded · spend is estimated",
+      "loadFailed": "Failed to load overview",
+      "kpi": {
+        "users": "Users",
+        "activeWorkspaces": "Active workspaces",
+        "startups": "Startups",
+        "runs7d": "Runs (7d)",
+        "rejectRate": "Verifier reject rate",
+        "spend": "Spend (7d)"
+      },
+      "hints": {
+        "activeWorkspaces": "≥1 agent run in trailing 7d"
+      },
+      "trendsTitle": "Daily trends",
+      "cols": {
+        "day": "Day",
+        "runs": "Runs",
+        "cost": "Cost (est.)"
+      }
     }
   }
 }

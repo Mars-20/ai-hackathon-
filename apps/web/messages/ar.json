@@ -279,6 +279,7 @@
       "back": "رجوع",
       "backToDashboard": "ارجع للوحة التحكم",
       "cancel": "إلغاء",
+      "clear": "امسح",
       "clearAll": "امسح الكل",
       "clearFilters": "امسح الفلاتر",
       "close": "إغلاق",
@@ -289,6 +290,7 @@
       "invite": "ادعُ",
       "retry": "حاول تاني",
       "save": "حفظ",
+      "search": "دوّر",
       "send": "ابعت",
       "signOut": "سجّل الخروج",
       "stop": "وقّف"
@@ -308,13 +310,18 @@
     },
     "misc": {
       "conversation": "محادثة",
+      "estimated": "تقديري",
+      "estimatedNote": "بعدّاد COST_TABLE مش بالفاتورة الفعلية",
+      "estimatedTitle": "تقديري — بعدّاد COST_TABLE مش بالفاتورة الفعلية",
       "loading": "جاري التحميل...",
       "nextPage": "الصفحة اللي بعدها",
+      "noRunsInWindow": "مفيش تشغيلات في الفترة دي.",
       "off": "مقفول",
       "on": "شغال",
       "previousPage": "الصفحة اللي قبلها",
       "role": "الدور",
-      "searchDefault": "دوّر (حرفين على الأقل)..."
+      "searchDefault": "دوّر (حرفين على الأقل)...",
+      "truncatedNote": "السيرفر حدّد النافذة دي — الأرقام ممكن تكون ناقصة."
     },
     "pagination": {
       "pageXofY": "{x, plural, =0 {صفحة 0 من {y}} =1 {صفحة 1 من {y}} =2 {الصفحة 2 من {y}} few {صفحة {#} من {y}} many {صفحة {#} من {y}} other {صفحة {#} من {y}}}",
@@ -696,6 +703,47 @@
       "workingCta": "جاري التنفيذ…",
       "acceptCta": "قبول",
       "declineCta": "رفض"
+    }
+  },
+  "admin": {
+    "shell": {
+      "brand": "مساعد التحقق",
+      "adminTitle": "الإدارة",
+      "tierPlatform": "أدمن المنصة",
+      "tierWorkspace": "أدمن مساحة العمل",
+      "sectionsAria": "أقسام الإدارة",
+      "nav": {
+        "overview": "نظرة عامة",
+        "users": "المستخدمين",
+        "workspaces": "مساحات العمل",
+        "content": "المحتوى",
+        "analytics": "التحليلات",
+        "ops": "العمليات",
+        "requests": "الطلبات"
+      }
+    },
+    "overview": {
+      "titlePrefix": "الإدارة",
+      "titleAccent": "نظرة عامة",
+      "sub": "آخر 7 أيام · الصفوف اللي من غير مساحة عمل مستبعدة · المصاريف تقديرية",
+      "loadFailed": "فشل تحميل النظرة العامة",
+      "kpi": {
+        "users": "المستخدمين",
+        "activeWorkspaces": "مساحات العمل النشطة",
+        "startups": "الشركات الناشئة",
+        "runs7d": "التشغيلات (7 أيام)",
+        "rejectRate": "نسبة رفض المدقق",
+        "spend": "المصاريف (7 أيام)"
+      },
+      "hints": {
+        "activeWorkspaces": "تشغيل وكيل واحد على الأقل في آخر 7 أيام"
+      },
+      "trendsTitle": "التوجهات اليومية",
+      "cols": {
+        "day": "اليوم",
+        "runs": "التشغيلات",
+        "cost": "التكلفة (تقديرية)"
+      }
     }
   }
 }
