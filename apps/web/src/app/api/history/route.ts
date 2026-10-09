@@ -79,20 +79,27 @@ export async function GET(request: NextRequest) {
 
   // ── Detail mode for resume (?startup_id=): single startup + relations ──────
   // Used by /validate?page resume. Workspace scoping stays in the DB query.
-  // stage_track/stage_order ride along when migration 0016 is applied;
-  // pre-0016 the with-track select fails and we fall back to legacy columns.
+  // Three-generation ladder (best-effort read path, never 500 on old schema):
+  // Attempt 1 (0018+): track cols + grounding cols; Attempt 2 (pre-0016 with
+  // 0018): legacy top-level cols + grounding cols; Attempt 3 (legacy): legacy
+  // top-level cols + legacy children. First success wins; all three failing
+  // means a real DB error, not a missing migration.
   if (startupIdParam) {
-    const detailChildSelect = `decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
+    const detailChildSelectFull = `decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
         experiments(id, type, status, design, created_at),
         assumptions(id, statement, category, risk_level, status, reasoning, created_at),
         evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at, grounding_status, quarantined_at)`;
+    const detailChildSelectLegacy = `decisions(id, verdict, confidence, rationale, next_experiment, evidence_ids, sample_size, created_at),
+        experiments(id, type, status, design, created_at),
+        assumptions(id, statement, category, risk_level, status, reasoning, created_at),
+        evidence(id, assumption_id, evidence_type, source_type, source_url, claim, strength, sample_size, collected_at)`;
     let startup: unknown = null;
     let detailError: unknown = null;
     {
       const attempt = await supabase
         .from("startups")
         .select(`id, name, one_liner, domain, target_customer, stage, stage_track, stage_order, business_model,
-          created_at, updated_at, workspace_id, owner_id, ${detailChildSelect}`)
+          created_at, updated_at, workspace_id, owner_id, ${detailChildSelectFull}`)
         .eq("id", startupIdParam)
         .in("workspace_id", workspaceIds)
         .maybeSingle();
@@ -100,10 +107,21 @@ export async function GET(request: NextRequest) {
       detailError = attempt.error;
     }
     if (detailError) {
+      const attempt2 = await supabase
+        .from("startups")
+        .select(`id, name, one_liner, domain, target_customer, stage, business_model,
+          created_at, updated_at, workspace_id, owner_id, ${detailChildSelectFull}`)
+        .eq("id", startupIdParam)
+        .in("workspace_id", workspaceIds)
+        .maybeSingle();
+      startup = attempt2.data;
+      detailError = attempt2.error;
+    }
+    if (detailError) {
       const legacy = await supabase
         .from("startups")
         .select(`id, name, one_liner, domain, target_customer, stage, business_model,
-          created_at, updated_at, workspace_id, owner_id, ${detailChildSelect}`)
+          created_at, updated_at, workspace_id, owner_id, ${detailChildSelectLegacy}`)
         .eq("id", startupIdParam)
         .in("workspace_id", workspaceIds)
         .maybeSingle();
