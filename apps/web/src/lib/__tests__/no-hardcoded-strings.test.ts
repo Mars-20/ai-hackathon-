@@ -12,14 +12,6 @@ const SRC = join(HERE, "..", ".."); // src
 const EXEMPT = new Set([
   "src/components/consent-checkbox.tsx", // legal text stays Arabic (spec §6)
   "src/app/layout.tsx", // R13: root shell, locale-conditional metadata parked per spec
-  // Phase 2 files (exemptions removed in Task 2):
-  "src/app/[locale]/page.tsx",
-  "src/app/[locale]/login/page.tsx",
-  "src/app/[locale]/dashboard/page.tsx",
-  "src/app/[locale]/validate/page.tsx",
-  "src/app/[locale]/history/page.tsx",
-  "src/components/StageProgressSection.tsx",
-  "src/components/StageStepper.tsx",
   // Phase 3 files (removed in Task 3):
   "src/app/[locale]/assistant/AssistantPanel.tsx",
   "src/app/[locale]/assistant/AssistantView.tsx",
