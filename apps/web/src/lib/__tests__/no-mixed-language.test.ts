@@ -20,9 +20,10 @@ describe("no mixed language", () => {
     // matrix clicks "العربية" on /en pages). That single key is allow-
     // listed and pinned; every other string must be arabic-script-free.
     const { common } = en as { common: Record<string, string> };
-    const { switchToArabic: nativeName, ...commonRest } = common;
+    const { switchToArabic: nativeName, arabicShort: nativeAbbr, ...commonRest } = common;
     const flat = JSON.stringify({ ...(en as Record<string, unknown>), common: commonRest });
     expect(/[\u0600-\u06FF]/.test(flat)).toBe(false);
     expect(nativeName).toBe("العربية");
+    expect(nativeAbbr).toBe("ع");
   });
 });

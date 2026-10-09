@@ -1,1 +1,1 @@
-{ "common": { "appName": "مساعد التحقق", "switchToArabic": "العربية", "switchToEnglish": "English" }, "nav": { "dashboard": "لوحة التحكم", "validate": "ابدأ التحقق", "history": "السجل", "assistant": "المساعد", "login": "تسجيل الدخول" } }
+{ "common": { "appName": "مساعد التحقق", "switchToArabic": "العربية", "switchToEnglish": "English", "switchLanguage": "تبديل اللغة", "arabicShort": "ع", "englishShort": "EN" }, "nav": { "dashboard": "لوحة التحكم", "validate": "ابدأ التحقق", "history": "السجل", "assistant": "المساعد", "login": "تسجيل الدخول" } }

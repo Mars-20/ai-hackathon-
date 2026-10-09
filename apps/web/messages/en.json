@@ -1,1 +1,1 @@
-{ "common": { "appName": "Validation Copilot", "switchToArabic": "العربية", "switchToEnglish": "English" }, "nav": { "dashboard": "Dashboard", "validate": "Validate", "history": "History", "assistant": "Assistant", "login": "Log in" } }
+{ "common": { "appName": "Validation Copilot", "switchToArabic": "العربية", "switchToEnglish": "English", "switchLanguage": "Switch language", "arabicShort": "ع", "englishShort": "EN" }, "nav": { "dashboard": "Dashboard", "validate": "Validate", "history": "History", "assistant": "Assistant", "login": "Log in" } }
