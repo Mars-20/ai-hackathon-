@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, it, test, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -144,4 +144,19 @@ describe("I1 wiring: route consumes verifierResult in the decision path", () => 
       expect(src).not.toMatch(pat);
     }
   });
+});
+
+it("ignores ungrounded rows in URL support even when the claim text matches", () => {
+  const line = "The market is worth $216.5B according to analysts";
+  const rows = [
+    { claim: "Global market valued at $216.5B in 2024", source_url: undefined, grounding_status: "unverified" },
+  ];
+  expect(claimHasUrlSupport(line, rows)).toBe(false);
+});
+it("treats NULL grounding_status with URL as legacy grounded", () => {
+  const line = "The market is worth $216.5B according to analysts";
+  const rows = [
+    { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: null },
+  ];
+  expect(claimHasUrlSupport(line, rows)).toBe(true);
 });

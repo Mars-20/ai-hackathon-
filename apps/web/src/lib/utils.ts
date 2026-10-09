@@ -112,6 +112,7 @@ export function validateQuestion(question: string): QuestionValidationResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { EvidenceStrength, Confidence, Verdict } from "./types";
+import type { Groundable } from "./skills-helpers";
 
 export const STRENGTH_RUNG: Record<EvidenceStrength, number> = {
   opinion: 1,
@@ -241,7 +242,7 @@ export interface VerifierResult {
 // stray source_url never blankets unrelated claims (per-claim, not global).
 export function claimHasUrlSupport(
   line: string,
-  evidence: Array<{ claim?: string; source_url?: string }>
+  evidence: Array<Groundable & { claim?: string }>
 ): boolean {
   const tokens = new Set(
     line
@@ -252,6 +253,7 @@ export function claimHasUrlSupport(
   if (tokens.size === 0) return false;
   const numbers = line.match(/\d[\d.,%]*/g) ?? [];
   return evidence.some((e) => {
+    if (e.grounding_status !== undefined && e.grounding_status !== null && e.grounding_status !== "grounded") return false;
     if (!e.source_url || !e.claim) return false;
     const claimLower = e.claim.toLowerCase();
     const claimTokens = claimLower.split(/[^a-z0-9\u0600-\u06ff]+/u).filter((t) => t.length >= 4);
@@ -315,7 +317,7 @@ function isStructuralPositionClaim(line: string): boolean {
 // sizing words) with no per-claim URL support are ungrounded.
 export function findUnsupportedFactualClaims(
   text: string,
-  evidence: Array<{ claim?: string; source_url?: string }>
+  evidence: Array<Groundable & { claim?: string }>
 ): string[] {
   const out: string[] = [];
   const factualLines = text
@@ -339,7 +341,7 @@ export function findUnsupportedFactualClaims(
 export function combineVerifierWithMemoScan(
   verifier: VerifierResult,
   memoText: string,
-  evidence: Array<{ claim?: string; source_url?: string }>
+  evidence: Array<Groundable & { claim?: string }>
 ): VerifierResult {
   const extra = findUnsupportedFactualClaims(memoText, evidence).filter(
     (l) => !verifier.unsupportedClaims.includes(l)

@@ -1693,18 +1693,25 @@ async function runDecisionMemoSkill(
     required: ["verdict", "rationale", "next_experiment"],
   };
 
-  const evidenceSummary = allEvidence
+  const { grounded: groundedEvidence, ungrounded: withheldEvidence } = splitEvidenceByGrounding(allEvidence);
+
+  const evidenceSummary = groundedEvidence
     .slice(0, 10)
-    .map((e) => `[${e.evidence_type}/${e.strength}] ${toUntrusted(e.claim)}`)
+    .map((e) => `[${e.evidence_type}/${e.strength}] ${toUntrusted(e.claim)} (${e.source_url})`)
     .join("\n");
+
+  const withheldLine =
+    withheldEvidence.length > 0
+      ? `WITHHELD: ${withheldEvidence.length} unverified item(s) excluded — never cite, restate, or rely on them; if the grounded evidence is thin, output "test_more".`
+      : "";
 
   const prompt = `Produce an honest decision memo.
 
 STARTUP: ${toUntrusted(sanitizeStartupField(startup.name))} — ${toUntrusted(sanitizeStartupField(startup.one_liner))}
 
-EVIDENCE (${allEvidence.length} items):
+GROUNDED EVIDENCE (${groundedEvidence.length} items, all URL-backed):
 ${evidenceSummary}
-${marketBlock(marketCtx)}
+${withheldLine ? `${withheldLine}\n` : ""}${marketBlock(marketCtx)}
 THRESHOLD CHECK: ${allowGo ? "✓ Meets Go threshold" : `✗ Does NOT meet Go threshold: ${thresholdReason}`}
 THIN-EVIDENCE RULE: a single source repeated, or several items sharing one URL once de-duplicated, is thin evidence and MUST NOT produce "go" — "go" needs 3+ DISTINCT sources. When in doubt, output "test_more".
 CONFIDENCE LEVEL: ${confidence.toUpperCase()}
@@ -1763,7 +1770,7 @@ Be honest. If evidence is thin, say "test_more". Never inflate.`;
   // net so model-introduced figures cannot slip past the gate.
   const memoText = `${parsed.rationale ?? ""}\n${parsed.next_experiment ?? ""}`;
   const baseVerifier = verifier ?? { approved: true, unsupportedClaims: [] };
-  const combinedVerifier = combineVerifierWithMemoScan(baseVerifier, memoText, allEvidence);
+  const combinedVerifier = combineVerifierWithMemoScan(baseVerifier, memoText, groundedEvidence);
   if (combinedVerifier.unsupportedClaims.length > baseVerifier.unsupportedClaims.length) {
     trace.push(
       makeTrace("verifier", "verification", {
@@ -2556,7 +2563,8 @@ Secondary evidence claims: ${secondaryEvidence.map((e) => truncateField(e.claim)
 
       await send({ type: "phase", phase: "verifying", trace: [...trace] });
       const verifierUsage: AiUsage[] = [];
-      const verifierResult = await runVerifier(plannerSummary, allEvidence, trace, verifierUsage);
+      const { grounded: groundedEvidence } = splitEvidenceByGrounding(allEvidence);
+      const verifierResult = await runVerifier(plannerSummary, groundedEvidence, trace, verifierUsage);
       toolCalls++;
       totalCost += costFromUsage(verifierUsage, "gemini_call");
       checkTimeout();
