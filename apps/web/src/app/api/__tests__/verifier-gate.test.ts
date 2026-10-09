@@ -160,3 +160,21 @@ it("treats NULL grounding_status with URL as legacy grounded", () => {
   ];
   expect(claimHasUrlSupport(line, rows)).toBe(true);
 });
+it("ignores URL-bearing rows whose grounding_status is not grounded", () => {
+  const line = "The market is worth $216.5B according to analysts";
+  expect(
+    claimHasUrlSupport(line, [
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "unverified" },
+    ])
+  ).toBe(false);
+  expect(
+    claimHasUrlSupport(line, [
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "quarantined" },
+    ])
+  ).toBe(false);
+  expect(
+    claimHasUrlSupport(line, [
+      { claim: "Global market valued at $216.5B in 2024", source_url: "https://example.com/r", grounding_status: "grounded" },
+    ])
+  ).toBe(true);
+});
