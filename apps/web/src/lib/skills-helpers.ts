@@ -129,6 +129,7 @@ export function parseInvestorScorecard(text: string): InvestorScorecard | null {
 
 // ── Evidence grounding ──
 export interface Groundable {
+  evidence_type?: string | null;
   source_url?: string | null;
   source_type?: string | null;
   grounding_status?: string | null;
@@ -141,6 +142,7 @@ function isHttpUrlLocal(url: unknown): url is string {
 }
 
 export function isGroundedEvidence(e: Groundable): boolean {
+  if (e.evidence_type === "primary") return true;
   const gs = e?.grounding_status;
   if (gs !== undefined && gs !== null && gs !== "grounded") return false;
   if (typeof e?.source_type !== "string" || e.source_type.trim().length === 0) return false;

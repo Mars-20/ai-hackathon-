@@ -50,3 +50,11 @@ describe("splitEvidenceByGrounding", () => {
     expect(ungrounded.map((r) => r.id)).toEqual(["b"]);
   });
 });
+
+it("treats primary evidence as grounded by provenance (no URL needed)", () => {
+  expect(isGroundedEvidence({ evidence_type: "primary", source_type: "interview", source_url: null, grounding_status: null })).toBe(true);
+  expect(isGroundedEvidence({ evidence_type: "primary", source_type: null, source_url: null, grounding_status: null })).toBe(true);
+});
+it("keeps secondary rows URL-gated", () => {
+  expect(isGroundedEvidence({ evidence_type: "secondary", source_type: null, source_url: null, grounding_status: null })).toBe(false);
+});
