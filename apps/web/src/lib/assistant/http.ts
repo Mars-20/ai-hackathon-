@@ -20,6 +20,8 @@ import {
   AssistantOutageError,
   callAssistantWithTools,
   criticScan,
+  isDestructiveAssistantTool,
+  parseAssistantToolCall,
   type AssistantToolCall,
 } from "./model";
 import {
@@ -30,8 +32,13 @@ import {
 } from "./quota";
 import {
   createExperiment,
+  deleteExperiment,
   updateExperiment,
 } from "@/lib/experiments";
+import {
+  PROPOSED_ACTION_PREFIX,
+  UNDONE_SUFFIX,
+} from "@/lib/assistant/cards";
 import {
   resolveLocale,
   systemPromptFor,
@@ -288,6 +295,50 @@ async function defaultGrounding(userId: string, db: SupabaseClient): Promise<Ass
       return ((data ?? []) as unknown as StartupBrief[]);
     },
   };
+}
+
+/** Human-readable one-liner for a destructive proposal card (the
+ * PROPOSED_ACTION_PREFIX marker is added by the caller). */
+function proposalSummary(tc: AssistantToolCall): string {
+  if (tc.name === "update_experiment") {
+    const patch = (tc.args.patch ?? {}) as Record<string, unknown>;
+    const bits = Object.keys(patch).join(", ");
+    return `Update experiment ${String(tc.args.experiment_id ?? "?")} (${bits || "patch"})`;
+  }
+  return `Apply ${tc.name}`;
+}
+
+/** Shared tool executor: the chat loop, the retry endpoint and the confirm
+ * endpoint all run tools through here, so proposals, retries and live calls
+ * can never drift apart. Returns the card summary (+ deep link, if any). */
+export async function executeAssistantToolCall(
+  tools: AssistantTools,
+  userId: string,
+  tc: AssistantToolCall
+): Promise<{ summary: string; url?: string }> {
+  if (tc.name === "save_memory") {
+    const { id } = await tools.saveMemory(userId, {
+      kind: tc.args.kind as string,
+      value: tc.args.value as string,
+      startup_id: tc.args.startup_id as string | undefined,
+    });
+    return { summary: `Saved to memory (${id})` };
+  } else if (tc.name === "create_experiment") {
+    const { id } = await tools.createExperiment(userId, tc.args);
+    return { summary: `Experiment created (${id})` };
+  } else if (tc.name === "update_experiment") {
+    const { id } = await tools.updateExperiment(userId, tc.args);
+    return { summary: `Experiment updated (${id})` };
+  } else if (tc.name === "run_validation") {
+    const { startup_id } = await tools.runValidation(userId, {
+      idea: tc.args.idea as string,
+      uploaded_data: tc.args.uploaded_data,
+    });
+    return { summary: `Validation session started`, url: `/validate?startup_id=${startup_id}` };
+  } else {
+    const sid = tc.args.startup_id as string;
+    return { summary: `Opening project`, url: `/validate?startup_id=${sid}` };
+  }
 }
 
 function defaultTools(db: SupabaseClient): AssistantTools {
@@ -678,38 +729,41 @@ export async function handleAssistantPost(
     // the SSE event (spec §5 requires `args` on tool events).
     const safeArgs = JSON.parse(redactPii(JSON.stringify(tc.args)));
     await traceTool(ctx.admin, "tool_call", { tool: tc.name, args: safeArgs });
+    // Destructive tools (Project C): never execute from chat — persist a
+    // proposal row and emit a needs-confirm card. The user confirms via the
+    // tools endpoint, which executes through executeAssistantToolCall above.
+    if (isDestructiveAssistantTool(tc.name)) {
+      const proposalId = crypto.randomUUID();
+      const proposal = `${PROPOSED_ACTION_PREFIX}${proposalSummary(tc)}`;
+      await ctx.db.from("assistant_messages").insert({
+        id: proposalId,
+        conversation_id: conversation.id,
+        client_message_id: crypto.randomUUID(),
+        role: "tool",
+        content: proposal,
+        tool_name: tc.name,
+        tool_args: safeArgs,
+      });
+      toolEvents.push({
+        type: "tool",
+        tool: tc.name,
+        args: safeArgs,
+        result_summary: proposal.slice(PROPOSED_ACTION_PREFIX.length),
+        needs_confirm: true,
+        message_id: proposalId,
+      });
+      continue;
+    }
     try {
-      let summary = "";
-      let url: string | undefined;
-      if (tc.name === "save_memory") {
-        const { id } = await tools.saveMemory(ctx.userId, {
-          kind: tc.args.kind as string,
-          value: tc.args.value as string,
-          startup_id: tc.args.startup_id as string | undefined,
-        });
-        summary = `Saved to memory (${id})`;
-      } else if (tc.name === "create_experiment") {
-        const { id } = await tools.createExperiment(ctx.userId, tc.args);
-        summary = `Experiment created (${id})`;
-      } else if (tc.name === "update_experiment") {
-        const { id } = await tools.updateExperiment(ctx.userId, tc.args);
-        summary = `Experiment updated (${id})`;
-      } else if (tc.name === "run_validation") {
-        const { startup_id } = await tools.runValidation(ctx.userId, {
-          idea: tc.args.idea as string,
-          uploaded_data: tc.args.uploaded_data,
-        });
-        url = `/validate?startup_id=${startup_id}`;
-        summary = `Validation session started`;
-      } else {
-        const sid = tc.args.startup_id as string;
-        url = `/validate?startup_id=${sid}`;
-        summary = `Opening project`;
-      }
+      const { summary, url } = await executeAssistantToolCall(tools, ctx.userId, {
+        name: tc.name,
+        args: tc.args,
+      });
       await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: true });
       const safeSummary = redactPii(summary).slice(0, 2000);
+      const rowId = crypto.randomUUID();
       await ctx.db.from("assistant_messages").insert({
-        id: crypto.randomUUID(),
+        id: rowId,
         conversation_id: conversation.id,
         client_message_id: crypto.randomUUID(),
         role: "tool",
@@ -723,13 +777,15 @@ export async function handleAssistantPost(
         args: safeArgs,
         result_summary: safeSummary,
         ...(url ? { url } : {}),
+        message_id: rowId,
       });
     } catch (toolErr) {
       const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
       await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: false, error: msg });
       const summary = `Action failed: ${msg.slice(0, 500)} — you can retry this action.`;
+      const rowId = crypto.randomUUID();
       await ctx.db.from("assistant_messages").insert({
-        id: crypto.randomUUID(),
+        id: rowId,
         conversation_id: conversation.id,
         client_message_id: crypto.randomUUID(),
         role: "tool",
@@ -737,7 +793,7 @@ export async function handleAssistantPost(
         tool_name: tc.name,
         tool_args: JSON.parse(JSON.stringify(redactPii(JSON.stringify(tc.args)))),
       });
-      toolEvents.push({ type: "tool", tool: tc.name, result_summary: summary, error: true });
+      toolEvents.push({ type: "tool", tool: tc.name, result_summary: summary, error: true, message_id: rowId });
     }
   }
 
@@ -880,8 +936,212 @@ const messagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-export async function handleGetMessages(
+const toolActionSchema = z.object({
+  action: z.enum(["retry", "confirm", "undo"]),
+  message_id: UUID,
+});
+
+interface ToolMessageRow {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  tool_name: string | null;
+  tool_args: Record<string, unknown> | null;
+}
+
+const FAILED_PREFIX = "Action failed:";
+const SAVE_RE = /^Saved to memory \(([0-9a-fA-F-]{36})\)$/;
+const CREATED_RE = /^Experiment created \(([0-9a-fA-F-]{36})\)$/;
+
+/** Interactive action cards (Project C): retry failed tools, confirm
+ * destructive proposals, undo additive tools. Operates on persisted tool
+ * rows only; every branch re-validates ownership + args server-side (the
+ * client never authorizes an execution). No quota consumed: these continue
+ * an already-spent turn, and failures never consume by design. */
+export async function handleToolAction(
   ctx: AssistantHttpContext,
+  rawBody: unknown
+): Promise<Response> {
+  const parsed = toolActionSchema.safeParse(rawBody);
+  if (!parsed.success) return json({ error: "Invalid request", code: "INVALID" }, 400);
+  const { action, message_id } = parsed.data;
+  const { data: rowData } = await ctx.db
+    .from("assistant_messages")
+    .select("id,conversation_id,role,content,tool_name,tool_args")
+    .eq("id", message_id)
+    .maybeSingle();
+  const row = rowData as unknown as ToolMessageRow | null;
+  if (!row) return json({ error: "Not found", code: "NOT_FOUND" }, 404);
+  const conversation = await getOwnedConversation(ctx.db, ctx.userId, row.conversation_id);
+  if (!conversation) return json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
+  if (row.role !== "tool" || typeof row.tool_name !== "string") {
+    return json({ error: "Not a tool row", code: "NOT_TOOL_ROW" }, 422);
+  }
+  const tools = ctx.tools ?? defaultTools(ctx.db);
+  if (action === "retry") return retryToolRow(ctx, tools, row);
+  if (action === "confirm") return confirmToolRow(ctx, tools, row);
+  return undoToolRow(ctx, row);
+}
+
+async function persistToolResult(
+  ctx: AssistantHttpContext,
+  conversationId: string,
+  tool: string,
+  summary: string,
+  args: unknown,
+  url?: string
+): Promise<string> {
+  const rowId = crypto.randomUUID();
+  await ctx.db.from("assistant_messages").insert({
+    id: rowId,
+    conversation_id: conversationId,
+    client_message_id: crypto.randomUUID(),
+    role: "tool",
+    content: summary,
+    tool_name: tool,
+    tool_args: args,
+  });
+  return rowId;
+}
+
+function cardBody(
+  tool: string,
+  summary: string,
+  messageId: string,
+  extra?: { url?: string; error?: boolean; needs_confirm?: boolean }
+): Response {
+  return json(
+    {
+      card: {
+        tool,
+        result_summary: summary,
+        ...(extra?.url ? { url: extra.url } : {}),
+        ...(extra?.error ? { error: true } : {}),
+        ...(extra?.needs_confirm ? { needs_confirm: true } : {}),
+        message_id: messageId,
+      },
+    },
+    200
+  );
+}
+
+async function retryToolRow(
+  ctx: AssistantHttpContext,
+  tools: AssistantTools,
+  row: ToolMessageRow
+): Promise<Response> {
+  if (!row.content.startsWith(FAILED_PREFIX)) {
+    return json({ error: "Only failed actions can be retried", code: "NOT_FAILED" }, 409);
+  }
+  let tc: AssistantToolCall;
+  try {
+    tc = parseAssistantToolCall(row.tool_name as string, row.tool_args);
+  } catch {
+    return json({ error: "Stored args no longer valid", code: "INVALID_ARGS" }, 422);
+  }
+  const safeArgs = JSON.parse(redactPii(JSON.stringify(tc.args)));
+  await traceTool(ctx.admin, "tool_call", { tool: tc.name, args: safeArgs, retry: true });
+  try {
+    const { summary, url } = await executeAssistantToolCall(tools, ctx.userId, tc);
+    await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: true, retry: true });
+    const safeSummary = redactPii(summary).slice(0, 2000);
+    const rowId = await persistToolResult(ctx, row.conversation_id, tc.name, safeSummary, safeArgs, url);
+    return cardBody(tc.name, safeSummary, rowId, url ? { url } : undefined);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: false, retry: true, error: msg });
+    const summary = `Action failed: ${msg.slice(0, 500)} — you can retry this action.`;
+    const rowId = await persistToolResult(ctx, row.conversation_id, tc.name, summary, safeArgs);
+    return cardBody(tc.name, summary, rowId, { error: true });
+  }
+}
+
+async function confirmToolRow(
+  ctx: AssistantHttpContext,
+  tools: AssistantTools,
+  row: ToolMessageRow
+): Promise<Response> {
+  if (!row.content.startsWith(PROPOSED_ACTION_PREFIX)) {
+    return json({ error: "Proposal already resolved", code: "ALREADY_RESOLVED" }, 409);
+  }
+  if (!isDestructiveAssistantTool(row.tool_name as string)) {
+    return json({ error: "Only destructive tools need confirmation", code: "NOT_DESTRUCTIVE" }, 422);
+  }
+  let tc: AssistantToolCall;
+  try {
+    tc = parseAssistantToolCall(row.tool_name as string, row.tool_args);
+  } catch {
+    return json({ error: "Stored args no longer valid", code: "INVALID_ARGS" }, 422);
+  }
+  const safeArgs = JSON.parse(redactPii(JSON.stringify(tc.args)));
+  await traceTool(ctx.admin, "tool_call", { tool: tc.name, args: safeArgs, confirmed: true });
+  try {
+    const { summary } = await executeAssistantToolCall(tools, ctx.userId, tc);
+    await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: true, confirmed: true });
+    const safeSummary = redactPii(summary).slice(0, 2000);
+    // Resolve in place: the proposal row becomes the result row, so a
+    // double-click confirm finds no proposal marker (409, no re-execution).
+    await ctx.db.from("assistant_messages").update({ content: safeSummary }).eq("id", row.id);
+    return cardBody(tc.name, safeSummary, row.id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await traceTool(ctx.admin, "tool_result", { tool: tc.name, ok: false, confirmed: true, error: msg });
+    const summary = `Action failed: ${msg.slice(0, 500)} — you can retry this action.`;
+    await ctx.db.from("assistant_messages").update({ content: summary }).eq("id", row.id);
+    return cardBody(tc.name, summary, row.id, { error: true });
+  }
+}
+
+async function undoToolRow(
+  ctx: AssistantHttpContext,
+  row: ToolMessageRow
+): Promise<Response> {
+  const tool = row.tool_name as string;
+  if (tool !== "save_memory" && tool !== "create_experiment") {
+    return json({ error: "This action cannot be undone", code: "NOT_UNDOABLE" }, 422);
+  }
+  if (row.content.startsWith(FAILED_PREFIX) || row.content.endsWith(UNDONE_SUFFIX)) {
+    return json({ error: "Nothing to revert", code: "NOTHING_TO_REVERT" }, 409);
+  }
+  const m = tool === "save_memory" ? SAVE_RE.exec(row.content) : CREATED_RE.exec(row.content);
+  if (!m) return json({ error: "No created row to revert", code: "NO_RESULT_ID" }, 422);
+  const createdId = m[1];
+  if (tool === "save_memory") {
+    const { data: memData } = await ctx.db
+      .from("companion_memory")
+      .select("id")
+      .eq("id", createdId)
+      .eq("user_id", ctx.userId)
+      .maybeSingle();
+    if (!memData) return json({ error: "Memory not found", code: "NOT_FOUND" }, 404);
+    const { error: deleteError } = (await ctx.db
+      .from("companion_memory")
+      .delete()
+      .eq("id", createdId)
+      .eq("user_id", ctx.userId)) as unknown as { error: { message: string } | null };
+    if (deleteError) return json({ error: "Undo failed", code: "UNDO_FAILED" }, 500);
+  } else {
+    try {
+      await deleteExperiment(ctx.db, ctx.userId, createdId);
+    } catch (e) {
+      const code = e instanceof Error ? e.message : String(e);
+      if (code === "NOT_FOUND") return json({ error: "Experiment not found", code: "NOT_FOUND" }, 404);
+      if (code === "NOT_OWNED") return json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
+      if (code === "NOT_DRAFT") {
+        return json({ error: "Only draft experiments can be reverted", code: "NOT_DRAFT" }, 409);
+      }
+      return json({ error: "Undo failed", code: "UNDO_FAILED" }, 500);
+    }
+  }
+  await ctx.db
+    .from("assistant_messages")
+    .update({ content: `${row.content}${UNDONE_SUFFIX}` })
+    .eq("id", row.id);
+  return json({ undone: true, tool }, 200);
+}
+
+export async function handleGetMessages(  ctx: AssistantHttpContext,
   id: string,
   query: unknown
 ): Promise<Response> {

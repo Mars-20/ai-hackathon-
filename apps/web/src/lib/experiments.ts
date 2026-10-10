@@ -5,7 +5,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type ExperimentCode = "NOT_OWNED" | "NOT_FOUND";
+export type ExperimentCode = "NOT_OWNED" | "NOT_FOUND" | "NOT_DRAFT";
 
 export class ExperimentError extends Error {
   code: ExperimentCode;
@@ -99,5 +99,32 @@ export async function updateExperiment(
     .eq("id", args.experiment_id);
   if (updateError) throw updateError;
   return { id: args.experiment_id };
+}
+
+/** Undo for chat-created experiments: delete an OWNED experiment that is
+ * still a draft. Non-draft rows (approved/running/completed) refuse with
+ * NOT_DRAFT — reverting live work is a Project-A-grade decision, not an
+ * undo. Used by the assistant-tools undo endpoint only. */
+export async function deleteExperiment(
+  client: SupabaseClient,
+  userId: string,
+  experimentId: string
+): Promise<{ id: string }> {
+  const { data, error } = await client
+    .from("experiments")
+    .select("id,startup_id,status")
+    .eq("id", experimentId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as unknown as { id: string; startup_id: string; status: string } | null;
+  if (!row) throw new ExperimentError("NOT_FOUND");
+  await assertOwnsStartup(client, userId, row.startup_id);
+  if (row.status !== "draft") throw new ExperimentError("NOT_DRAFT");
+  const { error: deleteError } = await client
+    .from("experiments")
+    .delete()
+    .eq("id", experimentId);
+  if (deleteError) throw deleteError;
+  return { id: experimentId };
 }
 

@@ -601,6 +601,12 @@
       "titlePattern": "مصدر {label} — اضغط للانتقال إلى البطاقات",
       "ariaPattern": "مصدر {label}"
     },
+    "actions": {
+      "retry": "إعادة",
+      "confirm": "تأكيد",
+      "undo": "تراجع",
+      "actionFailed": "تعذّر الإجراء ({code})"
+    },
     "view": {
       "loading": "جارٍ تحميل المساعد…"
     },

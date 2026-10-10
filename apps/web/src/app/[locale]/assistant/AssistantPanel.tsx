@@ -41,7 +41,7 @@ function groupRows(rows: AssistantMessageRow[]): ClientMsg[] {
   const out: ClientMsg[] = [];
   for (const r of rows) {
     if (r.role === "tool") {
-      const card = toolCardFromRow(r.tool_name, r.content);
+      const card = toolCardFromRow(r.tool_name, r.content, r.id);
       const last = out[out.length - 1];
       if (card && last && last.role === "assistant") {
         last.cards = [...(last.cards ?? []), card];
@@ -260,6 +260,8 @@ export default function AssistantPanel({
                 result_summary: data.result_summary,
                 ...(data.url ? { url: data.url } : {}),
                 ...(data.error ? { error: true } : {}),
+                ...(data.needs_confirm ? { needsConfirm: true as const } : {}),
+                ...(data.message_id ? { messageId: data.message_id } : {}),
               };
               cards = [...cards, card];
               setLiveCards(cards);
@@ -562,7 +564,20 @@ export default function AssistantPanel({
                 <div className="whitespace-pre-wrap leading-relaxed">
                   {renderSegments(m.content, m.id)}
                 </div>
-                {m.cards && m.cards.length > 0 && <ActionCards cards={m.cards} />}
+                {m.cards && m.cards.length > 0 && (
+                  <ActionCards
+                    cards={m.cards}
+                    onCardUpdate={(ci, card) =>
+                      setMessages((prev) =>
+                        prev.map((pm) =>
+                          pm.id === m.id
+                            ? { ...pm, cards: (pm.cards ?? []).map((c, j) => (j === ci ? card : c)) }
+                            : pm
+                        )
+                      )
+                    }
+                  />
+                )}
               </div>
             ) : null
           )}
@@ -576,7 +591,12 @@ export default function AssistantPanel({
                   {renderSegments(liveText, "live")}
                 </div>
               )}
-              {liveCards.length > 0 && <ActionCards cards={liveCards} />}
+              {liveCards.length > 0 && (
+                <ActionCards
+                  cards={liveCards}
+                  onCardUpdate={(ci, card) => setLiveCards((prev) => prev.map((c, j) => (j === ci ? card : c)))}
+                />
+              )}
             </div>
           )}
           <div ref={bottomRef} />

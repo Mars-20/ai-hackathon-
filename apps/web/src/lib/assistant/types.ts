@@ -34,6 +34,12 @@ export interface ToolCard {
   result_summary: string;
   url?: string;
   error?: boolean;
+  /** Persisted tool-row id — present when the card supports retry/undo/confirm. */
+  messageId?: string;
+  /** Destructive proposal awaiting user confirmation. */
+  needsConfirm?: boolean;
+  /** Additive action reverted via undo. */
+  undone?: boolean;
 }
 
 export interface AssistantQuota {
@@ -57,6 +63,10 @@ export interface SseToolEvent {
   result_summary: string;
   url?: string;
   error?: boolean;
+  /** Persisted tool-row id for retry/undo/confirm actions. */
+  message_id?: string;
+  /** Destructive proposal: render Confirm, do not treat as executed. */
+  needs_confirm?: boolean;
 }
 
 export interface SseDoneEvent {

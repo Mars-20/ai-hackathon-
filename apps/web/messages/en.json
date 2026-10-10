@@ -601,6 +601,12 @@
       "titlePattern": "Source {label} — tap to jump to cards",
       "ariaPattern": "Source {label}"
     },
+    "actions": {
+      "retry": "Retry",
+      "confirm": "Confirm",
+      "undo": "Undo",
+      "actionFailed": "Action failed ({code})"
+    },
     "view": {
       "loading": "Loading the assistant…"
     },
