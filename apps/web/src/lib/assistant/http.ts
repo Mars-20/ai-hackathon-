@@ -797,12 +797,40 @@ export async function handleAssistantPost(
     }
   }
 
+  // 8b. anti-hallucinated-save guard (live gap 2026-10-10): the model
+  // sometimes claims "saved/remembered" in reply text without proposing a
+  // save_memory tool call (screenshot proof: reply-only, no tool card, no
+  // DB row). The ONLY trusted save signal is a successful save_memory
+  // toolEvent below — never the reply prose. If the reply claims a save
+  // but no save_memory succeeded this turn, rewrite to an honest retry
+  // message + trace. Successful saves keep the original reply.
+  let reply = turn.reply;
+  const SAVE_CLAIM_RE =
+    /successfully (noted|remembered)|have .*remembered|saved to memory|تم الحفظ|اتحفظ|حفظت|تذكرت|تم التذكر/i;
+  const hasSuccessfulSave = toolEvents.some(
+    (e) =>
+      typeof e === "object" &&
+      e !== null &&
+      (e as { type?: unknown; tool?: unknown; error?: unknown }).type === "tool" &&
+      (e as { tool?: unknown }).tool === "save_memory" &&
+      !(e as { error?: unknown }).error
+  );
+  if (SAVE_CLAIM_RE.test(reply) && !hasSuccessfulSave) {
+    reply =
+      effectiveLocale === "ar"
+        ? "لم يتم الحفظ فعلاً — لم أنفذ أداة الحفظ في هذه المحاولة. قل لي بالنص: Remember this: … وسأحفظها وأعرض بطاقة التأكيد."
+        : "That wasn't actually saved — no save ran this turn. Say 'Remember this: …' and I'll save it with a confirmation card.";
+    await traceTool(ctx.admin, "tool_result", {
+      hallucinated_save_blocked: true,
+      original_reply_excerpt: turn.reply.slice(0, 200),
+    });
+  }
+
   // 9. verifier-as-critic rescan; flagged draft → refusal + trace row.
   // URL support covers evidence rows; startup/memory claims ride the
   // owned-row path in criticScan (token overlap + number containment), so
   // the startup claim carries stage + position ordinal text too — otherwise
   // a grounded "(1/4)" is unmatchable (live regression 2026-10-09).
-  let reply = turn.reply;
   const adapted = adaptCitedRows([
     ...(await ownedStartupRows(ctx)).map((claim) => ({ claim })),
     ...(await ownedEvidenceRows(ctx)),

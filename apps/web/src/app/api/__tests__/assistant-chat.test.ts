@@ -600,6 +600,55 @@ describe("assistant-chat handlers", () => {
     expect(tool.result_summary).toContain("mem-9");
   });
 
+  it("hallucinated save claim without save_memory tool is rewritten (live gap 2026-10-10)", async () => {
+    const { ctx } = makeCtx();
+    ctx.modelCaller = async () => ({
+      reply: "I have successfully noted and remembered that your target market is marketing agencies.",
+      citations: [],
+      toolCalls: [],
+      usage: [{ totalTokenCount: 10 }],
+      dispatched: true,
+    });
+    const res = await handleAssistantPost(ctx, {
+      client_message_id: MSG_NEW,
+      message: "Please remember that my target market is marketing agencies",
+    });
+    const events = (await readSse(res)).map((e) => JSON.parse(e));
+    const tokens = events
+      .filter((e) => e.type === "token")
+      .map((e) => e.text)
+      .join("");
+    expect(tokens).not.toMatch(/successfully noted|remembered/i);
+    expect(tokens).toMatch(/wasn't actually saved|لم يتم الحفظ/);
+    expect(events.some((e) => e.type === "tool" && e.tool === "save_memory")).toBe(false);
+  });
+
+  it("genuine save_memory success keeps the original reply", async () => {
+    const { ctx } = makeCtx();
+    ctx.modelCaller = async () => ({
+      reply: "I'll save that preference now.",
+      citations: [],
+      toolCalls: [
+        { name: "save_memory", args: { kind: "preference", value: "target market is marketing agencies" } },
+      ],
+      usage: [{ totalTokenCount: 10 }],
+      dispatched: true,
+    });
+    ctx.tools!.saveMemory = async () => ({ id: "mem-10" });
+    const res = await handleAssistantPost(ctx, {
+      client_message_id: MSG_NEW,
+      message: "remember my target market",
+    });
+    const events = (await readSse(res)).map((e) => JSON.parse(e));
+    const tokens = events
+      .filter((e) => e.type === "token")
+      .map((e) => e.text)
+      .join("");
+    expect(tokens).toContain("I'll save that preference now.");
+    const tool = events.find((e) => e.type === "tool");
+    expect(tool).toMatchObject({ tool: "save_memory" });
+  });
+
   it("prefs PUT without active_conversation_id preserves the pinned thread", async () => {
     const { ctx, db } = makeCtx({
       prefs: [{ user_id: UID, float_enabled: false, active_conversation_id: CONV_A }],

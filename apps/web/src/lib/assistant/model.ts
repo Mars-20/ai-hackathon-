@@ -173,7 +173,7 @@ export interface AssistantModelResult {
  * durable user facts/preferences stated without being asked — never for
  * transient task content, and still subject to the critic + approval queue. */
 export const SAVE_MEMORY_TRIGGER =
-  "When the user asks you to remember, store, note, or keep a fact, preference, style, or episode about them or their work, propose a save_memory tool call in the same turn (kind + value of 1..500 chars, startup_id only when they name a project). This remember-request is the exception to the propose-no-tool rule. You may also proactively propose at most one save_memory per turn, without being asked, for a durable fact, preference, or style the user states about themselves or their work — never for transient task content.";
+  "When the user asks you to remember, store, note, or keep a fact, preference, style, or episode about them or their work, propose a save_memory tool call in the same turn (kind + value of 1..500 chars, startup_id only when they name a project). This remember-request is the exception to the propose-no-tool rule. You may also proactively propose at most one save_memory per turn, without being asked, for a durable fact, preference, or style the user states about themselves or their work — never for transient task content. Never claim in reply that you saved, noted, or remembered anything — the server's tool card is the ONLY save confirmation; in reply say 'I'll save…' and let the tool result speak. A save claim without a matching save_memory call is a hallucination and will be rewritten server-side.";
 
 export function buildAssistantSystemInstruction(systemPrompt: string, context: string): string {
   return `${systemPrompt.trim()}
